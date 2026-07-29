@@ -83,6 +83,14 @@
   - `prisma/migrations/20260729_init_pgvector/migration.sql`
 * **Notes**: Defined Prisma models (`IngestionJob`, `IngestionFile`, `Asset`, `AssetSource`, `AssetMetadata`, `AssetEmbedding`, `ProcessingAttempt`) with relations, indices, content hash uniqueness, and PGVector 1536-dim vector column configuration. Prisma 7 Client successfully generated and build verified.
 
-### Next Immediate Task: TASK-004 — Core Configuration & Environment Setup
-* **Dependencies**: `TASK-003`
-* **Goal**: Install and setup `@nestjs/config` with a type-safe environment schema validating AWS S3, AWS SQS, Redis, Google Drive API, Gemini AI, OpenAI API, and PostgreSQL connection settings.
+### TASK-004 — Core Configuration & Environment Setup
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/config/configuration.ts`
+  - `src/app.module.ts`
+  - `.env.example`
+* **Notes**: Installed `@nestjs/config`, created type-safe configuration schema (`AppConfig`), registered global `ConfigModule`, and created `.env.example`. Build verified clean.
+
+### Next Immediate Task: TASK-005 — AWS S3 Storage Adapter Service
+* **Dependencies**: `TASK-004`
+* **Goal**: Install `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner`, implement `S3StorageService` implementing `StorageProvider` for canonical image object storage, deterministic key generation (`assets/{assetId}/original/{filename}`), stream uploading, and signed URL generation.
