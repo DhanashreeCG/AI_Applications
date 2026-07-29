@@ -91,6 +91,15 @@
   - `.env.example`
 * **Notes**: Installed `@nestjs/config`, created type-safe configuration schema (`AppConfig`), registered global `ConfigModule`, and created `.env.example`. Build verified clean.
 
-### Next Immediate Task: TASK-005 — AWS S3 Storage Adapter Service
+### TASK-005 — AWS S3 Storage Adapter Service
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/storage/s3-storage.service.ts`
+  - `src/modules/storage/storage.module.ts`
+  - `src/modules/storage/s3-storage.service.spec.ts`
+  - `src/app.module.ts`
+* **Notes**: Installed `@aws-sdk/client-s3`, `@aws-sdk/lib-storage`, `@aws-sdk/s3-request-presigner`. Implemented `S3StorageService` implementing `StorageProvider` for buffer & stream uploads, file verification, canonical object key formatting (`assets/{assetId}/original/{filename}`), and signed URL generation. Tests and build passed cleanly.
+
+### Next Immediate Task: TASK-006 — Google Drive Source Adapter Service
 * **Dependencies**: `TASK-004`
-* **Goal**: Install `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner`, implement `S3StorageService` implementing `StorageProvider` for canonical image object storage, deterministic key generation (`assets/{assetId}/original/{filename}`), stream uploading, and signed URL generation.
+* **Goal**: Install `googleapis` package, implement `GoogleDriveAdapterService` for recursive folder scanning, file metadata discovery, stream downloading, error handling (rate limit 429 retries), and unit tests.
