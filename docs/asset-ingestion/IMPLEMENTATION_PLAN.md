@@ -76,6 +76,13 @@
   - `src/common/interfaces/storage-provider.interface.ts`
 * **Notes**: Defined state machine lifecycle enums, Vision/Embedding provider contracts, SQS stage message contracts, and S3 StorageProvider interfaces. Compilation verified clean.
 
-### Next Immediate Task: TASK-003 — Prisma Schema & PGVector Migration
-* **Dependencies**: `TASK-002`
-* **Goal**: Add database entities (`IngestionJob`, `IngestionFile`, `Asset`, `AssetSource`, `AssetMetadata`, `AssetEmbedding`, `ProcessingAttempt`) to `prisma/schema.prisma` and prepare PGVector SQL migration.
+### TASK-003 — Prisma Schema & PGVector Migration
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `prisma/schema.prisma`
+  - `prisma/migrations/20260729_init_pgvector/migration.sql`
+* **Notes**: Defined Prisma models (`IngestionJob`, `IngestionFile`, `Asset`, `AssetSource`, `AssetMetadata`, `AssetEmbedding`, `ProcessingAttempt`) with relations, indices, content hash uniqueness, and PGVector 1536-dim vector column configuration. Prisma 7 Client successfully generated and build verified.
+
+### Next Immediate Task: TASK-004 — Core Configuration & Environment Setup
+* **Dependencies**: `TASK-003`
+* **Goal**: Install and setup `@nestjs/config` with a type-safe environment schema validating AWS S3, AWS SQS, Redis, Google Drive API, Gemini AI, OpenAI API, and PostgreSQL connection settings.

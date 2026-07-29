@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -10,4 +8,187 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+enum JobState {
+  CREATED
+  SCANNING
+  PROCESSING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+  CANCELLED
+}
+
+enum AssetState {
+  DISCOVERED
+  DOWNLOADING
+  VALIDATING
+  HASHING
+  DUPLICATE_CHECK
+  UPLOADING_TO_S3
+  STORED_IN_S3
+  GENERATING_METADATA
+  METADATA_GENERATED
+  GENERATING_EMBEDDING
+  EMBEDDING_GENERATED
+  COMPLETED
+  FAILED
+  RETRY_PENDING
+  DEAD_LETTER
+}
+
+model IngestionJob {
+  id              String          @id @default(cuid())
+  sourceType      String          @default("GOOGLE_DRIVE")
+  rootFolderId    String
+  status          JobState        @default(CREATED)
+  totalDiscovered Int             @default(0)
+  totalProcessed  Int             @default(0)
+  totalSuccessful Int             @default(0)
+  totalSkipped    Int             @default(0)
+  totalFailed     Int             @default(0)
+  totalDuplicate  Int             @default(0)
+  errorMessage    String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  files           IngestionFile[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model IngestionFile {
+  id                 String             @id @default(cuid())
+  jobId              String
+  job                IngestionJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  driveFileId        String
+  filename           String
+  mimeType           String?
+  fileSize           BigInt?
+  folderPath         String?
+  driveFileCreatedAt DateTime?
+  status             AssetState         @default(DISCOVERED)
+  errorMessage       String?
+  assetId            String?
+  asset              Asset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  assetSource        AssetSource?
+  attempts           ProcessingAttempt[]
+
+  @@unique([jobId, driveFileId])
+  @@index([driveFileId])
+  @@index([status])
+  @@index([assetId])
+}
+
+model Asset {
+  id             String              @id @default(cuid())
+  contentHash    String              @unique
+  mimeType       String
+  fileSize       BigInt
+  width          Int?
+  height         Int?
+  s3Bucket       String
+  s3ObjectKey    String
+  status         AssetState          @default(STORED_IN_S3)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  sources        AssetSource[]
+  ingestionFiles IngestionFile[]
+  metadata       AssetMetadata?
+  embeddings     AssetEmbedding[]
+  attempts       ProcessingAttempt[]
+
+  @@index([status])
+  @@index([contentHash])
+}
+
+model AssetSource {
+  id              String        @id @default(cuid())
+  assetId         String
+  asset           Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  ingestionFileId String        @unique
+  ingestionFile   IngestionFile @relation(fields: [ingestionFileId], references: [id], onDelete: Cascade)
+  sourceType      String        @default("GOOGLE_DRIVE")
+  externalId      String
+  folderPath      String?
+  filename        String
+  createdAt       DateTime      @default(now())
+
+  @@index([assetId])
+  @@index([sourceType, externalId])
+}
+
+model AssetMetadata {
+  id                    String   @id @default(cuid())
+  assetId               String   @unique
+  asset                 Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  caption               String
+  objects               String[]
+  actions               String[]
+  styles                String[]
+  colors                String[]
+  background            String?
+  composition           String?
+  orientation           String?
+  ageGroups             String[]
+  educationalUses       String[]
+  searchKeywords        String[]
+  searchDescription     String
+  searchDescriptionHash String
+  rawResponse           Json?
+  provider              String   @default("gemini")
+  model                 String   @default("gemini-2.5-flash")
+  modelVersion          String   @default("1.0")
+  promptVersion         String   @default("1.0")
+  metadataVersion       Int      @default(1)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([searchDescriptionHash])
+}
+
+model AssetEmbedding {
+  id               String                       @id @default(cuid())
+  assetId          String
+  asset            Asset                        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  provider         String                       @default("openai")
+  model            String                       @default("text-embedding-3-small")
+  dimensions       Int                          @default(1536)
+  sourceTextHash   String
+  embeddingVersion Int                          @default(1)
+  vector           Unsupported("vector(1536)")?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  @@index([assetId])
+  @@index([sourceTextHash])
+}
+
+model ProcessingAttempt {
+  id              String         @id @default(cuid())
+  assetId         String?
+  asset           Asset?         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  ingestionFileId String?
+  ingestionFile   IngestionFile? @relation(fields: [ingestionFileId], references: [id], onDelete: Cascade)
+  stage           AssetState
+  attemptNumber   Int            @default(1)
+  status          String
+  errorCode       String?
+  errorMessage    String?
+  stackTrace      String?
+  durationMs      Int?
+  sqsMessageId    String?
+  createdAt       DateTime       @default(now())
+
+  @@index([assetId])
+  @@index([ingestionFileId])
+  @@index([stage])
 }
