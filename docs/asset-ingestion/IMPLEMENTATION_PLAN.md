@@ -110,6 +110,16 @@
   - `src/app.module.ts`
 * **Notes**: Installed `googleapis`. Implemented `GoogleDriveAdapterService` for recursive folder scanning, relative path hierarchy construction, streaming downloads, and exponential backoff retries on rate limits (429/5xx). Unit tests and build verified clean.
 
-### Next Immediate Task: TASK-007 — Image Validation, Hashing & Processing
-* **Dependencies**: `TASK-005`
-* **Goal**: Install `sharp` & `@types/sharp`, implement `ImageProcessorService` for SHA-256 hash generation from streams/buffers, file type & dimension validation, corruption detection, and AI-optimized image resizing without overwriting originals.
+### TASK-007 — Image Validation, Hashing & Processing
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/image/interfaces/image-validation.interface.ts`
+  - `src/modules/image/image-processor.service.ts`
+  - `src/modules/image/image.module.ts`
+  - `src/modules/image/image-processor.service.spec.ts`
+  - `src/app.module.ts`
+* **Notes**: Installed `sharp` & `@types/sharp`. Implemented `ImageProcessorService` for SHA-256 hashing from buffers/streams, image validation (format, dimensions, corruption detection, size limits, orientation), and AI-optimized JPEG conversion for vision model input. All 10 Jest tests and build verified clean.
+
+### Next Immediate Task: TASK-008 — Ingestion Job Management & File Discovery
+* **Dependencies**: `TASK-006`, `TASK-007`
+* **Goal**: Implement `IngestionJobService` (with `IngestionModule`) that: creates `IngestionJob` records, scans Drive folders via `GoogleDriveAdapterService`, creates `IngestionFile` records per discovered file, and dispatches SQS messages for downstream processing.
