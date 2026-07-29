@@ -100,6 +100,16 @@
   - `src/app.module.ts`
 * **Notes**: Installed `@aws-sdk/client-s3`, `@aws-sdk/lib-storage`, `@aws-sdk/s3-request-presigner`. Implemented `S3StorageService` implementing `StorageProvider` for buffer & stream uploads, file verification, canonical object key formatting (`assets/{assetId}/original/{filename}`), and signed URL generation. Tests and build passed cleanly.
 
-### Next Immediate Task: TASK-006 — Google Drive Source Adapter Service
-* **Dependencies**: `TASK-004`
-* **Goal**: Install `googleapis` package, implement `GoogleDriveAdapterService` for recursive folder scanning, file metadata discovery, stream downloading, error handling (rate limit 429 retries), and unit tests.
+### TASK-006 — Google Drive Source Adapter Service
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/drive/interfaces/drive-file.interface.ts`
+  - `src/modules/drive/google-drive-adapter.service.ts`
+  - `src/modules/drive/drive.module.ts`
+  - `src/modules/drive/google-drive-adapter.service.spec.ts`
+  - `src/app.module.ts`
+* **Notes**: Installed `googleapis`. Implemented `GoogleDriveAdapterService` for recursive folder scanning, relative path hierarchy construction, streaming downloads, and exponential backoff retries on rate limits (429/5xx). Unit tests and build verified clean.
+
+### Next Immediate Task: TASK-007 — Image Validation, Hashing & Processing
+* **Dependencies**: `TASK-005`
+* **Goal**: Install `sharp` & `@types/sharp`, implement `ImageProcessorService` for SHA-256 hash generation from streams/buffers, file type & dimension validation, corruption detection, and AI-optimized image resizing without overwriting originals.

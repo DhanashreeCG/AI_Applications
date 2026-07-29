@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import configuration from './config/configuration';
 import { StorageModule } from './modules/storage/storage.module';
+import { DriveModule } from './modules/drive/drive.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { StorageModule } from './modules/storage/storage.module';
       load: [configuration],
     }),
     StorageModule,
+    DriveModule,
   ],
   controllers: [AppController],
   providers: [AppService],
