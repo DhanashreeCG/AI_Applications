@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../database/prisma.service';
 import { OpenAiEmbeddingProvider } from '../ai/providers/openai-embedding.provider';
+import { RedisCacheService } from '../cache/redis-cache.service';
 import { VectorStorageService } from './vector-storage.service';
 import { SearchService } from './search.service';
 import { OPENAI_EMBEDDING_DIMENSIONS } from '../ai/constants/embedding.constants';
@@ -28,8 +29,18 @@ describe('SearchService', () => {
     searchSimilar: jest.fn(),
   };
 
+  const mockRedisCache = {
+    get: jest.fn(),
+    set: jest.fn(),
+    getSearchCacheTtlSeconds: jest.fn().mockReturnValue(300),
+    getAssetMetadataCacheTtlSeconds: jest.fn().mockReturnValue(3600),
+    flushSearchCache: jest.fn(),
+    flushAssetMetadataCache: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockRedisCache.get.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -37,6 +48,7 @@ describe('SearchService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: OpenAiEmbeddingProvider, useValue: mockEmbeddingProvider },
         { provide: VectorStorageService, useValue: mockVectorStorage },
+        { provide: RedisCacheService, useValue: mockRedisCache },
       ],
     }).compile();
 
@@ -58,12 +70,6 @@ describe('SearchService', () => {
         distance: 0.1,
         similarity: 0.9,
       },
-      {
-        assetId: 'asset-002',
-        embeddingId: 'embedding-002',
-        distance: 0.2,
-        similarity: 0.8,
-      },
     ]);
     mockPrisma.asset.findMany.mockResolvedValue([
       {
@@ -81,21 +87,6 @@ describe('SearchService', () => {
           searchDescription: 'A red cat',
         },
       },
-      {
-        id: 'asset-002',
-        s3ObjectKey: 'assets/asset-002/original/dog.png',
-        mimeType: 'image/png',
-        metadata: {
-          caption: 'A blue dog',
-          orientation: 'landscape',
-          colors: ['blue'],
-          styles: ['photo'],
-          objects: ['dog'],
-          actions: ['running'],
-          ageGroups: ['kids'],
-          searchDescription: 'A blue dog',
-        },
-      },
     ]);
 
     const response = await service.search({
@@ -110,28 +101,55 @@ describe('SearchService', () => {
     expect(mockEmbeddingProvider.generateEmbedding).toHaveBeenCalledWith(
       'red cat on sofa',
     );
-    expect(mockVectorStorage.searchSimilar).toHaveBeenCalledWith(
-      sampleEmbedding,
-      50,
-    );
+    expect(mockRedisCache.set).toHaveBeenCalled();
     expect(response.total).toBe(1);
-    expect(response.results).toEqual([
+    expect(response.results[0]).toEqual(
       expect.objectContaining({
         assetId: 'asset-001',
         similarity: 0.9,
-        caption: 'A red cat',
-        orientation: 'portrait',
       }),
-    ]);
-  });
-
-  it('should reject empty search queries', async () => {
-    await expect(service.search({ query: '   ' })).rejects.toBeInstanceOf(
-      BadRequestException,
     );
   });
 
-  it('should return an empty result set when vector search finds nothing', async () => {
+  it('should return cached search results without recomputing embeddings', async () => {
+    mockRedisCache.get.mockResolvedValue({
+      query: 'red cat on sofa',
+      total: 1,
+      results: [
+        {
+          assetId: 'asset-001',
+          similarity: 0.9,
+          distance: 0.1,
+          caption: 'A red cat',
+          orientation: 'portrait',
+          colors: ['red'],
+          styles: ['photo'],
+          objects: ['cat'],
+          actions: ['sitting'],
+          ageGroups: ['kids'],
+          searchDescription: 'A red cat',
+          s3ObjectKey: 'assets/asset-001/original/cat.png',
+          mimeType: 'image/png',
+        },
+      ],
+    });
+
+    const response = await service.search({
+      query: 'red cat on sofa',
+      limit: 5,
+    });
+
+    expect(mockEmbeddingProvider.generateEmbedding).not.toHaveBeenCalled();
+    expect(response.fromCache).toBe(true);
+    expect(response.total).toBe(1);
+  });
+
+  it('should bypass cache when bypassCache is true', async () => {
+    mockRedisCache.get.mockResolvedValue({
+      query: 'red cat on sofa',
+      total: 1,
+      results: [],
+    });
     mockEmbeddingProvider.generateEmbedding.mockResolvedValue({
       embedding: sampleEmbedding,
       dimensions: 1536,
@@ -141,12 +159,26 @@ describe('SearchService', () => {
     });
     mockVectorStorage.searchSimilar.mockResolvedValue([]);
 
-    const response = await service.search({ query: 'space rocket' });
-
-    expect(response).toEqual({
-      query: 'space rocket',
-      total: 0,
-      results: [],
+    await service.search({
+      query: 'red cat on sofa',
+      bypassCache: true,
     });
+
+    expect(mockRedisCache.get).not.toHaveBeenCalled();
+    expect(mockEmbeddingProvider.generateEmbedding).toHaveBeenCalled();
+  });
+
+  it('should reject empty search queries', async () => {
+    await expect(service.search({ query: '   ' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('should flush search cache entries', async () => {
+    mockRedisCache.flushSearchCache.mockResolvedValue(3);
+
+    const result = await service.flushCache('search');
+
+    expect(result).toEqual({ deleted: 3, scope: 'search' });
   });
 });

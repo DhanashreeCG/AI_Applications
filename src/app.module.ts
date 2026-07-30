@@ -10,6 +10,7 @@ import { ImageModule } from './modules/image/image.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { AiModule } from './modules/ai/ai.module';
+import { CacheModule } from './modules/cache/cache.module';
 import { SearchModule } from './modules/search/search.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { SearchModule } from './modules/search/search.module';
     ImageModule,
     QueueModule,
     AiModule,
+    CacheModule,
     SearchModule,
     IngestionModule,
   ],

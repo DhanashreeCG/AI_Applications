@@ -13,4 +13,5 @@ export class SearchAssetsDto {
   query!: string;
   limit?: number;
   filters?: SearchMetadataFiltersDto;
+  bypassCache?: boolean;
 }

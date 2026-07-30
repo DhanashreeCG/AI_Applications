@@ -29,4 +29,5 @@ export interface SearchAssetsResponse {
   query: string;
   total: number;
   results: SearchResultItem[];
+  fromCache?: boolean;
 }

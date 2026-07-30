@@ -50,7 +50,7 @@
 | **TASK-013** | Text Embedding AI Provider Abstraction (OpenAI) | **COMPLETED** | TASK-004 | Implement `EmbeddingProvider` interface and `OpenAiEmbeddingProvider` for 1536-dim text-embedding-3-small. | Embeddings generated correctly, text hash tracked for invalidate/recompute. |
 | **TASK-014** | PGVector Vector Indexing & Similarity Search | **COMPLETED** | TASK-003, TASK-013 | Implement `VectorStorageService` storing 1536-dim vectors in PGVector, execute cosine similarity search queries. | Vector search returns top-k nearest assets by cosine distance. |
 | **TASK-015** | Semantic Search API & Metadata Filtering | **COMPLETED** | TASK-014 | Implement `SearchController` & `SearchService` supporting text search + hybrid filters (category, orientation, color, etc.). | Combined semantic + metadata filtered search results returned correctly. |
-| **TASK-016** | Redis Caching Layer for Search | **TODO** | TASK-004, TASK-015 | Implement `RedisCacheService` for caching search results & hot asset metadata with TTL. | Search response cached in Redis, cache bypass on flush works seamlessly. |
+| **TASK-016** | Redis Caching Layer for Search | **COMPLETED** | TASK-004, TASK-015 | Implement `RedisCacheService` for caching search results & hot asset metadata with TTL. | Search response cached in Redis, cache bypass on flush works seamlessly. |
 | **TASK-017** | State Machine Pipeline, Retry Strategy & DLQ Handling | **TODO** | TASK-010 | Implement complete asset state machine (`DISCOVERED` -> `COMPLETED`), exponential backoff, DLQ capture & replay. | Retry logic handles transient failures, non-retryable move to DLQ. |
 | **TASK-018** | Observability, Structured Logging & Metrics | **TODO** | TASK-017 | Implement logging interceptors, job progress metrics, latency metrics, and failure tracing. | Logs contain trace identifiers (`job_id`, `asset_id`, `stage`, `sqs_message_id`). |
 | **TASK-019** | Integration & End-to-End Suite | **TODO** | TASK-001..18 | Write unit, integration, and E2E pipeline tests from Drive discovery to Search API response. | Full E2E test passes in test environment. |
@@ -221,6 +221,26 @@
   - `src/modules/search/search.module.ts`
 * **Notes**: Implemented `POST /search` with query embedding via `OpenAiEmbeddingProvider`, PGVector candidate retrieval, hybrid metadata filtering (orientation, colors, styles, objects, actions, age groups, educational uses, background), and similarity-ranked asset results. All 57 Jest tests and the production build pass.
 
-### Next Immediate Task: TASK-016 — Redis Caching Layer for Search
-* **Dependencies**: `TASK-004`, `TASK-015`
-* **Goal**: Implement `RedisCacheService` for caching search results and hot asset metadata with TTL.
+### TASK-016 — Redis Caching Layer for Search
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/cache/cache.module.ts`
+  - `src/modules/cache/redis-cache.service.ts`
+  - `src/modules/cache/redis-cache.service.spec.ts`
+  - `src/modules/cache/utils/cache-key.util.ts`
+  - `src/modules/search/search.service.ts`
+  - `src/modules/search/search.service.spec.ts`
+  - `src/modules/search/search.controller.ts`
+  - `src/modules/search/search.module.ts`
+  - `src/modules/search/dto/search-assets.dto.ts`
+  - `src/modules/search/interfaces/search-result.interface.ts`
+  - `src/config/configuration.ts`
+  - `src/app.module.ts`
+  - `.env.example`
+  - `package.json`
+  - `package-lock.json`
+* **Notes**: Installed `ioredis`. Implemented `RedisCacheService` with TTL-backed JSON caching, pattern-based flush for search and asset-metadata keys, graceful fallback when Redis is unavailable, search cache integration with `bypassCache` support, hot asset metadata caching after DB loads, and `POST /search/cache/flush`. Added Redis TTL/enabled config. All 61 Jest tests and the production build pass.
+
+### Next Immediate Task: TASK-017 — State Machine Pipeline, Retry Strategy & DLQ Handling
+* **Dependencies**: `TASK-010`
+* **Goal**: Implement complete asset state machine (`DISCOVERED` -> `COMPLETED`), exponential backoff, DLQ capture & replay.

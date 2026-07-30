@@ -11,4 +11,12 @@ export class SearchController {
   async searchAssets(@Body() dto: SearchAssetsDto) {
     return this.searchService.search(dto);
   }
+
+  @Post('cache/flush')
+  @HttpCode(HttpStatus.OK)
+  async flushCache(
+    @Body() body?: { scope?: 'search' | 'asset-metadata' | 'all' },
+  ) {
+    return this.searchService.flushCache(body?.scope ?? 'all');
+  }
 }

@@ -19,6 +19,9 @@ export interface AppConfig {
     host: string;
     port: number;
     password?: string;
+    enabled: boolean;
+    searchCacheTtlSeconds: number;
+    assetMetadataCacheTtlSeconds: number;
   };
   googleDrive: {
     clientEmail?: string;
@@ -55,6 +58,15 @@ export default (): AppConfig => ({
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
     password: process.env.REDIS_PASSWORD,
+    enabled: process.env.REDIS_ENABLED !== 'false',
+    searchCacheTtlSeconds: parseInt(
+      process.env.REDIS_SEARCH_CACHE_TTL_SECONDS || '300',
+      10,
+    ),
+    assetMetadataCacheTtlSeconds: parseInt(
+      process.env.REDIS_ASSET_METADATA_CACHE_TTL_SECONDS || '3600',
+      10,
+    ),
   },
   googleDrive: {
     clientEmail: process.env.GOOGLE_DRIVE_CLIENT_EMAIL,
