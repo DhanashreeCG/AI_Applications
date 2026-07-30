@@ -40,6 +40,12 @@ export interface AppConfig {
     backoffBaseSeconds: number;
     backoffMaxSeconds: number;
   };
+  sqsWorker: {
+    enabled: boolean;
+    pollWaitSeconds: number;
+    concurrency: number;
+    shutdownTimeoutMs: number;
+  };
 }
 
 export default (): AppConfig => ({
@@ -94,6 +100,15 @@ export default (): AppConfig => ({
     ),
     backoffMaxSeconds: parseInt(
       process.env.PIPELINE_BACKOFF_MAX_SECONDS || '900',
+      10,
+    ),
+  },
+  sqsWorker: {
+    enabled: process.env.SQS_WORKER_ENABLED !== 'false',
+    pollWaitSeconds: parseInt(process.env.SQS_WORKER_POLL_WAIT_SECONDS || '20', 10),
+    concurrency: parseInt(process.env.SQS_WORKER_CONCURRENCY || '4', 10),
+    shutdownTimeoutMs: parseInt(
+      process.env.SQS_WORKER_SHUTDOWN_TIMEOUT_MS || '30000',
       10,
     ),
   },

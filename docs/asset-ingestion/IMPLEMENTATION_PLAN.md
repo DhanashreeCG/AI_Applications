@@ -8,21 +8,22 @@
 * **Environment Management**: `dotenv` configured via `prisma.config.ts`.
 * **Testing Setup**: Jest configured for unit tests (`src/**/*.spec.ts`) and e2e testing (`test/jest-e2e.json`).
 
-### 2. Infrastructure Audit & Gaps Analysis
+### 2. Infrastructure Audit & Current State (Updated Phase 2)
 
-| Component / Infrastructure | Current Status | Required Packages / Dependencies | Missing Implementation |
-| :--- | :--- | :--- | :--- |
-| **NestJS Structure** | Basic boilerplate (`AppModule`) | `@nestjs/config` | Feature modules: `AssetIngestionModule`, `StorageModule`, `QueueModule`, `AiModule`, `SearchModule` |
-| **Prisma & Data Model** | Minimal schema without models | Prisma v7 (`@prisma/client`) | Models: `IngestionJob`, `IngestionFile`, `Asset`, `AssetSource`, `AssetMetadata`, `AssetEmbedding`, `ProcessingAttempt` |
-| **PGVector Extension** | Not configured | `pgvector` / native SQL migrations | Migration script for `CREATE EXTENSION IF NOT EXISTS vector;` and vector index creation |
-| **AWS S3 Storage** | Not present | `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` | `S3StorageService` with bucket management, key generation, signed URLs, and stream uploads |
-| **AWS SQS Queue** | Not present | `@aws-sdk/client-sqs` | `SqsQueueService` & consumer workers for stage-specific message queues & DLQ handling |
-| **Redis Caching** | Not present | `ioredis` | `RedisService` for hot search query caching & asset lookup |
-| **Google Drive Ingestion** | Not present | `googleapis` | `GoogleDriveAdapter` for folder scanning, file discovery, metadata reading, and streaming file downloads |
-| **Image Validation & Hash** | Not present | `sharp`, `@types/sharp` | `ImageProcessorService` for SHA-256 calculation, image validation, format conversion, resizing for AI |
-| **AI Vision Provider** | Not present | `@google/genai` (Gemini Flash class) | `VisionProvider` interface + `GeminiVisionProvider` implementation |
-| **AI Embedding Provider** | Not present | `openai` (`text-embedding-3-small`) | `EmbeddingProvider` interface + `OpenAiEmbeddingProvider` implementation |
-| **Logging & Metrics** | Default NestJS Logger | Custom structured logging decorator/interceptor | Structured JSON logging with `job_id`, `asset_id`, `stage`, `sqs_message_id`, latency, retry tracking |
+| Component / Infrastructure | Current Status | Notes |
+| :--- | :--- | :--- |
+| **NestJS Structure** | **Implemented** | Feature modules: `AssetIngestionModule`, `StorageModule`, `QueueModule`, `AiModule`, `SearchModule`, `PipelineModule`, `ObservabilityModule` |
+| **Prisma & Data Model** | **Implemented** | All models + PGVector migration; HNSW index deferred until measured |
+| **AWS S3 Storage** | **Implemented** | `S3StorageService` with upload, download, signed URLs |
+| **AWS SQS Queue** | **Implemented** | `SqsQueueService` (producer) + `SqsWorkerService` (consumer pollers) |
+| **Redis Caching** | **Implemented** | `RedisCacheService` for search + asset metadata |
+| **Google Drive Ingestion** | **Implemented** | `GoogleDriveAdapterService` with recursive folder scan |
+| **Image Validation & Hash** | **Implemented** | `ImageProcessorService` (Sharp, SHA-256, AI resize) |
+| **AI Vision Provider** | **Implemented** | `GeminiVisionProvider` + `VisionMetadataService` |
+| **AI Embedding Provider** | **Implemented** | `OpenAiEmbeddingProvider` + `VectorStorageService` |
+| **Logging & Metrics** | **Implemented** | Structured JSON logging + `GET /observability/metrics` |
+| **Component Validation Scripts** | **Implemented** | `scripts/validate/*` + `npm run validate:*` |
+| **Manual Real-Service Validation** | **PENDING** | See `COMPONENT_VALIDATION_REPORT.md` — user must confirm |
 
 ### 3. Potential Conflicts & Technical Decisions
 * **Prisma 7 Compatibility**: Uses `@prisma/adapter-pg`. PGVector columns can be handled via raw queries or supported vector types.
@@ -54,7 +55,14 @@
 | **TASK-017** | State Machine Pipeline, Retry Strategy & DLQ Handling | **COMPLETED** | TASK-010 | Implement complete asset state machine (`DISCOVERED` -> `COMPLETED`), exponential backoff, DLQ capture & replay. | Retry logic handles transient failures, non-retryable move to DLQ. |
 | **TASK-018** | Observability, Structured Logging & Metrics | **COMPLETED** | TASK-017 | Implement logging interceptors, job progress metrics, latency metrics, and failure tracing. | Logs contain trace identifiers (`job_id`, `asset_id`, `stage`, `sqs_message_id`). |
 | **TASK-019** | Integration & End-to-End Suite | **COMPLETED** | TASK-001..18 | Write unit, integration, and E2E pipeline tests from Drive discovery to Search API response. | Full E2E test passes in test environment. |
-| **TASK-020** | Pilot Migration & Execution Protocol | **TODO** | TASK-019 | Execute pilot migration in batches (10 -> 100 -> 1000 images), generate cost, performance & quality reports. | Pilot report generated with metrics before full 10,000+ run. |
+| **TASK-020** | Pilot Migration & Execution Protocol | **DEFERRED** | TASK-027 | Execute pilot migration in batches (10 → 100 → 1000 images), generate cost, performance & quality reports. | Pilot report generated with metrics before full 10,000+ run. |
+| **TASK-021** | SQS Worker Runtime | **COMPLETED** | TASK-010, TASK-017 | Long-running SQS pollers invoke `AssetPipelineService.processQueueMessage()` with graceful shutdown. | Worker consumes messages; success/failure ack strategy correct; unit tests pass. |
+| **TASK-022** | Pipeline Reliability Fixes | **COMPLETED** | TASK-017, TASK-021 | Fix nested double-DLQ, DLQ replay stage mapping, metrics latency recording. | Single DLQ per failure; VALIDATING replay works; stage latency metrics populated. |
+| **TASK-023** | Component Validation Harness | **COMPLETED** | TASK-004 | `scripts/validate/*` + `npm run validate:*` for per-module real-service testing. | Each script bootstraps one module, exits non-zero on failure. |
+| **TASK-024** | Manual Validation Playbook | **COMPLETED** | TASK-023 | Document 18 module validation procedures in this plan. | Playbook section below covers all modules with pass criteria. |
+| **TASK-025** | Component Validation Report | **COMPLETED** | TASK-024 | Tracking table in `COMPONENT_VALIDATION_REPORT.md`. | All real-service rows PENDING until user confirms. |
+| **TASK-026** | Full Real Integration Validation | **DOCUMENTED** | TASK-021..025 | Controlled Drive folder (3–5 images) through real SQS workers + full pipeline → search. | Procedure documented below; execution pending user validation. |
+| **TASK-027** | Production Readiness Review | **DOCUMENTED** | TASK-026 | Pre-pilot checklist gate before TASK-020. | Checklist appended below; approval pending user sign-off. |
 
 ---
 
@@ -292,8 +300,449 @@
   - `test/pipeline-retry.integration.e2e-spec.ts`
   - `test/app.e2e-spec.ts`
   - `test/jest-e2e.json`
-* **Notes**: Built in-memory test infrastructure (Prisma, SQS, S3, Drive, Redis, AI, PGVector) and a `PipelineTestHarness` wiring real NestJS modules with mocked externals. Added full pipeline E2E (Drive discovery → ingestion → metadata → embedding → semantic search), DLQ replay integration test, search cache E2E, and observability metrics verification. All 72 unit + 6 E2E tests and the production build pass.
+* **Notes**: Built in-memory test infrastructure (Prisma, SQS, S3, Drive, Redis, AI, PGVector) and a `PipelineTestHarness` wiring real NestJS modules with mocked externals. Added full pipeline E2E (Drive discovery → ingestion → metadata → embedding → semantic search), DLQ replay integration test, search cache E2E, and observability metrics verification. All 78 unit + 6 E2E tests and the production build pass.
 
-### Next Immediate Task: TASK-020 — Pilot Migration & Execution Protocol
-* **Dependencies**: `TASK-019`
+---
+
+## Phase 2 Overview — Hardening & Manual Validation
+
+Phase 1 (TASK-001..019) delivered the full pipeline with in-memory E2E tests. Phase 2 closes production gaps, adds per-module validation harnesses, and gates pilot migration behind manual real-service confirmation.
+
+```text
+TASK-021  SQS Worker Runtime          COMPLETED
+TASK-022  Pipeline Reliability Fixes  COMPLETED
+TASK-023  Validation Harness          COMPLETED
+TASK-024  Manual Validation Playbook   COMPLETED (documented below)
+TASK-025  Component Validation Report COMPLETED (COMPONENT_VALIDATION_REPORT.md)
+TASK-026  Full Real Integration Test  DOCUMENTED (user execution pending)
+TASK-027  Production Readiness Review DOCUMENTED (user sign-off pending)
+TASK-020  Pilot Migration             DEFERRED until TASK-026/027 approved
+```
+
+### Testing Layers
+
+```text
+Unit tests (src/**/*.spec.ts, mocks)
+    ↓
+E2E harness (test/support, in-memory mocks)
+    ↓
+Component scripts (scripts/validate/*, real single module)
+    ↓
+Manual playbook (this document)
+    ↓
+Full real integration (small Drive folder)
+    ↓
+Pilot migration (TASK-020, deferred)
+```
+
+### Known Gaps Resolved in Phase 2
+
+| Issue | Resolution |
+| :--- | :--- |
+| No SQS consumer runtime | `SqsWorkerService` polls all processing queues on app start |
+| Worker ack vs retry conflict | Original message deleted after failure (retry/DLQ dispatch new messages) |
+| Double DLQ on nested stages | `runStage` only calls `handleFailure` at outer stage entry |
+| DLQ replay missing VALIDATING/HASHING | `replayFromDlq` uses `resolveRetryQueue()` |
+| Metrics latency mis-mapping | Latency recorded in `runStage` success path against active stage |
+
+### TASK-021 — SQS Worker Runtime
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/queue/sqs-worker.service.ts`
+  - `src/modules/queue/sqs-worker.service.spec.ts`
+  - `src/modules/queue/utils/sqs-message-validator.util.ts`
+  - `src/modules/queue/utils/sqs-message-validator.util.spec.ts`
+  - `src/modules/pipeline/pipeline.module.ts`
+  - `src/config/configuration.ts`
+  - `.env.example`
+* **Config**: `SQS_WORKER_ENABLED`, `SQS_WORKER_POLL_WAIT_SECONDS`, `SQS_WORKER_CONCURRENCY`, `SQS_WORKER_SHUTDOWN_TIMEOUT_MS`
+* **Notes**: Long-polling worker per processing queue; validates message shape; calls `AssetPipelineService.processQueueMessage()`; deletes on success and after failure handling; graceful shutdown via `OnModuleDestroy`. Validation scripts disable workers via `SQS_WORKER_ENABLED=false`.
+
+### TASK-022 — Pipeline Reliability Fixes
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/pipeline/services/asset-pipeline.service.ts`
+  - `src/modules/pipeline/services/pipeline-retry.service.ts`
+  - `src/modules/pipeline/services/pipeline-retry.service.spec.ts`
+  - `test/pipeline-retry.integration.e2e-spec.ts`
+* **Notes**: Nested stages pass `{ handleFailure: false }` to prevent duplicate DLQ entries. `replayFromDlq` uses `resolveRetryQueue()` (VALIDATING/HASHING → ingestion queue). Stage latency recorded in `runStage` against active processing stage.
+
+### TASK-023 — Component Validation Harness
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `scripts/validate/shared/bootstrap.ts`
+  - `scripts/validate/validate-*.ts` (drive, image, s3, vision, embedding, vector, search, cache, sqs, help)
+  - `package.json` (`validate:*` scripts)
+* **Notes**: Each script bootstraps minimal Nest context for one service, accepts CLI args, prints JSON to stdout, exits non-zero on failure. Run `npm run validate:help` for command list.
+
+### TASK-024 — Manual Validation Playbook
+* **Status**: `COMPLETED` (procedures below)
+* **Files Changed**: This section of `IMPLEMENTATION_PLAN.md`
+
+### TASK-025 — Component Validation Report
+* **Status**: `COMPLETED`
+* **Files Changed**: `docs/asset-ingestion/COMPONENT_VALIDATION_REPORT.md`
+* **Notes**: All real-service rows remain **PENDING** until user manually confirms.
+
+### TASK-026 — Full Real Integration Validation
+* **Status**: `DOCUMENTED` (procedure below; execution pending user)
+* **Dependencies**: TASK-021..025 manual validations pass
+
+### TASK-027 — Production Readiness Review
+* **Status**: `DOCUMENTED` (checklist below; approval pending user)
+* **Dependencies**: TASK-026
+
+### TASK-020 — Pilot Migration & Execution Protocol
+* **Status**: `DEFERRED`
+* **Dependencies**: TASK-027 checklist approved
 * **Goal**: Execute pilot migration in batches (10 → 100 → 1000 images) and generate cost, performance, and quality reports.
+
+---
+
+## Manual Component Validation Playbook
+
+Run validations one module at a time against real infrastructure. Record results in `COMPONENT_VALIDATION_REPORT.md`.
+
+**Common prerequisites**: Configured `.env`, PostgreSQL running, `npm run build` clean. Validation scripts auto-set `SQS_WORKER_ENABLED=false`.
+
+---
+
+### 1. Google Drive
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Verify Drive auth and recursive folder discovery without triggering pipeline |
+| **Prerequisites** | `GOOGLE_DRIVE_CLIENT_EMAIL`, `GOOGLE_DRIVE_PRIVATE_KEY`; test folder with known image count |
+| **Automated shortcut** | `npm run validate:drive -- --folder-id <FOLDER_ID>` |
+| **Manual steps** | Run command; inspect JSON output for file list, mime types, sizes |
+| **Expected result** | `totalDiscovered` matches expected count; all entries have `id`, `name`, `mimeType` |
+| **Failure symptoms** | 403/401 in logs → credential/scope issue; empty list → wrong folder ID or permissions |
+| **Cleanup** | None (read-only) |
+
+---
+
+### 2. Image Processing
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Validate Sharp image validation, SHA-256 hashing, AI-optimized resize |
+| **Prerequisites** | Valid PNG/JPEG test file; corrupt file for negative test |
+| **Automated shortcut** | `npm run validate:image -- --file ./test-data/sample.png` |
+| **Manual steps** | Run with valid image; repeat with corrupt/non-image file |
+| **Expected result** | Valid: `validation.isValid=true`, `contentHash` present, `optimizedBytes > 0`. Invalid: `isValid=false` |
+| **Failure symptoms** | Sharp errors in stdout; hash null on valid image |
+| **Cleanup** | None |
+
+---
+
+### 3. Duplicate Detection
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Verify hash-based duplicate skips AI stages and reuses canonical asset |
+| **Prerequisites** | Two identical images in test Drive folder OR pre-seeded asset with known SHA-256 |
+| **Automated shortcut** | E2E: `npm run test:e2e -- pipeline-retry` (mocked); real: create job with duplicate files |
+| **Manual steps** | 1) Ingest one image fully. 2) Create job with same image again. 3) Query `Asset` table — second file should link to same `assetId`, state `COMPLETED` without new S3/AI calls |
+| **Expected result** | Single canonical asset; duplicate `IngestionFile` references existing asset; no duplicate S3 keys |
+| **Failure symptoms** | Two assets with same `contentHash`; duplicate AI API calls in logs |
+| **Cleanup** | Remove test ingestion job records if desired |
+
+---
+
+### 4. S3 Storage
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Upload, existence check, download round-trip |
+| **Prerequisites** | `AWS_*` credentials, `AWS_S3_BUCKET_NAME` |
+| **Automated shortcut** | `npm run validate:s3 -- --file ./test-data/sample.png` |
+| **Manual steps** | Run command; verify object in AWS Console under `validation/` prefix |
+| **Expected result** | `exists=true`, `sha256Match=true`, matching byte counts |
+| **Failure symptoms** | AccessDenied, NoSuchBucket; downloaded bytes mismatch |
+| **Cleanup** | Delete test object from S3 (`validation/` prefix) |
+
+---
+
+### 5. Gemini Vision (Metadata Generation)
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Generate structured metadata from a real image |
+| **Prerequisites** | `GEMINI_API_KEY`, `GEMINI_MODEL`; sample image file |
+| **Automated shortcut** | `npm run validate:vision -- --file ./test-data/sample.png` |
+| **Manual steps** | Run command; review JSON metadata fields (category, colors, description, etc.) |
+| **Expected result** | Schema-compliant metadata JSON; non-empty `searchDescription` |
+| **Failure symptoms** | API key errors, empty/malformed JSON, rate limit 429 |
+| **Cleanup** | None (no persistence in validate script) |
+
+---
+
+### 6. Metadata Persistence
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Verify metadata saved to PostgreSQL with versioning |
+| **Prerequisites** | Completed asset through metadata stage OR run full job for one image |
+| **Automated shortcut** | Unit tests in `vision-metadata.service.spec.ts` |
+| **Manual steps** | After metadata stage: `SELECT * FROM "AssetMetadata" WHERE "assetId" = '<ID>'`; verify `metadataVersion`, `promptVersion`, JSON payload |
+| **Expected result** | Row exists with populated JSON; versions match config |
+| **Failure symptoms** | Missing row; null fields; Prisma constraint errors in logs |
+| **Cleanup** | Delete test asset records if desired |
+
+---
+
+### 7. OpenAI Embedding
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Generate 1536-dim embedding from text |
+| **Prerequisites** | `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL` |
+| **Automated shortcut** | `npm run validate:embedding -- --text "orange cat on windowsill"` |
+| **Manual steps** | Run command; verify `dimensions: 1536`, non-zero vector values |
+| **Expected result** | Embedding array length 1536; consistent hash for same text |
+| **Failure symptoms** | 401 auth error; wrong dimensions; timeout |
+| **Cleanup** | None |
+
+---
+
+### 8. PGVector (Similarity Search)
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Store and query vectors via cosine similarity |
+| **Prerequisites** | PostgreSQL with pgvector; at least one embedded asset OR script seeds query |
+| **Automated shortcut** | `npm run validate:vector -- --text "sample query" --top-k 5` |
+| **Manual steps** | Run with `--asset-id` of known embedded asset; verify ranked results |
+| **Expected result** | Results ordered by similarity; known asset appears in top-k |
+| **Failure symptoms** | Empty results; SQL errors on vector column; dimension mismatch |
+| **Cleanup** | None |
+
+---
+
+### 9. Semantic Search
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | End-to-end search API against real embedded assets |
+| **Prerequisites** | App running (`npm run start:dev`); seeded/completed assets in DB |
+| **Automated shortcut** | `npm run validate:search -- --query "orange cat"` |
+| **Manual steps** | `curl -X POST http://localhost:3000/search -H "Content-Type: application/json" -d '{"query":"orange cat","limit":5,"bypassCache":true}'` |
+| **Expected result** | JSON results with `assets[]`, similarity scores, metadata |
+| **Failure symptoms** | Empty results; 500 errors; embedding API failures in logs |
+| **Cleanup** | None |
+
+---
+
+### 10. Metadata Filtering
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Hybrid semantic search + metadata filters |
+| **Prerequisites** | Assets with known category/orientation/color metadata |
+| **Automated shortcut** | `npm run validate:search -- --query "cat"` then add filters via API |
+| **Manual steps** | `POST /search` with `filters: { category: "photograph", orientation: "landscape" }` |
+| **Expected result** | All returned assets match filter criteria |
+| **Failure symptoms** | Filtered-out assets appear; SQL/Prisma filter errors |
+| **Cleanup** | None |
+
+---
+
+### 11. Redis Cache
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Verify cache miss → hit → flush cycle |
+| **Prerequisites** | `REDIS_ENABLED=true`, Redis running |
+| **Automated shortcut** | `npm run validate:cache -- --query "orange cat"` |
+| **Manual steps** | Run script; confirm `firstFromCache=false`, `secondFromCache=true`, after flush `thirdFromCache=false` |
+| **Expected result** | Cache hit on second identical query; flush resets |
+| **Failure symptoms** | Both requests miss cache; Redis connection errors |
+| **Cleanup** | `POST /search/cache/flush` or script handles flush |
+
+---
+
+### 12. SQS Worker
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Verify worker polls queues and processes messages end-to-end |
+| **Prerequisites** | SQS queues configured; `SQS_WORKER_ENABLED=true`; app running |
+| **Automated shortcut** | `npm run validate:sqs -- --queue ingestion` (connectivity/depth only) |
+| **Manual steps** | 1) Start app with workers enabled. 2) `POST /asset-ingestion/jobs` with test folder. 3) Monitor queue depth decreasing. 4) Verify assets reach `COMPLETED` |
+| **Expected result** | Queue depth drops; structured logs show `processQueueMessage`; assets progress through states |
+| **Failure symptoms** | Messages accumulate; worker not starting; duplicate processing |
+| **Cleanup** | Purge test queues if needed; delete test assets |
+
+---
+
+### 13. Retry (Transient Failures)
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Verify exponential backoff retry on transient errors |
+| **Prerequisites** | Ability to simulate transient failure (e.g., temporary S3 deny) |
+| **Automated shortcut** | E2E: `test/pipeline-retry.integration.e2e-spec.ts` |
+| **Manual steps** | Induce transient failure; check `ProcessingAttempt` records; verify delayed retry message in SQS |
+| **Expected result** | Attempt count increments; retry scheduled with backoff; succeeds on recovery |
+| **Failure symptoms** | Immediate DLQ without retries; duplicate processing |
+| **Cleanup** | Restore normal permissions; purge retry messages |
+
+---
+
+### 14. DLQ (Permanent Failures)
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Verify non-retryable errors move to DLQ after max attempts |
+| **Prerequisites** | DLQ queue URL configured |
+| **Automated shortcut** | E2E retry spec covers DLQ path |
+| **Manual steps** | Induce permanent failure (corrupt image); wait for max attempts; check DLQ queue in AWS Console |
+| **Expected result** | Single DLQ message per failed asset; `totalFailed` incremented once |
+| **Failure symptoms** | Multiple DLQ entries for same asset; message stuck in processing queue |
+| **Cleanup** | Purge DLQ test messages |
+
+---
+
+### 15. DLQ Replay
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Replay DLQ message back to correct stage queue |
+| **Prerequisites** | Message in DLQ; underlying issue resolved |
+| **Automated shortcut** | E2E: `test/pipeline-retry.integration.e2e-spec.ts` |
+| **Manual steps** | `POST /pipeline/dlq/replay` with DLQ receipt handle / message body; verify reprocessing |
+| **Expected result** | Message removed from DLQ; dispatched to correct queue (VALIDATING → ingestion); asset progresses |
+| **Failure symptoms** | Replay to wrong queue; VALIDATING/HASHING replay fails |
+| **Cleanup** | None after successful replay |
+| **Security note** | DLQ replay endpoint has no auth — restrict in production (document only) |
+
+---
+
+### 16. State Transitions
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Verify asset progresses through full state machine |
+| **Prerequisites** | Single-image ingestion job with workers enabled |
+| **Automated shortcut** | E2E: `test/asset-ingestion-pipeline.e2e-spec.ts` |
+| **Manual steps** | Create job; poll `GET /asset-ingestion/jobs/:id`; track asset states in DB |
+| **Expected result** | `DISCOVERED → DOWNLOADING → VALIDATING → HASHING → UPLOADING_TO_S3 → STORED_IN_S3 → GENERATING_METADATA → METADATA_GENERATED → GENERATING_EMBEDDING → COMPLETED` |
+| **Failure symptoms** | Stuck state; skipped stages; regression |
+| **Cleanup** | Delete test job/asset records |
+
+---
+
+### 17. Idempotency
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Duplicate SQS messages do not corrupt state or create duplicates |
+| **Prerequisites** | Ability to observe SQS message handling |
+| **Automated shortcut** | E2E pipeline tests cover idempotent stages |
+| **Manual steps** | Re-deliver same message (or replay); verify asset state unchanged, no duplicate S3/AI work |
+| **Expected result** | Second processing is no-op or safely skipped |
+| **Failure symptoms** | Duplicate S3 uploads; double metadata rows; inflated metrics |
+| **Cleanup** | None |
+
+---
+
+### 18. Observability Trace
+
+| Field | Content |
+| :--- | :--- |
+| **Purpose** | Trace single asset through logs and metrics |
+| **Prerequisites** | App running with structured logging |
+| **Automated shortcut** | E2E observability assertions; `GET /observability/metrics` |
+| **Manual steps** | Process one asset; grep logs for `job_id`, `asset_id`, `processing_stage`, `sqs_message_id`; check metrics counters and latency |
+| **Expected result** | Correlated log fields across stages; non-zero stage latency in metrics |
+| **Failure symptoms** | Missing trace fields; latency counters at 0 for active stages |
+| **Cleanup** | None |
+
+---
+
+## TASK-026 — Full Real Integration Validation Procedure
+
+Execute only after all component validations in `COMPONENT_VALIDATION_REPORT.md` are **PASS** or **PASS_WITH_NOTES**.
+
+1. **Prepare** a Google Drive folder with 3–5 diverse real images (PNG/JPEG, different subjects).
+2. **Configure** `.env` with all real credentials; set `SQS_WORKER_ENABLED=true`.
+3. **Start** app: `npm run start:dev`.
+4. **Create job**: `POST /asset-ingestion/jobs` with `{ "driveFolderId": "<FOLDER_ID>", "name": "integration-test-<date>" }`.
+5. **Monitor**:
+   - SQS queue depths (AWS Console or `npm run validate:sqs`)
+   - Structured logs for each asset
+   - `GET /asset-ingestion/jobs/:id` until job completes
+6. **Verify DB**: All assets `COMPLETED`; metadata and embeddings present.
+7. **Search**: Run 3–5 queries relevant to test images; confirm relevant results.
+8. **Cache**: Repeat search; verify cache hit; flush and confirm miss.
+9. **Record** timings, AI token usage, S3 object count, and any failures in `COMPONENT_VALIDATION_REPORT.md`.
+10. **Do not** use the full 10K+ dataset at this stage.
+
+---
+
+## TASK-027 — Production Readiness Checklist
+
+Gate before TASK-020 pilot migration. All items must be checked by the user.
+
+### Infrastructure
+
+- [ ] PostgreSQL ready
+- [ ] pgvector extension enabled
+- [ ] S3 bucket ready
+- [ ] SQS queues + DLQ configured
+- [ ] SQS workers running (`SQS_WORKER_ENABLED=true`)
+- [ ] Redis ready
+- [ ] Google Drive service account credentials ready
+- [ ] Gemini API key ready
+- [ ] OpenAI API key ready
+
+### Pipeline
+
+- [ ] Drive discovery works (Playbook §1)
+- [ ] Image processing works (§2)
+- [ ] Hashing works (§2)
+- [ ] Duplicate detection works (§3)
+- [ ] S3 upload works (§4)
+- [ ] Metadata generation works (§5)
+- [ ] Metadata persistence works (§6)
+- [ ] Embedding generation works (§7)
+- [ ] PGVector storage works (§8)
+- [ ] Search works (§9)
+- [ ] Metadata filtering works (§10)
+- [ ] Redis cache works (§11)
+
+### Reliability
+
+- [ ] Retry works (§13)
+- [ ] DLQ works (§14)
+- [ ] DLQ replay works (§15)
+- [ ] Idempotency works (§17)
+- [ ] State transitions work (§16)
+- [ ] Failure recovery works
+- [ ] Graceful worker shutdown works
+
+### Observability
+
+- [ ] Structured logs work (§18)
+- [ ] Metrics endpoint works (§18)
+- [ ] Asset traceability works (§18)
+- [ ] Failure investigation is possible
+
+### AI Quality
+
+- [ ] Metadata quality manually reviewed
+- [ ] Search descriptions are useful
+- [ ] Embeddings generated correctly
+- [ ] Semantic search results are relevant
+- [ ] AI token usage is measurable
+- [ ] AI cost is measurable
+
+**Approval**: Only proceed to TASK-020 after this checklist and TASK-026 integration test are signed off.
+
+---
+
+### Next Immediate Task: Manual Validation (User)
+
+* **Dependencies**: TASK-021..025 implementation complete
+* **Goal**: Execute Manual Component Validation Playbook; update `COMPONENT_VALIDATION_REPORT.md`; run TASK-026 integration test; approve TASK-027 checklist
+* **Then**: TASK-020 Pilot Migration (DEFERRED until above complete)

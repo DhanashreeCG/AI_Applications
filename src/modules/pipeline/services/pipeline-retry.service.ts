@@ -75,12 +75,7 @@ export class PipelineRetryService {
   }
 
   public async replayFromDlq(message: DlqMessage): Promise<string> {
-    const targetQueue = getQueueForStage(message.failedStage);
-    if (!targetQueue) {
-      throw new Error(
-        `Cannot replay DLQ message: no queue mapped for stage ${message.failedStage}`,
-      );
-    }
+    const targetQueue = this.resolveRetryQueue(message.failedStage);
 
     const ingestionFile = await this.prisma.ingestionFile.findUnique({
       where: { id: message.ingestionFileId },
@@ -111,7 +106,10 @@ export class PipelineRetryService {
         messageId = await this.sqsQueue.dispatchIngestion({
           ...base,
           driveFileId: ingestionFile.driveFileId,
-          stage: message.failedStage as AssetState.DISCOVERED | AssetState.DOWNLOADING,
+          stage:
+            message.failedStage === AssetState.DISCOVERED
+              ? AssetState.DISCOVERED
+              : AssetState.DOWNLOADING,
         });
         break;
       case 's3Upload':
@@ -323,7 +321,7 @@ export class PipelineRetryService {
     return this.maxAttempts;
   }
 
-  private resolveRetryQueue(stage: AssetState) {
+  public resolveRetryQueue(stage: AssetState) {
     const mappedQueue = getQueueForStage(stage);
     if (mappedQueue) {
       return mappedQueue;

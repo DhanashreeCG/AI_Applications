@@ -46,7 +46,7 @@ describe('Pipeline Retry & DLQ (integration e2e)', () => {
       ),
     ).rejects.toThrow();
 
-    expect(harness.mockSqs.peekQueue('dlq').length).toBeGreaterThanOrEqual(1);
+    expect(harness.mockSqs.peekQueue('dlq')).toHaveLength(1);
 
     const failedAssetId = (ingestionMessage!.body as { assetId: string }).assetId;
     const failedFile = [...harness.db.ingestionFiles.values()].find(
@@ -57,14 +57,7 @@ describe('Pipeline Retry & DLQ (integration e2e)', () => {
 
     jest.spyOn(imageProcessor, 'validateImage').mockImplementation(originalValidate);
 
-    const dlqMessage =
-      harness.mockSqs
-        .peekQueue('dlq')
-        .find(
-          (message) =>
-            (message.body as { failedStage: AssetState }).failedStage ===
-            AssetState.DOWNLOADING,
-        )?.body ?? harness.mockSqs.peekQueue('dlq')[0].body;
+    const dlqMessage = harness.mockSqs.peekQueue('dlq')[0].body;
 
     await request(harness.getHttpServer())
       .post('/pipeline/dlq/replay')

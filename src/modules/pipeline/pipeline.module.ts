@@ -8,6 +8,7 @@ import { SearchModule } from '../search/search.module';
 import { AssetPipelineService } from './services/asset-pipeline.service';
 import { PipelineRetryService } from './services/pipeline-retry.service';
 import { PipelineController } from './pipeline.controller';
+import { SqsWorkerService } from '../queue/sqs-worker.service';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { PipelineController } from './pipeline.controller';
     SearchModule,
   ],
   controllers: [PipelineController],
-  providers: [AssetPipelineService, PipelineRetryService],
-  exports: [AssetPipelineService, PipelineRetryService],
+  providers: [AssetPipelineService, PipelineRetryService, SqsWorkerService],
+  exports: [AssetPipelineService, PipelineRetryService, SqsWorkerService],
 })
 export class PipelineModule {}

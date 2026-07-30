@@ -30,6 +30,10 @@ interface PipelineExecutionContext {
   stageStartedAt?: number;
 }
 
+interface RunStageOptions {
+  handleFailure?: boolean;
+}
+
 @Injectable()
 export class AssetPipelineService {
   private readonly logger = new StructuredLoggerService(AssetPipelineService.name);
@@ -112,51 +116,58 @@ export class AssetPipelineService {
           );
         }
 
-        await this.runStage(message, AssetState.HASHING, context, async () => {
-          const contentHash = await this.imageProcessor.calculateSha256(buffer);
+        await this.runStage(
+          message,
+          AssetState.HASHING,
+          context,
+          async () => {
+            const contentHash = await this.imageProcessor.calculateSha256(buffer);
 
-          await this.runStage(
-            message,
-            AssetState.UPLOADING_TO_S3,
-            context,
-            async () => {
-              await this.storageService.uploadFile(buffer, {
-                key: asset.s3ObjectKey,
-                bucket: asset.s3Bucket,
-                contentType: asset.mimeType,
-              });
+            await this.runStage(
+              message,
+              AssetState.UPLOADING_TO_S3,
+              context,
+              async () => {
+                await this.storageService.uploadFile(buffer, {
+                  key: asset.s3ObjectKey,
+                  bucket: asset.s3Bucket,
+                  contentType: asset.mimeType,
+                });
 
-              await this.prisma.asset.update({
-                where: { id: asset.id },
-                data: {
+                await this.prisma.asset.update({
+                  where: { id: asset.id },
+                  data: {
+                    contentHash,
+                    fileSize: BigInt(buffer.length),
+                    width: validation.width ?? null,
+                    height: validation.height ?? null,
+                    status: DatabaseAssetState.STORED_IN_S3,
+                  },
+                });
+                await this.updateStates(message, AssetState.STORED_IN_S3);
+
+                await this.sqsQueue.dispatchAiMetadata({
+                  jobId: message.jobId,
+                  ingestionFileId: message.ingestionFileId,
+                  assetId: asset.id,
+                  s3ObjectKey: asset.s3ObjectKey,
                   contentHash,
-                  fileSize: BigInt(buffer.length),
-                  width: validation.width ?? null,
-                  height: validation.height ?? null,
-                  status: DatabaseAssetState.STORED_IN_S3,
-                },
-              });
-              await this.updateStates(message, AssetState.STORED_IN_S3);
+                  attempt: 1,
+                  traceId: message.traceId,
+                });
 
-              await this.sqsQueue.dispatchAiMetadata({
-                jobId: message.jobId,
-                ingestionFileId: message.ingestionFileId,
-                assetId: asset.id,
-                s3ObjectKey: asset.s3ObjectKey,
-                contentHash,
-                attempt: 1,
-                traceId: message.traceId,
-              });
-
-              await this.recordSuccess(
-                AssetState.STORED_IN_S3,
-                message,
-                context,
-              );
-            },
-          );
-        });
-      });
+                await this.recordSuccess(
+                  AssetState.STORED_IN_S3,
+                  message,
+                  context,
+                );
+              },
+              { handleFailure: false },
+            );
+          },
+          { handleFailure: false },
+        );
+      }, { handleFailure: false });
     });
   }
 
@@ -277,7 +288,9 @@ export class AssetPipelineService {
     stage: AssetState,
     context: PipelineExecutionContext,
     work: () => Promise<void>,
+    options: RunStageOptions = {},
   ): Promise<void> {
+    const handleFailure = options.handleFailure ?? true;
     context.stageStartedAt = Date.now();
 
     this.logger.log(
@@ -292,6 +305,9 @@ export class AssetPipelineService {
     try {
       await this.updateStates(message, stage);
       await work();
+
+      const durationMs = Date.now() - (context.stageStartedAt ?? context.startedAt);
+      this.metrics.recordStageLatency(stage, durationMs);
     } catch (error) {
       const durationMs = Date.now() - (context.stageStartedAt ?? context.startedAt);
       this.logger.error(
@@ -305,13 +321,16 @@ export class AssetPipelineService {
         error,
       );
 
-      await this.pipelineRetry.handleFailure({
-        stage,
-        message,
-        error,
-        sqsMessageId: context.sqsMessageId,
-        durationMs: Date.now() - context.startedAt,
-      });
+      if (handleFailure) {
+        await this.pipelineRetry.handleFailure({
+          stage,
+          message,
+          error,
+          sqsMessageId: context.sqsMessageId,
+          durationMs: Date.now() - context.startedAt,
+        });
+      }
+
       throw error;
     }
   }
@@ -366,7 +385,6 @@ export class AssetPipelineService {
     });
 
     this.metrics.incrementProcessed();
-    this.metrics.recordStageLatency(stage, durationMs);
 
     if (stage === AssetState.COMPLETED) {
       this.metrics.incrementSuccessful();

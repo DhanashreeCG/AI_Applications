@@ -136,4 +136,32 @@ describe('PipelineRetryService', () => {
     );
     expect(messageId).toBe('replay-msg-001');
   });
+
+  it('should replay VALIDATING stage failures to the ingestion queue', async () => {
+    mockPrisma.ingestionFile.findUnique.mockResolvedValue({
+      id: 'file-001',
+      driveFileId: 'drive-001',
+    });
+    mockPrisma.asset.findUnique.mockResolvedValue({
+      id: 'asset-001',
+      contentHash: 'hash-123',
+      s3ObjectKey: 'assets/asset-001/original/cat.png',
+    });
+    mockSqsQueue.dispatchIngestion.mockResolvedValue('replay-msg-002');
+
+    const messageId = await service.replayFromDlq({
+      ...baseMessage,
+      failedStage: AssetState.VALIDATING,
+      errorCode: 'NON_RETRYABLE_ERROR',
+      errorMessage: 'Corrupted image',
+    });
+
+    expect(mockSqsQueue.dispatchIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        driveFileId: 'drive-001',
+        stage: AssetState.DOWNLOADING,
+      }),
+    );
+    expect(messageId).toBe('replay-msg-002');
+  });
 });

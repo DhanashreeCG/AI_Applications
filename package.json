@@ -19,7 +19,17 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "validate:help": "ts-node -r tsconfig-paths/register scripts/validate/validate-help.ts",
+    "validate:drive": "ts-node -r tsconfig-paths/register scripts/validate/validate-drive.ts",
+    "validate:image": "ts-node -r tsconfig-paths/register scripts/validate/validate-image.ts",
+    "validate:s3": "ts-node -r tsconfig-paths/register scripts/validate/validate-s3.ts",
+    "validate:vision": "ts-node -r tsconfig-paths/register scripts/validate/validate-vision.ts",
+    "validate:embedding": "ts-node -r tsconfig-paths/register scripts/validate/validate-embedding.ts",
+    "validate:vector": "ts-node -r tsconfig-paths/register scripts/validate/validate-vector.ts",
+    "validate:search": "ts-node -r tsconfig-paths/register scripts/validate/validate-search.ts",
+    "validate:cache": "ts-node -r tsconfig-paths/register scripts/validate/validate-cache.ts",
+    "validate:sqs": "ts-node -r tsconfig-paths/register scripts/validate/validate-sqs.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1097.0",
