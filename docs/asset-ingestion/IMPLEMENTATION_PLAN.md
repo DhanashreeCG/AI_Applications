@@ -48,7 +48,7 @@
 | **TASK-011** | Vision AI Provider Abstraction (Gemini Flash) | **COMPLETED** | TASK-004 | Implement `VisionProvider` interface and `GeminiVisionProvider` for structured JSON metadata extraction. | Vision provider returns schema-compliant JSON with mock/live tests. |
 | **TASK-012** | Vision Metadata Generation & Parsing | **COMPLETED** | TASK-011 | Implement metadata generation, search description synthesis, versioning (`metadata_version`, `prompt_version`). | Search descriptions generated deterministically and saved in DB. |
 | **TASK-013** | Text Embedding AI Provider Abstraction (OpenAI) | **COMPLETED** | TASK-004 | Implement `EmbeddingProvider` interface and `OpenAiEmbeddingProvider` for 1536-dim text-embedding-3-small. | Embeddings generated correctly, text hash tracked for invalidate/recompute. |
-| **TASK-014** | PGVector Vector Indexing & Similarity Search | **TODO** | TASK-003, TASK-013 | Implement `VectorStorageService` storing 1536-dim vectors in PGVector, execute cosine similarity search queries. | Vector search returns top-k nearest assets by cosine distance. |
+| **TASK-014** | PGVector Vector Indexing & Similarity Search | **COMPLETED** | TASK-003, TASK-013 | Implement `VectorStorageService` storing 1536-dim vectors in PGVector, execute cosine similarity search queries. | Vector search returns top-k nearest assets by cosine distance. |
 | **TASK-015** | Semantic Search API & Metadata Filtering | **TODO** | TASK-014 | Implement `SearchController` & `SearchService` supporting text search + hybrid filters (category, orientation, color, etc.). | Combined semantic + metadata filtered search results returned correctly. |
 | **TASK-016** | Redis Caching Layer for Search | **TODO** | TASK-004, TASK-015 | Implement `RedisCacheService` for caching search results & hot asset metadata with TTL. | Search response cached in Redis, cache bypass on flush works seamlessly. |
 | **TASK-017** | State Machine Pipeline, Retry Strategy & DLQ Handling | **TODO** | TASK-010 | Implement complete asset state machine (`DISCOVERED` -> `COMPLETED`), exponential backoff, DLQ capture & replay. | Retry logic handles transient failures, non-retryable move to DLQ. |
@@ -198,6 +198,16 @@
   - `package-lock.json`
 * **Notes**: Installed `openai`. Implemented `OpenAiEmbeddingProvider` for `text-embedding-3-small` (1536-dim) with SHA-256 `sourceTextHash` tracking for invalidate/recompute, dimension validation, and `EMBEDDING_PROVIDER` injection token. Added `OPENAI_EMBEDDING_MODEL` config. All 44 Jest tests and the production build pass.
 
-### Next Immediate Task: TASK-014 — PGVector Vector Indexing & Similarity Search
-* **Dependencies**: `TASK-003`, `TASK-013`
-* **Goal**: Implement `VectorStorageService` storing 1536-dim vectors in PGVector and execute cosine similarity search queries.
+### TASK-014 — PGVector Vector Indexing & Similarity Search
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/search/search.module.ts`
+  - `src/modules/search/vector-storage.service.ts`
+  - `src/modules/search/vector-storage.service.spec.ts`
+  - `src/modules/search/interfaces/vector-search.interface.ts`
+  - `src/app.module.ts`
+* **Notes**: Implemented `VectorStorageService` with raw PGVector SQL to write 1536-dim vectors into `AssetEmbedding.vector`, idempotent storage keyed by `sourceTextHash`, version increments on text changes, and top-k cosine similarity search (`<=>`) over latest embeddings per asset. Added `SearchModule` and registered it in `AppModule`. All 50 Jest tests and the production build pass.
+
+### Next Immediate Task: TASK-015 — Semantic Search API & Metadata Filtering
+* **Dependencies**: `TASK-014`
+* **Goal**: Implement `SearchController` & `SearchService` supporting text search + hybrid filters (category, orientation, color, etc.).
