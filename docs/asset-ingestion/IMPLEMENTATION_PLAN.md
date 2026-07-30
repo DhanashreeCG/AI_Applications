@@ -51,7 +51,7 @@
 | **TASK-014** | PGVector Vector Indexing & Similarity Search | **COMPLETED** | TASK-003, TASK-013 | Implement `VectorStorageService` storing 1536-dim vectors in PGVector, execute cosine similarity search queries. | Vector search returns top-k nearest assets by cosine distance. |
 | **TASK-015** | Semantic Search API & Metadata Filtering | **COMPLETED** | TASK-014 | Implement `SearchController` & `SearchService` supporting text search + hybrid filters (category, orientation, color, etc.). | Combined semantic + metadata filtered search results returned correctly. |
 | **TASK-016** | Redis Caching Layer for Search | **COMPLETED** | TASK-004, TASK-015 | Implement `RedisCacheService` for caching search results & hot asset metadata with TTL. | Search response cached in Redis, cache bypass on flush works seamlessly. |
-| **TASK-017** | State Machine Pipeline, Retry Strategy & DLQ Handling | **TODO** | TASK-010 | Implement complete asset state machine (`DISCOVERED` -> `COMPLETED`), exponential backoff, DLQ capture & replay. | Retry logic handles transient failures, non-retryable move to DLQ. |
+| **TASK-017** | State Machine Pipeline, Retry Strategy & DLQ Handling | **COMPLETED** | TASK-010 | Implement complete asset state machine (`DISCOVERED` -> `COMPLETED`), exponential backoff, DLQ capture & replay. | Retry logic handles transient failures, non-retryable move to DLQ. |
 | **TASK-018** | Observability, Structured Logging & Metrics | **TODO** | TASK-017 | Implement logging interceptors, job progress metrics, latency metrics, and failure tracing. | Logs contain trace identifiers (`job_id`, `asset_id`, `stage`, `sqs_message_id`). |
 | **TASK-019** | Integration & End-to-End Suite | **TODO** | TASK-001..18 | Write unit, integration, and E2E pipeline tests from Drive discovery to Search API response. | Full E2E test passes in test environment. |
 | **TASK-020** | Pilot Migration & Execution Protocol | **TODO** | TASK-019 | Execute pilot migration in batches (10 -> 100 -> 1000 images), generate cost, performance & quality reports. | Pilot report generated with metrics before full 10,000+ run. |
@@ -241,6 +241,24 @@
   - `package-lock.json`
 * **Notes**: Installed `ioredis`. Implemented `RedisCacheService` with TTL-backed JSON caching, pattern-based flush for search and asset-metadata keys, graceful fallback when Redis is unavailable, search cache integration with `bypassCache` support, hot asset metadata caching after DB loads, and `POST /search/cache/flush`. Added Redis TTL/enabled config. All 61 Jest tests and the production build pass.
 
-### Next Immediate Task: TASK-017 — State Machine Pipeline, Retry Strategy & DLQ Handling
-* **Dependencies**: `TASK-010`
-* **Goal**: Implement complete asset state machine (`DISCOVERED` -> `COMPLETED`), exponential backoff, DLQ capture & replay.
+### TASK-017 — State Machine Pipeline, Retry Strategy & DLQ Handling
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/pipeline/pipeline.module.ts`
+  - `src/modules/pipeline/pipeline.controller.ts`
+  - `src/modules/pipeline/constants/pipeline.constants.ts`
+  - `src/modules/pipeline/services/asset-pipeline.service.ts`
+  - `src/modules/pipeline/services/pipeline-retry.service.ts`
+  - `src/modules/pipeline/services/pipeline-retry.service.spec.ts`
+  - `src/modules/pipeline/utils/error-classifier.util.ts`
+  - `src/modules/pipeline/utils/error-classifier.util.spec.ts`
+  - `src/modules/pipeline/utils/retry-backoff.util.ts`
+  - `src/modules/pipeline/utils/retry-backoff.util.spec.ts`
+  - `src/config/configuration.ts`
+  - `src/app.module.ts`
+  - `.env.example`
+* **Notes**: Implemented `AssetPipelineService` orchestrating the full asset lifecycle across ingestion, S3 upload, Gemini vision metadata, and OpenAI embedding stages. Added `PipelineRetryService` with retryable/non-retryable error classification, exponential backoff with jitter, `ProcessingAttempt` recording, DLQ dispatch, and stage-aware DLQ replay via `POST /pipeline/dlq/replay`. Registered `PipelineModule` with `AiModule` integration. All 67 Jest tests and the production build pass.
+
+### Next Immediate Task: TASK-018 — Observability, Structured Logging & Metrics
+* **Dependencies**: `TASK-017`
+* **Goal**: Implement logging interceptors, job progress metrics, latency metrics, and failure tracing with trace identifiers.

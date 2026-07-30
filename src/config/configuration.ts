@@ -35,6 +35,11 @@ export interface AppConfig {
     openaiApiKey?: string;
     openaiEmbeddingModel: string;
   };
+  pipeline: {
+    maxAttempts: number;
+    backoffBaseSeconds: number;
+    backoffMaxSeconds: number;
+  };
 }
 
 export default (): AppConfig => ({
@@ -80,5 +85,16 @@ export default (): AppConfig => ({
     openaiApiKey: process.env.OPENAI_API_KEY,
     openaiEmbeddingModel:
       process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
+  },
+  pipeline: {
+    maxAttempts: parseInt(process.env.PIPELINE_MAX_ATTEMPTS || '3', 10),
+    backoffBaseSeconds: parseInt(
+      process.env.PIPELINE_BACKOFF_BASE_SECONDS || '30',
+      10,
+    ),
+    backoffMaxSeconds: parseInt(
+      process.env.PIPELINE_BACKOFF_MAX_SECONDS || '900',
+      10,
+    ),
   },
 });

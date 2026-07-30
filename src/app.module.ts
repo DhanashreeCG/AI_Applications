@@ -12,6 +12,7 @@ import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { AiModule } from './modules/ai/ai.module';
 import { CacheModule } from './modules/cache/cache.module';
 import { SearchModule } from './modules/search/search.module';
+import { PipelineModule } from './modules/pipeline/pipeline.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { SearchModule } from './modules/search/search.module';
     AiModule,
     CacheModule,
     SearchModule,
+    PipelineModule,
     IngestionModule,
   ],
   controllers: [AppController],

@@ -1,0 +1,128 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { AssetState } from '../../../common/enums/asset-state.enum';
+import { PrismaService } from '../../database/prisma.service';
+import { SqsQueueService } from '../../queue/sqs-queue.service';
+import { PipelineRetryService } from './pipeline-retry.service';
+
+describe('PipelineRetryService', () => {
+  let service: PipelineRetryService;
+
+  const mockPrisma = {
+    processingAttempt: { create: jest.fn() },
+    asset: { update: jest.fn(), findUnique: jest.fn() },
+    ingestionFile: { update: jest.fn(), findUnique: jest.fn() },
+    ingestionJob: { update: jest.fn() },
+    assetMetadata: { findUnique: jest.fn() },
+  };
+
+  const mockSqsQueue = {
+    sendMessage: jest.fn(),
+    dispatchToDlq: jest.fn(),
+    dispatchIngestion: jest.fn(),
+    dispatchS3Upload: jest.fn(),
+    dispatchAiMetadata: jest.fn(),
+    dispatchEmbedding: jest.fn(),
+  };
+
+  const baseMessage = {
+    jobId: 'job-001',
+    ingestionFileId: 'file-001',
+    assetId: 'asset-001',
+    attempt: 1,
+    timestamp: '2026-07-30T00:00:00.000Z',
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PipelineRetryService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: SqsQueueService, useValue: mockSqsQueue },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === 'pipeline.maxAttempts') return 3;
+              if (key === 'pipeline.backoffBaseSeconds') return 30;
+              if (key === 'pipeline.backoffMaxSeconds') return 900;
+              return undefined;
+            }),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<PipelineRetryService>(PipelineRetryService);
+  });
+
+  it('should schedule a delayed retry for transient failures', async () => {
+    mockSqsQueue.sendMessage.mockResolvedValue('retry-msg-001');
+
+    await service.handleFailure({
+      stage: AssetState.GENERATING_METADATA,
+      message: baseMessage,
+      error: new Error('HTTP 503 Service Unavailable'),
+    });
+
+    expect(mockSqsQueue.sendMessage).toHaveBeenCalledWith(
+      'aiMetadata',
+      expect.objectContaining({ attempt: 2 }),
+      expect.objectContaining({ delaySeconds: expect.any(Number) }),
+    );
+    expect(mockPrisma.asset.update).toHaveBeenCalledWith({
+      where: { id: 'asset-001' },
+      data: { status: 'RETRY_PENDING' },
+    });
+    expect(mockSqsQueue.dispatchToDlq).not.toHaveBeenCalled();
+  });
+
+  it('should move non-retryable failures to the DLQ', async () => {
+    await service.handleFailure({
+      stage: AssetState.VALIDATING,
+      message: baseMessage,
+      error: new Error('Corrupted or invalid image file'),
+    });
+
+    expect(mockSqsQueue.dispatchToDlq).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failedStage: AssetState.VALIDATING,
+        errorCode: 'NON_RETRYABLE_ERROR',
+      }),
+    );
+    expect(mockPrisma.asset.update).toHaveBeenCalledWith({
+      where: { id: 'asset-001' },
+      data: { status: 'DEAD_LETTER' },
+    });
+  });
+
+  it('should replay DLQ messages back to the original stage queue', async () => {
+    mockPrisma.ingestionFile.findUnique.mockResolvedValue({
+      id: 'file-001',
+      driveFileId: 'drive-001',
+    });
+    mockPrisma.asset.findUnique.mockResolvedValue({
+      id: 'asset-001',
+      contentHash: 'hash-123',
+      s3ObjectKey: 'assets/asset-001/original/cat.png',
+    });
+    mockSqsQueue.dispatchIngestion.mockResolvedValue('replay-msg-001');
+
+    const messageId = await service.replayFromDlq({
+      ...baseMessage,
+      failedStage: AssetState.DISCOVERED,
+      errorCode: 'TRANSIENT_ERROR',
+      errorMessage: 'Temporary outage',
+    });
+
+    expect(mockSqsQueue.dispatchIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        driveFileId: 'drive-001',
+        attempt: 1,
+      }),
+    );
+    expect(messageId).toBe('replay-msg-001');
+  });
+});
