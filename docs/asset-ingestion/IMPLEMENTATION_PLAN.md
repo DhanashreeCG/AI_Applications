@@ -36,13 +36,13 @@
 | Task ID | Task Name | Status | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **TASK-001** | Repository Discovery & Audit | **COMPLETED** | None | Audit repo structure, modules, packages, and establish `IMPLEMENTATION_PLAN.md`. | Complete audit documented in `IMPLEMENTATION_PLAN.md`. |
-| **TASK-002** | System Architecture & Data Contract Design | **TODO** | TASK-001 | Design detailed data structures, state machine transitions, and NestJS module boundaries. | Architecture document & interface definitions created. |
-| **TASK-003** | Prisma Schema & PGVector Migration | **TODO** | TASK-002 | Add Prisma models (`Asset`, `IngestionJob`, etc.) and PGVector SQL migration scripts. | Prisma client generated, migration runs cleanly on PostgreSQL. |
-| **TASK-004** | Core Configuration & Environment Setup | **TODO** | TASK-003 | Add `@nestjs/config` and type-safe environment variable schemas for S3, SQS, Redis, AI keys. | App validates environment variables on startup. |
-| **TASK-005** | AWS S3 Storage Adapter Service | **TODO** | TASK-004 | Implement `S3StorageService` for canonical image uploads, Key generation (`assets/{id}/original/{file}`), signed URLs. | S3 upload, check-exists, and download unit/integration tests pass. |
-| **TASK-006** | Google Drive Source Adapter Service | **TODO** | TASK-004 | Implement `GoogleDriveAdapter` to list folder items recursively, download streams, handle Drive auth/throttling. | Unit/mock tests pass for folder scanning and file retrieval. |
-| **TASK-007** | Image Validation, Hashing & Processing | **TODO** | TASK-005 | Implement `ImageProcessorService` using Sharp for file validation, SHA-256 calculation, and AI resizing. | SHA-256 hash verified, corrupt file handling tested. |
-| **TASK-008** | Ingestion Job Management & File Discovery | **TODO** | TASK-006, TASK-007 | Implement `IngestionJobService` to create jobs, scan Drive folders, populate `IngestionFile` & `AssetSource`. | Jobs track scanning, total discovered, created records correctly. |
+| **TASK-002** | System Architecture & Data Contract Design | **COMPLETED** | TASK-001 | Design detailed data structures, state machine transitions, and NestJS module boundaries. | Architecture document & interface definitions created. |
+| **TASK-003** | Prisma Schema & PGVector Migration | **COMPLETED** | TASK-002 | Add Prisma models (`Asset`, `IngestionJob`, etc.) and PGVector SQL migration scripts. | Prisma client generated, migration runs cleanly on PostgreSQL. |
+| **TASK-004** | Core Configuration & Environment Setup | **COMPLETED** | TASK-003 | Add `@nestjs/config` and type-safe environment variable schemas for S3, SQS, Redis, AI keys. | App validates environment variables on startup. |
+| **TASK-005** | AWS S3 Storage Adapter Service | **COMPLETED** | TASK-004 | Implement `S3StorageService` for canonical image uploads, Key generation (`assets/{id}/original/{file}`), signed URLs. | S3 upload, check-exists, and download unit/integration tests pass. |
+| **TASK-006** | Google Drive Source Adapter Service | **COMPLETED** | TASK-004 | Implement `GoogleDriveAdapter` to list folder items recursively, download streams, handle Drive auth/throttling. | Unit/mock tests pass for folder scanning and file retrieval. |
+| **TASK-007** | Image Validation, Hashing & Processing | **COMPLETED** | TASK-005 | Implement `ImageProcessorService` using Sharp for file validation, SHA-256 calculation, and AI resizing. | SHA-256 hash verified, corrupt file handling tested. |
+| **TASK-008** | Ingestion Job Management & File Discovery | **COMPLETED** | TASK-006, TASK-007 | Implement `IngestionJobService` to create jobs, scan Drive folders, and populate `IngestionFile` records. | Jobs track scanning, total discovered, and created records correctly. |
 | **TASK-009** | Duplicate Detection Logic | **TODO** | TASK-008 | Implement hash-based duplicate check logic. Associate duplicate Drive references with existing canonical S3 assets. | Identical SHA-256 files reuse existing S3 asset & skip AI calls. |
 | **TASK-010** | AWS SQS Queue Service & Topology | **TODO** | TASK-004 | Implement `SqsQueueService` for producer/consumer dispatch across stage queues. | Messages dispatched and received reliably with SQS mock/integration. |
 | **TASK-011** | Vision AI Provider Abstraction (Gemini Flash) | **TODO** | TASK-004 | Implement `VisionProvider` interface and `GeminiVisionProvider` for structured JSON metadata extraction. | Vision provider returns schema-compliant JSON with mock/live tests. |
@@ -120,6 +120,26 @@
   - `src/app.module.ts`
 * **Notes**: Installed `sharp` & `@types/sharp`. Implemented `ImageProcessorService` for SHA-256 hashing from buffers/streams, image validation (format, dimensions, corruption detection, size limits, orientation), and AI-optimized JPEG conversion for vision model input. All 10 Jest tests and build verified clean.
 
-### Next Immediate Task: TASK-008 — Ingestion Job Management & File Discovery
-* **Dependencies**: `TASK-006`, `TASK-007`
-* **Goal**: Implement `IngestionJobService` (with `IngestionModule`) that: creates `IngestionJob` records, scans Drive folders via `GoogleDriveAdapterService`, creates `IngestionFile` records per discovered file, and dispatches SQS messages for downstream processing.
+### TASK-008 — Ingestion Job Management & File Discovery
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/common/utils/error-message.ts`
+  - `src/modules/database/database.module.ts`
+  - `src/modules/database/prisma.service.ts`
+  - `src/modules/queue/queue.module.ts`
+  - `src/modules/queue/sqs-queue.service.ts`
+  - `src/modules/ingestion/dto/create-ingestion-job.dto.ts`
+  - `src/modules/ingestion/ingestion-job.service.ts`
+  - `src/modules/ingestion/ingestion.controller.ts`
+  - `src/modules/ingestion/ingestion.module.ts`
+  - `src/modules/ingestion/ingestion-job.service.spec.ts`
+  - `src/app.module.ts`
+  - `prisma/schema.prisma`
+  - `package.json`
+  - `package-lock.json`
+  - `tsconfig.json`
+* **Notes**: Implemented job creation and status APIs, recursive Drive discovery, idempotent `IngestionFile` upserts, downstream SQS dispatch, failure-state persistence, and Prisma 7 PostgreSQL adapter wiring. Added Prisma client generation to installation scripts. All 16 unit tests and the production build pass. `AssetSource` creation remains deferred until TASK-009 resolves each file to a canonical asset.
+
+### Next Immediate Task: TASK-009 — Duplicate Detection Logic
+* **Dependencies**: `TASK-008`
+* **Goal**: Download and validate discovered files, calculate SHA-256 hashes, reuse existing canonical assets when hashes match, create `AssetSource` links, and enqueue only new assets for S3 upload and AI processing.

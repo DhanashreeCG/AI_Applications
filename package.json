@@ -6,6 +6,8 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "postinstall": "prisma generate",
+    "prisma:generate": "prisma generate",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -21,6 +23,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1097.0",
+    "@aws-sdk/client-sqs": "^3.1097.0",
     "@aws-sdk/lib-storage": "^3.1097.0",
     "@aws-sdk/s3-request-presigner": "^3.1097.0",
     "@nestjs/common": "^11.0.1",
@@ -79,6 +82,9 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^@generated/prisma/client$": "<rootDir>/../generated/prisma/client.ts"
+    }
   }
 }
