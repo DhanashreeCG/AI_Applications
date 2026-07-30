@@ -4,9 +4,16 @@ import { AssetState } from '../../../common/enums/asset-state.enum';
 import { PrismaService } from '../../database/prisma.service';
 import { SqsQueueService } from '../../queue/sqs-queue.service';
 import { PipelineRetryService } from './pipeline-retry.service';
+import { PipelineMetricsService } from '../../observability/pipeline-metrics.service';
 
 describe('PipelineRetryService', () => {
   let service: PipelineRetryService;
+
+  const mockMetrics = {
+    incrementRetries: jest.fn(),
+    incrementDlq: jest.fn(),
+    incrementFailed: jest.fn(),
+  };
 
   const mockPrisma = {
     processingAttempt: { create: jest.fn() },
@@ -52,6 +59,7 @@ describe('PipelineRetryService', () => {
             }),
           },
         },
+        { provide: PipelineMetricsService, useValue: mockMetrics },
       ],
     }).compile();
 
@@ -77,6 +85,7 @@ describe('PipelineRetryService', () => {
       data: { status: 'RETRY_PENDING' },
     });
     expect(mockSqsQueue.dispatchToDlq).not.toHaveBeenCalled();
+    expect(mockMetrics.incrementRetries).toHaveBeenCalled();
   });
 
   it('should move non-retryable failures to the DLQ', async () => {
@@ -96,6 +105,8 @@ describe('PipelineRetryService', () => {
       where: { id: 'asset-001' },
       data: { status: 'DEAD_LETTER' },
     });
+    expect(mockMetrics.incrementDlq).toHaveBeenCalled();
+    expect(mockMetrics.incrementFailed).toHaveBeenCalled();
   });
 
   it('should replay DLQ messages back to the original stage queue', async () => {

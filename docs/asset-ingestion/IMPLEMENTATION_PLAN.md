@@ -52,7 +52,7 @@
 | **TASK-015** | Semantic Search API & Metadata Filtering | **COMPLETED** | TASK-014 | Implement `SearchController` & `SearchService` supporting text search + hybrid filters (category, orientation, color, etc.). | Combined semantic + metadata filtered search results returned correctly. |
 | **TASK-016** | Redis Caching Layer for Search | **COMPLETED** | TASK-004, TASK-015 | Implement `RedisCacheService` for caching search results & hot asset metadata with TTL. | Search response cached in Redis, cache bypass on flush works seamlessly. |
 | **TASK-017** | State Machine Pipeline, Retry Strategy & DLQ Handling | **COMPLETED** | TASK-010 | Implement complete asset state machine (`DISCOVERED` -> `COMPLETED`), exponential backoff, DLQ capture & replay. | Retry logic handles transient failures, non-retryable move to DLQ. |
-| **TASK-018** | Observability, Structured Logging & Metrics | **TODO** | TASK-017 | Implement logging interceptors, job progress metrics, latency metrics, and failure tracing. | Logs contain trace identifiers (`job_id`, `asset_id`, `stage`, `sqs_message_id`). |
+| **TASK-018** | Observability, Structured Logging & Metrics | **COMPLETED** | TASK-017 | Implement logging interceptors, job progress metrics, latency metrics, and failure tracing. | Logs contain trace identifiers (`job_id`, `asset_id`, `stage`, `sqs_message_id`). |
 | **TASK-019** | Integration & End-to-End Suite | **TODO** | TASK-001..18 | Write unit, integration, and E2E pipeline tests from Drive discovery to Search API response. | Full E2E test passes in test environment. |
 | **TASK-020** | Pilot Migration & Execution Protocol | **TODO** | TASK-019 | Execute pilot migration in batches (10 -> 100 -> 1000 images), generate cost, performance & quality reports. | Pilot report generated with metrics before full 10,000+ run. |
 
@@ -259,6 +259,23 @@
   - `.env.example`
 * **Notes**: Implemented `AssetPipelineService` orchestrating the full asset lifecycle across ingestion, S3 upload, Gemini vision metadata, and OpenAI embedding stages. Added `PipelineRetryService` with retryable/non-retryable error classification, exponential backoff with jitter, `ProcessingAttempt` recording, DLQ dispatch, and stage-aware DLQ replay via `POST /pipeline/dlq/replay`. Registered `PipelineModule` with `AiModule` integration. All 67 Jest tests and the production build pass.
 
-### Next Immediate Task: TASK-018 — Observability, Structured Logging & Metrics
-* **Dependencies**: `TASK-017`
-* **Goal**: Implement logging interceptors, job progress metrics, latency metrics, and failure tracing with trace identifiers.
+### TASK-018 — Observability, Structured Logging & Metrics
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/observability/observability.module.ts`
+  - `src/modules/observability/structured-logger.service.ts`
+  - `src/modules/observability/pipeline-metrics.service.ts`
+  - `src/modules/observability/metrics.controller.ts`
+  - `src/modules/observability/interceptors/logging.interceptor.ts`
+  - `src/modules/observability/interfaces/structured-log.interface.ts`
+  - `src/modules/observability/utils/pipeline-log-fields.util.ts`
+  - `src/modules/pipeline/services/asset-pipeline.service.ts`
+  - `src/modules/pipeline/services/pipeline-retry.service.ts`
+  - `src/modules/ingestion/ingestion-job.service.ts`
+  - `src/app.module.ts`
+  - `src/main.ts`
+* **Notes**: Added global `ObservabilityModule` with JSON structured logging (`job_id`, `asset_id`, `processing_stage`, `sqs_message_id`, `duration_ms`, retry/DLQ fields), HTTP `LoggingInterceptor`, in-memory `PipelineMetricsService` with stage latency tracking, and `GET /observability/metrics`. Integrated structured logs and metrics into pipeline, retry, and ingestion flows. Added `traceId` to ingestion SQS payloads. All 72 Jest tests and the production build pass.
+
+### Next Immediate Task: TASK-019 — Integration & End-to-End Suite
+* **Dependencies**: `TASK-001..018`
+* **Goal**: Write unit, integration, and E2E pipeline tests from Drive discovery to Search API response.

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetState as DatabaseAssetState } from '@generated/prisma/client';
 import { AssetState } from '../../../common/enums/asset-state.enum';
@@ -14,6 +14,9 @@ import {
 import { classifyProcessingError } from '../utils/error-classifier.util';
 import { calculateRetryDelaySeconds } from '../utils/retry-backoff.util';
 import { getErrorMessage } from '../../../common/utils/error-message';
+import { StructuredLoggerService } from '../../observability/structured-logger.service';
+import { PipelineMetricsService } from '../../observability/pipeline-metrics.service';
+import { buildPipelineLogFields } from '../../observability/utils/pipeline-log-fields.util';
 
 export interface PipelineFailureContext {
   stage: AssetState;
@@ -25,7 +28,7 @@ export interface PipelineFailureContext {
 
 @Injectable()
 export class PipelineRetryService {
-  private readonly logger = new Logger(PipelineRetryService.name);
+  private readonly logger = new StructuredLoggerService(PipelineRetryService.name);
   private readonly maxAttempts: number;
   private readonly backoffBaseSeconds: number;
   private readonly backoffMaxSeconds: number;
@@ -34,6 +37,7 @@ export class PipelineRetryService {
     private readonly prisma: PrismaService,
     private readonly sqsQueue: SqsQueueService,
     configService: ConfigService,
+    private readonly metrics: PipelineMetricsService,
   ) {
     this.maxAttempts =
       configService.get<number>('pipeline.maxAttempts') ??
@@ -171,7 +175,11 @@ export class PipelineRetryService {
     });
 
     this.logger.log(
-      `Replayed DLQ message for asset ${message.assetId} to ${targetQueue}`,
+      'DLQ message replayed',
+      buildPipelineLogFields(message, message.failedStage, {
+        status: 'replayed',
+        target_queue: targetQueue,
+      }),
     );
 
     return messageId;
@@ -214,8 +222,19 @@ export class PipelineRetryService {
       },
     });
 
+    this.metrics.incrementRetries();
+
     this.logger.warn(
-      `Scheduled retry ${nextAttempt}/${this.maxAttempts} for ${context.stage} in ${delaySeconds}s`,
+      'Pipeline retry scheduled',
+      buildPipelineLogFields(context.message, context.stage, {
+        sqs_message_id: context.sqsMessageId,
+        duration_ms: context.durationMs,
+        status: 'retry_scheduled',
+        retry_attempt: nextAttempt,
+        max_attempts: this.maxAttempts,
+        delay_seconds: delaySeconds,
+        error_message: errorMessage,
+      }),
     );
   }
 
@@ -258,8 +277,19 @@ export class PipelineRetryService {
       data: { totalFailed: { increment: 1 } },
     });
 
+    this.metrics.incrementDlq();
+    this.metrics.incrementFailed();
+
     this.logger.error(
-      `Moved asset ${context.message.assetId} to DLQ at stage ${context.stage}: ${classification.errorMessage}`,
+      'Asset moved to DLQ',
+      buildPipelineLogFields(context.message, context.stage, {
+        sqs_message_id: context.sqsMessageId,
+        duration_ms: context.durationMs,
+        status: 'dead_letter',
+        error_code: classification.errorCode,
+        error_message: classification.errorMessage,
+      }),
+      context.error,
     );
   }
 

@@ -5,6 +5,7 @@ import { SqsQueueService } from '../queue/sqs-queue.service';
 import { GoogleDriveAdapterService } from '../drive/google-drive-adapter.service';
 import { ImageProcessorService } from '../image/image-processor.service';
 import { S3StorageService } from '../storage/s3-storage.service';
+import { PipelineMetricsService } from '../observability/pipeline-metrics.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { JobState, AssetState } from '../../common/enums/asset-state.enum';
 import { Readable } from 'stream';
@@ -52,6 +53,12 @@ describe('IngestionJobService', () => {
     getDefaultBucket: jest.fn().mockReturnValue('ai-asset-ingestion'),
   };
 
+  const mockMetrics = {
+    incrementDiscovered: jest.fn(),
+    incrementDuplicates: jest.fn(),
+    incrementSuccessful: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -63,6 +70,7 @@ describe('IngestionJobService', () => {
         { provide: GoogleDriveAdapterService, useValue: mockDriveAdapter },
         { provide: ImageProcessorService, useValue: mockImageProcessor },
         { provide: S3StorageService, useValue: mockStorageService },
+        { provide: PipelineMetricsService, useValue: mockMetrics },
       ],
     }).compile();
 

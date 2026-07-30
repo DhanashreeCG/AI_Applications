@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { AssetState as DatabaseAssetState } from '@generated/prisma/client';
 import { Readable } from 'stream';
 import { AssetState } from '../../../common/enums/asset-state.enum';
@@ -20,15 +20,19 @@ import { OpenAiEmbeddingProvider } from '../../ai/providers/openai-embedding.pro
 import { VectorStorageService } from '../../search/vector-storage.service';
 import { QueueName } from '../../queue/queue-topology.constants';
 import { PipelineRetryService } from './pipeline-retry.service';
+import { StructuredLoggerService } from '../../observability/structured-logger.service';
+import { PipelineMetricsService } from '../../observability/pipeline-metrics.service';
+import { buildPipelineLogFields } from '../../observability/utils/pipeline-log-fields.util';
 
 interface PipelineExecutionContext {
   sqsMessageId?: string;
   startedAt: number;
+  stageStartedAt?: number;
 }
 
 @Injectable()
 export class AssetPipelineService {
-  private readonly logger = new Logger(AssetPipelineService.name);
+  private readonly logger = new StructuredLoggerService(AssetPipelineService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -40,6 +44,7 @@ export class AssetPipelineService {
     private readonly embeddingProvider: OpenAiEmbeddingProvider,
     private readonly vectorStorage: VectorStorageService,
     private readonly pipelineRetry: PipelineRetryService,
+    private readonly metrics: PipelineMetricsService,
   ) {}
 
   public async processQueueMessage(
@@ -51,6 +56,16 @@ export class AssetPipelineService {
       sqsMessageId,
       startedAt: Date.now(),
     };
+
+    this.logger.log(
+      'Pipeline message received',
+      {
+        ...buildPipelineLogFields(message, this.resolveInitialStage(queueName)),
+        sqs_message_id: sqsMessageId,
+        queue: queueName,
+        status: 'started',
+      },
+    );
 
     switch (queueName) {
       case 'ingestion':
@@ -263,10 +278,33 @@ export class AssetPipelineService {
     context: PipelineExecutionContext,
     work: () => Promise<void>,
   ): Promise<void> {
+    context.stageStartedAt = Date.now();
+
+    this.logger.log(
+      'Pipeline stage started',
+      {
+        ...buildPipelineLogFields(message, stage),
+        sqs_message_id: context.sqsMessageId,
+        status: 'started',
+      },
+    );
+
     try {
       await this.updateStates(message, stage);
       await work();
     } catch (error) {
+      const durationMs = Date.now() - (context.stageStartedAt ?? context.startedAt);
+      this.logger.error(
+        'Pipeline stage failed',
+        {
+          ...buildPipelineLogFields(message, stage),
+          sqs_message_id: context.sqsMessageId,
+          duration_ms: durationMs,
+          status: 'failed',
+        },
+        error,
+      );
+
       await this.pipelineRetry.handleFailure({
         stage,
         message,
@@ -313,6 +351,8 @@ export class AssetPipelineService {
     message: BaseSqsMessage,
     context: PipelineExecutionContext,
   ): Promise<void> {
+    const durationMs = Date.now() - (context.stageStartedAt ?? context.startedAt);
+
     await this.prisma.processingAttempt.create({
       data: {
         assetId: message.assetId,
@@ -321,9 +361,41 @@ export class AssetPipelineService {
         attemptNumber: message.attempt,
         status: 'SUCCESS',
         sqsMessageId: context.sqsMessageId,
-        durationMs: Date.now() - context.startedAt,
+        durationMs,
       },
     });
+
+    this.metrics.incrementProcessed();
+    this.metrics.recordStageLatency(stage, durationMs);
+
+    if (stage === AssetState.COMPLETED) {
+      this.metrics.incrementSuccessful();
+    }
+
+    this.logger.log(
+      'Pipeline stage completed',
+      {
+        ...buildPipelineLogFields(message, stage),
+        sqs_message_id: context.sqsMessageId,
+        duration_ms: durationMs,
+        status: 'success',
+      },
+    );
+  }
+
+  private resolveInitialStage(queueName: QueueName): AssetState {
+    switch (queueName) {
+      case 'ingestion':
+        return AssetState.DOWNLOADING;
+      case 's3Upload':
+        return AssetState.UPLOADING_TO_S3;
+      case 'aiMetadata':
+        return AssetState.GENERATING_METADATA;
+      case 'embedding':
+        return AssetState.GENERATING_EMBEDDING;
+      default:
+        return AssetState.DISCOVERED;
+    }
   }
 
   private async streamToBuffer(stream: Readable): Promise<Buffer> {

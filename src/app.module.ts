@@ -13,6 +13,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { CacheModule } from './modules/cache/cache.module';
 import { SearchModule } from './modules/search/search.module';
 import { PipelineModule } from './modules/pipeline/pipeline.module';
+import { ObservabilityModule } from './modules/observability/observability.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PipelineModule } from './modules/pipeline/pipeline.module';
       isGlobal: true,
       load: [configuration],
     }),
+    ObservabilityModule,
     DatabaseModule,
     StorageModule,
     DriveModule,

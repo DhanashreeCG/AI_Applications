@@ -1,7 +1,6 @@
 import {
   ConflictException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -20,10 +19,12 @@ import { S3StorageService } from '../storage/s3-storage.service';
 import { Readable } from 'stream';
 import { DriveFileItem } from '../drive/interfaces/drive-file.interface';
 import { randomUUID } from 'crypto';
+import { StructuredLoggerService } from '../observability/structured-logger.service';
+import { PipelineMetricsService } from '../observability/pipeline-metrics.service';
 
 @Injectable()
 export class IngestionJobService {
-  private readonly logger = new Logger(IngestionJobService.name);
+  private readonly logger = new StructuredLoggerService(IngestionJobService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -31,6 +32,7 @@ export class IngestionJobService {
     private readonly driveAdapter: GoogleDriveAdapterService,
     private readonly imageProcessor: ImageProcessorService,
     private readonly storageService: S3StorageService,
+    private readonly metrics: PipelineMetricsService,
   ) {}
 
   async createJob(dto: CreateIngestionJobDto) {
@@ -42,9 +44,11 @@ export class IngestionJobService {
       },
     });
 
-    this.logger.log(
-      `Created ingestion job ${job.id} for folder ${dto.rootFolderId}`,
-    );
+    this.logger.log('Ingestion job created', {
+      job_id: job.id,
+      root_folder_id: dto.rootFolderId,
+      status: 'created',
+    });
     return job;
   }
 
@@ -73,7 +77,11 @@ export class IngestionJobService {
       },
     });
 
-    this.logger.log(`Job ${jobId}: scanning Drive folder ${job.rootFolderId}`);
+    this.logger.log('Ingestion job discovery started', {
+      job_id: jobId,
+      root_folder_id: job.rootFolderId,
+      status: 'scanning',
+    });
 
     let totalDiscovered = 0;
     try {
@@ -112,9 +120,13 @@ export class IngestionJobService {
         },
       });
 
-      this.logger.log(
-        `Job ${jobId}: discovered and queued ${totalDiscovered} files`,
-      );
+      this.metrics.incrementDiscovered(totalDiscovered);
+
+      this.logger.log('Ingestion job discovery completed', {
+        job_id: jobId,
+        total_discovered: totalDiscovered,
+        status: 'processing',
+      });
     } catch (error: unknown) {
       const errorMessage = getErrorMessage(error);
       await this.prisma.ingestionJob.update({
@@ -122,7 +134,13 @@ export class IngestionJobService {
         data: { status: DatabaseJobState.FAILED, errorMessage },
       });
       this.logger.error(
-        `Job ${jobId} failed during discovery: ${errorMessage}`,
+        'Ingestion job discovery failed',
+        {
+          job_id: jobId,
+          status: 'failed',
+          error_message: errorMessage,
+        },
+        error,
       );
       throw error;
     }
@@ -238,6 +256,7 @@ export class IngestionJobService {
       driveFileId: file.id,
       stage: AssetState.DISCOVERED,
       attempt: 1,
+      traceId: randomUUID(),
       timestamp: new Date().toISOString(),
     };
 
@@ -277,6 +296,17 @@ export class IngestionJobService {
         where: { id: jobId },
         data: { totalDuplicate: { increment: 1 } },
       });
+    });
+
+    this.metrics.incrementDuplicates();
+    this.metrics.incrementSuccessful();
+
+    this.logger.log('Duplicate asset linked', {
+      job_id: jobId,
+      ingestion_file_id: ingestionFileId,
+      asset_id: assetId,
+      processing_stage: AssetState.COMPLETED,
+      status: 'duplicate',
     });
   }
 

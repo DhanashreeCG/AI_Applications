@@ -1,9 +1,9 @@
 # AI Asset Ingestion — Session Handoff Context
 
 > **Last updated:** 2026-07-30  
-> **Progress:** TASK-001 through TASK-017 **COMPLETED** (17/20)  
-> **Next task:** TASK-018 — Observability, Structured Logging & Metrics  
-> **Test status:** 67/67 Jest unit tests passing, production build clean
+> **Progress:** TASK-001 through TASK-018 **COMPLETED** (18/20)  
+> **Next task:** TASK-019 — Integration & End-to-End Suite  
+> **Test status:** 72/72 Jest unit tests passing, production build clean
 
 ---
 
@@ -55,7 +55,8 @@ src/
 │   ├── ai/                          # GeminiVisionProvider, OpenAiEmbeddingProvider, VisionMetadataService
 │   ├── search/                      # VectorStorageService, SearchService, SearchController
 │   ├── cache/                       # RedisCacheService
-│   └── pipeline/                    # AssetPipelineService, PipelineRetryService, PipelineController
+│   ├── pipeline/                    # AssetPipelineService, PipelineRetryService, PipelineController
+│   └── observability/               # StructuredLoggerService, PipelineMetricsService, LoggingInterceptor
 ```
 
 ---
@@ -96,6 +97,7 @@ GENERATING_EMBEDDING → COMPLETED
 | POST | `/search` | Semantic search + metadata filters |
 | POST | `/search/cache/flush` | Flush Redis search/metadata cache |
 | POST | `/pipeline/dlq/replay` | Replay a DLQ message to original stage queue |
+| GET | `/observability/metrics` | Pipeline counters and stage latency snapshot |
 
 ---
 
@@ -144,16 +146,13 @@ PIPELINE_MAX_ATTEMPTS, PIPELINE_BACKOFF_BASE_SECONDS, PIPELINE_BACKOFF_MAX_SECON
 | 015 | SearchService + SearchController |
 | 016 | RedisCacheService + search cache integration |
 | 017 | AssetPipelineService + retry/DLQ/replay |
+| 018 | Structured JSON logging, HTTP interceptor, pipeline metrics |
 
 ---
 
-## Remaining Tasks (018–020)
+## Remaining Tasks (019–020)
 
-### TASK-018 — Observability, Structured Logging & Metrics (NEXT)
-- Structured JSON logging with `job_id`, `asset_id`, `stage`, `sqs_message_id`, latency, retry tracking
-- Logging interceptors, job progress metrics, failure tracing
-
-### TASK-019 — Integration & End-to-End Suite
+### TASK-019 — Integration & End-to-End Suite (NEXT)
 - Full pipeline E2E: Drive discovery → Search API response
 - Unit + integration test coverage across modules
 
@@ -166,10 +165,9 @@ PIPELINE_MAX_ATTEMPTS, PIPELINE_BACKOFF_BASE_SECONDS, PIPELINE_BACKOFF_MAX_SECON
 ## Known Gaps / Not Yet Built
 
 1. **SQS consumer workers** — `AssetPipelineService.processQueueMessage()` exists but no long-running poller/worker is wired to consume SQS messages automatically
-2. **Structured observability** — TASK-018 pending; currently uses default NestJS Logger
-3. **E2E tests** — TASK-019 pending
-4. **HNSW vector index** — commented out in migration SQL; cosine search works but may need index at scale
-5. **Audit table in IMPLEMENTATION_PLAN.md §2** — outdated (shows components as "Not present" that are now implemented); roadmap table (§Task Breakdown) is accurate
+2. **E2E tests** — TASK-019 pending
+3. **HNSW vector index** — commented out in migration SQL; cosine search works but may need index at scale
+4. **Audit table in IMPLEMENTATION_PLAN.md §2** — outdated (shows components as "Not present" that are now implemented); roadmap table (§Task Breakdown) is accurate
 
 ---
 
@@ -178,7 +176,7 @@ PIPELINE_MAX_ATTEMPTS, PIPELINE_BACKOFF_BASE_SECONDS, PIPELINE_BACKOFF_MAX_SECON
 ```bash
 npm install          # also runs prisma generate via postinstall
 npm run build
-npm test             # 67 tests
+npm test             # 72 tests
 npm run start:dev
 ```
 
@@ -205,7 +203,7 @@ Continue the AI Asset Ingestion project in D:/AI Team/AI_Applications.
 
 Read docs/asset-ingestion/HANDOFF_CONTEXT.md and docs/asset-ingestion/IMPLEMENTATION_PLAN.md.
 
-Implement TASK-018 (Observability, Structured Logging & Metrics).
+Implement TASK-019 (Integration & End-to-End Suite).
 Update IMPLEMENTATION_PLAN.md when done. Do not review unnecessary files.
 Run npm test and npm run build to verify.
 ```
