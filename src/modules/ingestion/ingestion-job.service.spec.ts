@@ -3,8 +3,11 @@ import { IngestionJobService } from './ingestion-job.service';
 import { PrismaService } from '../database/prisma.service';
 import { SqsQueueService } from '../queue/sqs-queue.service';
 import { GoogleDriveAdapterService } from '../drive/google-drive-adapter.service';
+import { ImageProcessorService } from '../image/image-processor.service';
+import { S3StorageService } from '../storage/s3-storage.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { JobState, AssetState } from '../../common/enums/asset-state.enum';
+import { Readable } from 'stream';
 
 describe('IngestionJobService', () => {
   let service: IngestionJobService;
@@ -18,7 +21,16 @@ describe('IngestionJobService', () => {
     },
     ingestionFile: {
       upsert: jest.fn(),
+      update: jest.fn(),
     },
+    asset: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+    assetSource: {
+      create: jest.fn(),
+    },
+    $transaction: jest.fn(async (fn: any) => fn(mockPrisma)),
   };
 
   const mockSqsQueue = {
@@ -27,6 +39,17 @@ describe('IngestionJobService', () => {
 
   const mockDriveAdapter = {
     listFilesInFolderRecursive: jest.fn(),
+    downloadFileStream: jest.fn(),
+  };
+
+  const mockImageProcessor = {
+    validateImage: jest.fn(),
+    calculateSha256: jest.fn(),
+  };
+
+  const mockStorageService = {
+    generateCanonicalKey: jest.fn().mockReturnValue('assets/asset-001/original/cat.png'),
+    getDefaultBucket: jest.fn().mockReturnValue('ai-asset-ingestion'),
   };
 
   beforeEach(async () => {
@@ -38,6 +61,8 @@ describe('IngestionJobService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: SqsQueueService, useValue: mockSqsQueue },
         { provide: GoogleDriveAdapterService, useValue: mockDriveAdapter },
+        { provide: ImageProcessorService, useValue: mockImageProcessor },
+        { provide: S3StorageService, useValue: mockStorageService },
       ],
     }).compile();
 
@@ -92,6 +117,21 @@ describe('IngestionJobService', () => {
       jobId,
       status: AssetState.DISCOVERED,
     });
+    mockDriveAdapter.downloadFileStream.mockResolvedValue(Readable.from([Buffer.from('fake-image-bytes')]));
+    mockImageProcessor.validateImage.mockResolvedValue({
+      isValid: true,
+      mimeType: 'image/png',
+      width: 1200,
+      height: 900,
+      size: 16,
+      orientation: 'landscape',
+      format: 'png',
+    });
+    mockImageProcessor.calculateSha256.mockResolvedValue('hash-123');
+    mockPrisma.asset.findUnique.mockResolvedValue(null);
+    mockPrisma.asset.create.mockResolvedValue({ id: 'asset-001' });
+    mockPrisma.assetSource.create.mockResolvedValue({});
+    mockPrisma.ingestionFile.update.mockResolvedValue({});
 
     await service.startJobDiscovery(jobId);
 
@@ -99,12 +139,21 @@ describe('IngestionJobService', () => {
       'folder-abc',
     );
     expect(mockPrisma.ingestionFile.upsert).toHaveBeenCalledTimes(1);
+    expect(mockDriveAdapter.downloadFileStream).toHaveBeenCalledWith('file-001');
+    expect(mockPrisma.asset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        contentHash: 'hash-123',
+        mimeType: 'image/png',
+        s3ObjectKey: 'assets/asset-001/original/cat.png',
+      }),
+    });
     expect(mockSqsQueue.sendMessage).toHaveBeenCalledWith(
       'ingestion',
       expect.objectContaining({
         jobId,
         driveFileId: 'file-001',
         stage: AssetState.DISCOVERED,
+        assetId: 'asset-001',
       }),
     );
     expect(mockPrisma.ingestionJob.update).toHaveBeenLastCalledWith({
@@ -155,6 +204,61 @@ describe('IngestionJobService', () => {
     expect(mockPrisma.ingestionJob.update).toHaveBeenLastCalledWith({
       where: { id: 'job-001' },
       data: { status: JobState.FAILED, errorMessage: 'Drive unavailable' },
+    });
+  });
+
+  it('should reuse an existing asset when the hash already exists', async () => {
+    const jobId = 'job-001';
+    mockPrisma.ingestionJob.findUnique.mockResolvedValue({
+      id: jobId,
+      rootFolderId: 'folder-abc',
+      status: JobState.CREATED,
+    });
+    mockPrisma.ingestionJob.update.mockResolvedValue({});
+    mockDriveAdapter.listFilesInFolderRecursive.mockResolvedValue([
+      {
+        id: 'file-001',
+        name: 'cat.png',
+        mimeType: 'image/png',
+        size: BigInt(2048),
+        folderPath: 'Animals',
+        createdAt: new Date(),
+      },
+    ]);
+    mockPrisma.ingestionFile.upsert.mockResolvedValue({
+      id: 'ingest-file-001',
+      driveFileId: 'file-001',
+      jobId,
+      status: AssetState.DISCOVERED,
+    });
+    mockDriveAdapter.downloadFileStream.mockResolvedValue(Readable.from([Buffer.from('fake-image-bytes')]));
+    mockImageProcessor.validateImage.mockResolvedValue({
+      isValid: true,
+      mimeType: 'image/png',
+      width: 1200,
+      height: 900,
+      size: 16,
+      orientation: 'landscape',
+      format: 'png',
+    });
+    mockImageProcessor.calculateSha256.mockResolvedValue('hash-123');
+    mockPrisma.asset.findUnique.mockResolvedValue({ id: 'asset-existing' });
+    mockPrisma.assetSource.create.mockResolvedValue({});
+    mockPrisma.ingestionFile.update.mockResolvedValue({});
+
+    await service.startJobDiscovery(jobId);
+
+    expect(mockPrisma.asset.create).not.toHaveBeenCalled();
+    expect(mockSqsQueue.sendMessage).not.toHaveBeenCalled();
+    expect(mockPrisma.assetSource.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        assetId: 'asset-existing',
+        ingestionFileId: 'ingest-file-001',
+      }),
+    });
+    expect(mockPrisma.ingestionJob.update).toHaveBeenCalledWith({
+      where: { id: jobId },
+      data: expect.objectContaining({ totalDuplicate: { increment: 1 } }),
     });
   });
 });

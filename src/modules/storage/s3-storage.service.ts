@@ -37,6 +37,10 @@ export class S3StorageService implements StorageProvider {
     this.s3Client = new S3Client(clientConfig);
   }
 
+  public getDefaultBucket(): string {
+    return this.defaultBucket;
+  }
+
   public generateCanonicalKey(assetId: string, filename: string): string {
     const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
     return `assets/${assetId}/original/${sanitizedFilename}`;

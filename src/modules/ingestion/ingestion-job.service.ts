@@ -15,6 +15,11 @@ import { AssetState } from '../../common/enums/asset-state.enum';
 import { CreateIngestionJobDto } from './dto/create-ingestion-job.dto';
 import { IngestionProcessMessage } from '../../common/interfaces/sqs-messages.interface';
 import { getErrorMessage } from '../../common/utils/error-message';
+import { ImageProcessorService } from '../image/image-processor.service';
+import { S3StorageService } from '../storage/s3-storage.service';
+import { Readable } from 'stream';
+import { DriveFileItem } from '../drive/interfaces/drive-file.interface';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class IngestionJobService {
@@ -24,6 +29,8 @@ export class IngestionJobService {
     private readonly prisma: PrismaService,
     private readonly sqsQueue: SqsQueueService,
     private readonly driveAdapter: GoogleDriveAdapterService,
+    private readonly imageProcessor: ImageProcessorService,
+    private readonly storageService: S3StorageService,
   ) {}
 
   async createJob(dto: CreateIngestionJobDto) {
@@ -93,17 +100,7 @@ export class IngestionJobService {
           update: {},
         });
 
-        // Dispatch SQS message for downstream processing
-        const payload: IngestionProcessMessage = {
-          jobId,
-          ingestionFileId: ingestionFile.id,
-          driveFileId: file.id,
-          stage: AssetState.DISCOVERED,
-          attempt: 1,
-          timestamp: new Date().toISOString(),
-        };
-
-        await this.sqsQueue.sendMessage('ingestion', payload);
+        await this.processDiscoveredFile(jobId, ingestionFile.id, file);
         totalDiscovered++;
       }
 
@@ -145,5 +142,149 @@ export class IngestionJobService {
       take: boundedLimit,
       include: { _count: { select: { files: true } } },
     });
+  }
+
+  private async processDiscoveredFile(
+    jobId: string,
+    ingestionFileId: string,
+    file: DriveFileItem,
+  ): Promise<void> {
+    const downloadStream = await this.driveAdapter.downloadFileStream(file.id);
+    const buffer = await this.streamToBuffer(downloadStream);
+    const validation = await this.imageProcessor.validateImage(buffer);
+
+    if (!validation.isValid) {
+      throw new Error(
+        `Invalid image for Drive file ${file.id}: ${validation.error || 'Unknown validation error'}`.trim(),
+      );
+    }
+
+    const contentHash = await this.imageProcessor.calculateSha256(buffer);
+    const existingAsset = await this.prisma.asset.findUnique({
+      where: { contentHash },
+    });
+
+    if (existingAsset) {
+      await this.attachToExistingAsset({
+        jobId,
+        ingestionFileId,
+        assetId: existingAsset.id,
+        contentHash,
+        file,
+      });
+      return;
+    }
+
+    const assetId = randomUUID();
+    const bucket = this.storageService.getDefaultBucket();
+    const objectKey = this.storageService.generateCanonicalKey(assetId, file.name);
+
+    const asset = await this.prisma.$transaction(async (tx) => {
+      const createdAsset = await tx.asset.create({
+        data: {
+          id: assetId,
+          contentHash,
+          mimeType: validation.mimeType || file.mimeType,
+          fileSize: BigInt(buffer.length),
+          width: validation.width ?? null,
+          height: validation.height ?? null,
+          s3Bucket: bucket,
+          s3ObjectKey: objectKey,
+          status: DatabaseAssetState.UPLOADING_TO_S3,
+        },
+      });
+
+      await tx.assetSource.create({
+        data: {
+          assetId: createdAsset.id,
+          ingestionFileId,
+          sourceType: 'GOOGLE_DRIVE',
+          externalId: file.id,
+          folderPath: file.folderPath || null,
+          filename: file.name,
+        },
+      });
+
+      await tx.ingestionFile.update({
+        where: { id: ingestionFileId },
+        data: { assetId: createdAsset.id, status: DatabaseAssetState.UPLOADING_TO_S3 },
+      });
+
+      return createdAsset;
+    }).catch(async (error: any) => {
+      if (error?.code !== 'P2002') {
+        throw error;
+      }
+
+      const existing = await this.prisma.asset.findUnique({ where: { contentHash } });
+      if (!existing) {
+        throw error;
+      }
+
+      await this.attachToExistingAsset({
+        jobId,
+        ingestionFileId,
+        assetId: existing.id,
+        contentHash,
+        file,
+      });
+      return existing;
+    });
+
+    const payload: IngestionProcessMessage = {
+      jobId,
+      ingestionFileId,
+      assetId: asset.id,
+      driveFileId: file.id,
+      stage: AssetState.DISCOVERED,
+      attempt: 1,
+      timestamp: new Date().toISOString(),
+    };
+
+    await this.sqsQueue.sendMessage('ingestion', payload);
+  }
+
+  private async attachToExistingAsset(params: {
+    jobId: string;
+    ingestionFileId: string;
+    assetId: string;
+    contentHash: string;
+    file: DriveFileItem;
+  }): Promise<void> {
+    const { jobId, ingestionFileId, assetId, file } = params;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.assetSource.create({
+        data: {
+          assetId,
+          ingestionFileId,
+          sourceType: 'GOOGLE_DRIVE',
+          externalId: file.id,
+          folderPath: file.folderPath || null,
+          filename: file.name,
+        },
+      });
+
+      await tx.ingestionFile.update({
+        where: { id: ingestionFileId },
+        data: {
+          assetId,
+          status: DatabaseAssetState.COMPLETED,
+        },
+      });
+
+      await tx.ingestionJob.update({
+        where: { id: jobId },
+        data: { totalDuplicate: { increment: 1 } },
+      });
+    });
+  }
+
+  private async streamToBuffer(stream: Readable): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   }
 }

@@ -43,7 +43,7 @@
 | **TASK-006** | Google Drive Source Adapter Service | **COMPLETED** | TASK-004 | Implement `GoogleDriveAdapter` to list folder items recursively, download streams, handle Drive auth/throttling. | Unit/mock tests pass for folder scanning and file retrieval. |
 | **TASK-007** | Image Validation, Hashing & Processing | **COMPLETED** | TASK-005 | Implement `ImageProcessorService` using Sharp for file validation, SHA-256 calculation, and AI resizing. | SHA-256 hash verified, corrupt file handling tested. |
 | **TASK-008** | Ingestion Job Management & File Discovery | **COMPLETED** | TASK-006, TASK-007 | Implement `IngestionJobService` to create jobs, scan Drive folders, and populate `IngestionFile` records. | Jobs track scanning, total discovered, and created records correctly. |
-| **TASK-009** | Duplicate Detection Logic | **TODO** | TASK-008 | Implement hash-based duplicate check logic. Associate duplicate Drive references with existing canonical S3 assets. | Identical SHA-256 files reuse existing S3 asset & skip AI calls. |
+| **TASK-009** | Duplicate Detection Logic | **COMPLETED** | TASK-008 | Implement hash-based duplicate check logic. Associate duplicate Drive references with existing canonical S3 assets. | Identical SHA-256 files reuse existing S3 asset & skip AI calls. |
 | **TASK-010** | AWS SQS Queue Service & Topology | **TODO** | TASK-004 | Implement `SqsQueueService` for producer/consumer dispatch across stage queues. | Messages dispatched and received reliably with SQS mock/integration. |
 | **TASK-011** | Vision AI Provider Abstraction (Gemini Flash) | **TODO** | TASK-004 | Implement `VisionProvider` interface and `GeminiVisionProvider` for structured JSON metadata extraction. | Vision provider returns schema-compliant JSON with mock/live tests. |
 | **TASK-012** | Vision Metadata Generation & Parsing | **TODO** | TASK-011 | Implement metadata generation, search description synthesis, versioning (`metadata_version`, `prompt_version`). | Search descriptions generated deterministically and saved in DB. |
@@ -140,6 +140,14 @@
   - `tsconfig.json`
 * **Notes**: Implemented job creation and status APIs, recursive Drive discovery, idempotent `IngestionFile` upserts, downstream SQS dispatch, failure-state persistence, and Prisma 7 PostgreSQL adapter wiring. Added Prisma client generation to installation scripts. All 16 unit tests and the production build pass. `AssetSource` creation remains deferred until TASK-009 resolves each file to a canonical asset.
 
-### Next Immediate Task: TASK-009 — Duplicate Detection Logic
-* **Dependencies**: `TASK-008`
-* **Goal**: Download and validate discovered files, calculate SHA-256 hashes, reuse existing canonical assets when hashes match, create `AssetSource` links, and enqueue only new assets for S3 upload and AI processing.
+### TASK-009 — Duplicate Detection Logic
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/ingestion/ingestion-job.service.ts`
+  - `src/modules/ingestion/ingestion-job.service.spec.ts`
+  - `src/modules/storage/s3-storage.service.ts`
+* **Notes**: Added hash-based duplicate detection during ingestion, downloaded Drive files for validation and SHA-256 hashing, reused existing canonical assets when the content hash matched, created `AssetSource` links for duplicate Drive references, and enqueued downstream processing only for new assets. Focused ingestion tests and the full Jest suite passed, along with the production build.
+
+### Next Immediate Task: TASK-010 — AWS SQS Queue Service & Topology
+* **Dependencies**: `TASK-004`
+* **Goal**: Implement `SqsQueueService` for producer/consumer dispatch across stage queues.
