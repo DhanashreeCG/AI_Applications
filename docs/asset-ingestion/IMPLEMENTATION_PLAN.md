@@ -46,7 +46,7 @@
 | **TASK-009** | Duplicate Detection Logic | **COMPLETED** | TASK-008 | Implement hash-based duplicate check logic. Associate duplicate Drive references with existing canonical S3 assets. | Identical SHA-256 files reuse existing S3 asset & skip AI calls. |
 | **TASK-010** | AWS SQS Queue Service & Topology | **COMPLETED** | TASK-004 | Implement `SqsQueueService` for producer/consumer dispatch across stage queues. | Messages dispatched and received reliably with SQS mock/integration. |
 | **TASK-011** | Vision AI Provider Abstraction (Gemini Flash) | **COMPLETED** | TASK-004 | Implement `VisionProvider` interface and `GeminiVisionProvider` for structured JSON metadata extraction. | Vision provider returns schema-compliant JSON with mock/live tests. |
-| **TASK-012** | Vision Metadata Generation & Parsing | **TODO** | TASK-011 | Implement metadata generation, search description synthesis, versioning (`metadata_version`, `prompt_version`). | Search descriptions generated deterministically and saved in DB. |
+| **TASK-012** | Vision Metadata Generation & Parsing | **COMPLETED** | TASK-011 | Implement metadata generation, search description synthesis, versioning (`metadata_version`, `prompt_version`). | Search descriptions generated deterministically and saved in DB. |
 | **TASK-013** | Text Embedding AI Provider Abstraction (OpenAI) | **TODO** | TASK-004 | Implement `EmbeddingProvider` interface and `OpenAiEmbeddingProvider` for 1536-dim text-embedding-3-small. | Embeddings generated correctly, text hash tracked for invalidate/recompute. |
 | **TASK-014** | PGVector Vector Indexing & Similarity Search | **TODO** | TASK-003, TASK-013 | Implement `VectorStorageService` storing 1536-dim vectors in PGVector, execute cosine similarity search queries. | Vector search returns top-k nearest assets by cosine distance. |
 | **TASK-015** | Semantic Search API & Metadata Filtering | **TODO** | TASK-014 | Implement `SearchController` & `SearchService` supporting text search + hybrid filters (category, orientation, color, etc.). | Combined semantic + metadata filtered search results returned correctly. |
@@ -173,6 +173,16 @@
   - `package-lock.json`
 * **Notes**: Installed `@google/genai`. Implemented `GeminiVisionProvider` with structured JSON output via Gemini Flash (`gemini-2.5-flash`), prompt/schema constants, metadata parsing/normalization, deterministic search-description synthesis, and `VISION_PROVIDER` injection token. Added Gemini model/prompt-version config. All 34 Jest tests and the production build pass.
 
-### Next Immediate Task: TASK-012 — Vision Metadata Generation & Parsing
-* **Dependencies**: `TASK-011`
-* **Goal**: Implement metadata generation, search description synthesis, versioning (`metadata_version`, `prompt_version`), and DB persistence.
+### TASK-012 — Vision Metadata Generation & Parsing
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/ai/services/vision-metadata.service.ts`
+  - `src/modules/ai/services/vision-metadata.service.spec.ts`
+  - `src/modules/ai/utils/vision-metadata.mapper.ts`
+  - `src/modules/ai/utils/vision-metadata.mapper.spec.ts`
+  - `src/modules/ai/ai.module.ts`
+* **Notes**: Implemented `VisionMetadataService` to download S3 assets, generate AI-optimized vision input, call `GeminiVisionProvider`, synthesize deterministic search descriptions, hash them for dedupe/invalidation, and upsert `AssetMetadata` with `metadataVersion`/`promptVersion` tracking. Updates asset status to `METADATA_GENERATED`. All 38 Jest tests and the production build pass.
+
+### Next Immediate Task: TASK-013 — Text Embedding AI Provider Abstraction (OpenAI)
+* **Dependencies**: `TASK-004`
+* **Goal**: Implement `EmbeddingProvider` interface and `OpenAiEmbeddingProvider` for 1536-dim text-embedding-3-small.
