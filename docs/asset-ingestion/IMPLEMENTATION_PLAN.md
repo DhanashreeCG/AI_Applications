@@ -44,7 +44,7 @@
 | **TASK-007** | Image Validation, Hashing & Processing | **COMPLETED** | TASK-005 | Implement `ImageProcessorService` using Sharp for file validation, SHA-256 calculation, and AI resizing. | SHA-256 hash verified, corrupt file handling tested. |
 | **TASK-008** | Ingestion Job Management & File Discovery | **COMPLETED** | TASK-006, TASK-007 | Implement `IngestionJobService` to create jobs, scan Drive folders, and populate `IngestionFile` records. | Jobs track scanning, total discovered, and created records correctly. |
 | **TASK-009** | Duplicate Detection Logic | **COMPLETED** | TASK-008 | Implement hash-based duplicate check logic. Associate duplicate Drive references with existing canonical S3 assets. | Identical SHA-256 files reuse existing S3 asset & skip AI calls. |
-| **TASK-010** | AWS SQS Queue Service & Topology | **TODO** | TASK-004 | Implement `SqsQueueService` for producer/consumer dispatch across stage queues. | Messages dispatched and received reliably with SQS mock/integration. |
+| **TASK-010** | AWS SQS Queue Service & Topology | **COMPLETED** | TASK-004 | Implement `SqsQueueService` for producer/consumer dispatch across stage queues. | Messages dispatched and received reliably with SQS mock/integration. |
 | **TASK-011** | Vision AI Provider Abstraction (Gemini Flash) | **TODO** | TASK-004 | Implement `VisionProvider` interface and `GeminiVisionProvider` for structured JSON metadata extraction. | Vision provider returns schema-compliant JSON with mock/live tests. |
 | **TASK-012** | Vision Metadata Generation & Parsing | **TODO** | TASK-011 | Implement metadata generation, search description synthesis, versioning (`metadata_version`, `prompt_version`). | Search descriptions generated deterministically and saved in DB. |
 | **TASK-013** | Text Embedding AI Provider Abstraction (OpenAI) | **TODO** | TASK-004 | Implement `EmbeddingProvider` interface and `OpenAiEmbeddingProvider` for 1536-dim text-embedding-3-small. | Embeddings generated correctly, text hash tracked for invalidate/recompute. |
@@ -148,6 +148,14 @@
   - `src/modules/storage/s3-storage.service.ts`
 * **Notes**: Added hash-based duplicate detection during ingestion, downloaded Drive files for validation and SHA-256 hashing, reused existing canonical assets when the content hash matched, created `AssetSource` links for duplicate Drive references, and enqueued downstream processing only for new assets. Focused ingestion tests and the full Jest suite passed, along with the production build.
 
-### Next Immediate Task: TASK-010 — AWS SQS Queue Service & Topology
+### TASK-010 — AWS SQS Queue Service & Topology
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/queue/queue-topology.constants.ts`
+  - `src/modules/queue/sqs-queue.service.ts`
+  - `src/modules/queue/sqs-queue.service.spec.ts`
+* **Notes**: Defined stage-to-queue topology mapping (`ingestion` → `s3Upload` → `aiMetadata` → `embedding` + `dlq`). Enhanced `SqsQueueService` with typed stage dispatch helpers, typed receive/delete/visibility APIs, queue depth inspection, and configured-queue discovery. Added 10 unit tests with mocked AWS SDK client. All 27 Jest tests and the production build pass.
+
+### Next Immediate Task: TASK-011 — Vision AI Provider Abstraction (Gemini Flash)
 * **Dependencies**: `TASK-004`
-* **Goal**: Implement `SqsQueueService` for producer/consumer dispatch across stage queues.
+* **Goal**: Implement `VisionProvider` interface and `GeminiVisionProvider` for structured JSON metadata extraction.

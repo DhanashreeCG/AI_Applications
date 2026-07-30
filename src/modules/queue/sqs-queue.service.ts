@@ -6,15 +6,34 @@ import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
   GetQueueAttributesCommand,
+  ChangeMessageVisibilityCommand,
   SQSClientConfig,
 } from '@aws-sdk/client-sqs';
+import {
+  AiMetadataMessage,
+  DlqMessage,
+  EmbeddingMessage,
+  IngestionProcessMessage,
+  S3UploadMessage,
+} from '../../common/interfaces/sqs-messages.interface';
+import {
+  PROCESSING_QUEUES,
+  QueueMessageMap,
+  QueueName,
+} from './queue-topology.constants';
+
+export interface ReceivedMessage<T> {
+  messageId: string;
+  receiptHandle: string;
+  body: T;
+  attributes: Record<string, string>;
+}
 
 @Injectable()
 export class SqsQueueService {
   private readonly logger = new Logger(SqsQueueService.name);
   private readonly sqsClient: SQSClient;
-
-  private readonly queueUrls: Record<string, string>;
+  private readonly queueUrls: Record<QueueName, string>;
 
   constructor(private readonly configService: ConfigService) {
     const region = this.configService.get<string>('aws.region') || 'us-east-1';
@@ -44,19 +63,59 @@ export class SqsQueueService {
     };
   }
 
-  public async sendMessage<T extends object>(
-    queueName: keyof typeof this.queueUrls,
-    payload: T,
-    options?: {
-      groupId?: string;
-      deduplicationId?: string;
-      delaySeconds?: number;
+  public getConfiguredQueues(): QueueName[] {
+    return (Object.keys(this.queueUrls) as QueueName[]).filter(
+      (name) => this.queueUrls[name].length > 0,
+    );
+  }
+
+  public getProcessingQueues(): QueueName[] {
+    return PROCESSING_QUEUES.filter((name) => this.queueUrls[name].length > 0);
+  }
+
+  public async dispatchIngestion(
+    message: Omit<IngestionProcessMessage, 'timestamp'> & {
+      timestamp?: string;
     },
+    options?: SendMessageOptions,
   ): Promise<string> {
-    const queueUrl = this.queueUrls[queueName];
-    if (!queueUrl) {
-      throw new Error(`Queue URL for "${queueName}" is not configured`);
-    }
+    return this.sendStageMessage('ingestion', message, options);
+  }
+
+  public async dispatchS3Upload(
+    message: Omit<S3UploadMessage, 'timestamp'> & { timestamp?: string },
+    options?: SendMessageOptions,
+  ): Promise<string> {
+    return this.sendStageMessage('s3Upload', message, options);
+  }
+
+  public async dispatchAiMetadata(
+    message: Omit<AiMetadataMessage, 'timestamp'> & { timestamp?: string },
+    options?: SendMessageOptions,
+  ): Promise<string> {
+    return this.sendStageMessage('aiMetadata', message, options);
+  }
+
+  public async dispatchEmbedding(
+    message: Omit<EmbeddingMessage, 'timestamp'> & { timestamp?: string },
+    options?: SendMessageOptions,
+  ): Promise<string> {
+    return this.sendStageMessage('embedding', message, options);
+  }
+
+  public async dispatchToDlq(
+    message: Omit<DlqMessage, 'timestamp'> & { timestamp?: string },
+    options?: SendMessageOptions,
+  ): Promise<string> {
+    return this.sendStageMessage('dlq', message, options);
+  }
+
+  public async sendMessage<Q extends QueueName>(
+    queueName: Q,
+    payload: QueueMessageMap[Q],
+    options?: SendMessageOptions,
+  ): Promise<string> {
+    const queueUrl = this.requireQueueUrl(queueName);
 
     const command = new SendMessageCommand({
       QueueUrl: queueUrl,
@@ -74,21 +133,19 @@ export class SqsQueueService {
     return messageId;
   }
 
-  public async receiveMessages<T>(
-    queueName: keyof typeof this.queueUrls,
+  public async receiveMessages<Q extends QueueName>(
+    queueName: Q,
     maxMessages = 10,
     waitTimeSeconds = 20,
-  ): Promise<Array<{ messageId: string; receiptHandle: string; body: T }>> {
-    const queueUrl = this.queueUrls[queueName];
-    if (!queueUrl) {
-      throw new Error(`Queue URL for "${queueName}" is not configured`);
-    }
+  ): Promise<ReceivedMessage<QueueMessageMap[Q]>[]> {
+    const queueUrl = this.requireQueueUrl(queueName);
 
     const command = new ReceiveMessageCommand({
       QueueUrl: queueUrl,
       MaxNumberOfMessages: maxMessages,
       WaitTimeSeconds: waitTimeSeconds,
       AttributeNames: ['All'],
+      MessageAttributeNames: ['All'],
     });
 
     const response = await this.sqsClient.send(command);
@@ -97,26 +154,44 @@ export class SqsQueueService {
     return messages.map((msg) => ({
       messageId: msg.MessageId || '',
       receiptHandle: msg.ReceiptHandle || '',
-      body: JSON.parse(msg.Body || '{}') as T,
+      body: JSON.parse(msg.Body || '{}') as QueueMessageMap[Q],
+      attributes: msg.Attributes || {},
     }));
   }
 
   public async deleteMessage(
-    queueName: keyof typeof this.queueUrls,
+    queueName: QueueName,
     receiptHandle: string,
   ): Promise<void> {
-    const queueUrl = this.queueUrls[queueName];
+    const queueUrl = this.requireQueueUrl(queueName);
+
     await this.sqsClient.send(
       new DeleteMessageCommand({
         QueueUrl: queueUrl,
         ReceiptHandle: receiptHandle,
       }),
     );
+
+    this.logger.debug(`Deleted message from ${queueName} queue`);
   }
 
-  public async getQueueDepth(
-    queueName: keyof typeof this.queueUrls,
-  ): Promise<number> {
+  public async changeMessageVisibility(
+    queueName: QueueName,
+    receiptHandle: string,
+    visibilityTimeoutSeconds: number,
+  ): Promise<void> {
+    const queueUrl = this.requireQueueUrl(queueName);
+
+    await this.sqsClient.send(
+      new ChangeMessageVisibilityCommand({
+        QueueUrl: queueUrl,
+        ReceiptHandle: receiptHandle,
+        VisibilityTimeout: visibilityTimeoutSeconds,
+      }),
+    );
+  }
+
+  public async getQueueDepth(queueName: QueueName): Promise<number> {
     const queueUrl = this.queueUrls[queueName];
     if (!queueUrl) return 0;
 
@@ -132,4 +207,31 @@ export class SqsQueueService {
       10,
     );
   }
+
+  private async sendStageMessage<Q extends QueueName>(
+    queueName: Q,
+    message: Omit<QueueMessageMap[Q], 'timestamp'> & { timestamp?: string },
+    options?: SendMessageOptions,
+  ): Promise<string> {
+    const payload = {
+      ...message,
+      timestamp: message.timestamp ?? new Date().toISOString(),
+    } as QueueMessageMap[Q];
+
+    return this.sendMessage(queueName, payload, options);
+  }
+
+  private requireQueueUrl(queueName: QueueName): string {
+    const queueUrl = this.queueUrls[queueName];
+    if (!queueUrl) {
+      throw new Error(`Queue URL for "${queueName}" is not configured`);
+    }
+    return queueUrl;
+  }
+}
+
+export interface SendMessageOptions {
+  groupId?: string;
+  deduplicationId?: string;
+  delaySeconds?: number;
 }
