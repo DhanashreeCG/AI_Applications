@@ -27,6 +27,8 @@ export interface AppConfig {
   };
   ai: {
     geminiApiKey?: string;
+    geminiModel: string;
+    geminiPromptVersion: string;
     openaiApiKey?: string;
   };
 }
@@ -60,6 +62,8 @@ export default (): AppConfig => ({
   },
   ai: {
     geminiApiKey: process.env.GEMINI_API_KEY,
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    geminiPromptVersion: process.env.GEMINI_PROMPT_VERSION || 'v1',
     openaiApiKey: process.env.OPENAI_API_KEY,
   },
 });

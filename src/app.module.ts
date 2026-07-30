@@ -9,6 +9,7 @@ import { DriveModule } from './modules/drive/drive.module';
 import { ImageModule } from './modules/image/image.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
+import { AiModule } from './modules/ai/ai.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { IngestionModule } from './modules/ingestion/ingestion.module';
     DriveModule,
     ImageModule,
     QueueModule,
+    AiModule,
     IngestionModule,
   ],
   controllers: [AppController],
