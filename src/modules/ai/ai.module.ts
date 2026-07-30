@@ -2,20 +2,33 @@ import { Module } from '@nestjs/common';
 import { StorageModule } from '../storage/storage.module';
 import { ImageModule } from '../image/image.module';
 import { GeminiVisionProvider } from './providers/gemini-vision.provider';
+import { OpenAiEmbeddingProvider } from './providers/openai-embedding.provider';
 import { VisionMetadataService } from './services/vision-metadata.service';
 
 export const VISION_PROVIDER = Symbol('VISION_PROVIDER');
+export const EMBEDDING_PROVIDER = Symbol('EMBEDDING_PROVIDER');
 
 @Module({
   imports: [StorageModule, ImageModule],
   providers: [
     GeminiVisionProvider,
+    OpenAiEmbeddingProvider,
     VisionMetadataService,
     {
       provide: VISION_PROVIDER,
       useExisting: GeminiVisionProvider,
     },
+    {
+      provide: EMBEDDING_PROVIDER,
+      useExisting: OpenAiEmbeddingProvider,
+    },
   ],
-  exports: [GeminiVisionProvider, VisionMetadataService, VISION_PROVIDER],
+  exports: [
+    GeminiVisionProvider,
+    OpenAiEmbeddingProvider,
+    VisionMetadataService,
+    VISION_PROVIDER,
+    EMBEDDING_PROVIDER,
+  ],
 })
 export class AiModule {}

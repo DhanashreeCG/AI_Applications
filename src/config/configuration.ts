@@ -30,6 +30,7 @@ export interface AppConfig {
     geminiModel: string;
     geminiPromptVersion: string;
     openaiApiKey?: string;
+    openaiEmbeddingModel: string;
   };
 }
 
@@ -65,5 +66,7 @@ export default (): AppConfig => ({
     geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     geminiPromptVersion: process.env.GEMINI_PROMPT_VERSION || 'v1',
     openaiApiKey: process.env.OPENAI_API_KEY,
+    openaiEmbeddingModel:
+      process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
   },
 });

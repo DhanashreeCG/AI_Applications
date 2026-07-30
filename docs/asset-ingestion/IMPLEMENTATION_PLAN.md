@@ -47,7 +47,7 @@
 | **TASK-010** | AWS SQS Queue Service & Topology | **COMPLETED** | TASK-004 | Implement `SqsQueueService` for producer/consumer dispatch across stage queues. | Messages dispatched and received reliably with SQS mock/integration. |
 | **TASK-011** | Vision AI Provider Abstraction (Gemini Flash) | **COMPLETED** | TASK-004 | Implement `VisionProvider` interface and `GeminiVisionProvider` for structured JSON metadata extraction. | Vision provider returns schema-compliant JSON with mock/live tests. |
 | **TASK-012** | Vision Metadata Generation & Parsing | **COMPLETED** | TASK-011 | Implement metadata generation, search description synthesis, versioning (`metadata_version`, `prompt_version`). | Search descriptions generated deterministically and saved in DB. |
-| **TASK-013** | Text Embedding AI Provider Abstraction (OpenAI) | **TODO** | TASK-004 | Implement `EmbeddingProvider` interface and `OpenAiEmbeddingProvider` for 1536-dim text-embedding-3-small. | Embeddings generated correctly, text hash tracked for invalidate/recompute. |
+| **TASK-013** | Text Embedding AI Provider Abstraction (OpenAI) | **COMPLETED** | TASK-004 | Implement `EmbeddingProvider` interface and `OpenAiEmbeddingProvider` for 1536-dim text-embedding-3-small. | Embeddings generated correctly, text hash tracked for invalidate/recompute. |
 | **TASK-014** | PGVector Vector Indexing & Similarity Search | **TODO** | TASK-003, TASK-013 | Implement `VectorStorageService` storing 1536-dim vectors in PGVector, execute cosine similarity search queries. | Vector search returns top-k nearest assets by cosine distance. |
 | **TASK-015** | Semantic Search API & Metadata Filtering | **TODO** | TASK-014 | Implement `SearchController` & `SearchService` supporting text search + hybrid filters (category, orientation, color, etc.). | Combined semantic + metadata filtered search results returned correctly. |
 | **TASK-016** | Redis Caching Layer for Search | **TODO** | TASK-004, TASK-015 | Implement `RedisCacheService` for caching search results & hot asset metadata with TTL. | Search response cached in Redis, cache bypass on flush works seamlessly. |
@@ -183,6 +183,21 @@
   - `src/modules/ai/ai.module.ts`
 * **Notes**: Implemented `VisionMetadataService` to download S3 assets, generate AI-optimized vision input, call `GeminiVisionProvider`, synthesize deterministic search descriptions, hash them for dedupe/invalidation, and upsert `AssetMetadata` with `metadataVersion`/`promptVersion` tracking. Updates asset status to `METADATA_GENERATED`. All 38 Jest tests and the production build pass.
 
-### Next Immediate Task: TASK-013 — Text Embedding AI Provider Abstraction (OpenAI)
-* **Dependencies**: `TASK-004`
-* **Goal**: Implement `EmbeddingProvider` interface and `OpenAiEmbeddingProvider` for 1536-dim text-embedding-3-small.
+### TASK-013 — Text Embedding AI Provider Abstraction (OpenAI)
+* **Status**: `COMPLETED`
+* **Files Changed**:
+  - `src/modules/ai/constants/embedding.constants.ts`
+  - `src/modules/ai/providers/openai-embedding.provider.ts`
+  - `src/modules/ai/providers/openai-embedding.provider.spec.ts`
+  - `src/modules/ai/utils/source-text-hash.util.ts`
+  - `src/modules/ai/utils/source-text-hash.util.spec.ts`
+  - `src/modules/ai/ai.module.ts`
+  - `src/config/configuration.ts`
+  - `.env.example`
+  - `package.json`
+  - `package-lock.json`
+* **Notes**: Installed `openai`. Implemented `OpenAiEmbeddingProvider` for `text-embedding-3-small` (1536-dim) with SHA-256 `sourceTextHash` tracking for invalidate/recompute, dimension validation, and `EMBEDDING_PROVIDER` injection token. Added `OPENAI_EMBEDDING_MODEL` config. All 44 Jest tests and the production build pass.
+
+### Next Immediate Task: TASK-014 — PGVector Vector Indexing & Similarity Search
+* **Dependencies**: `TASK-003`, `TASK-013`
+* **Goal**: Implement `VectorStorageService` storing 1536-dim vectors in PGVector and execute cosine similarity search queries.
