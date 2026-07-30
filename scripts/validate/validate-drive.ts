@@ -18,7 +18,7 @@ void runValidation(async (app) => {
       name: file.name,
       mimeType: file.mimeType,
       folderPath: file.folderPath,
-      size: file.size,
+      size: file.size !== undefined ? file.size.toString() : null,
     })),
   };
 });

@@ -26,6 +26,7 @@ export interface AppConfig {
   googleDrive: {
     clientEmail?: string;
     privateKey?: string;
+    credentialsPath?: string;
     apiKey?: string;
   };
   ai: {
@@ -82,6 +83,7 @@ export default (): AppConfig => ({
   googleDrive: {
     clientEmail: process.env.GOOGLE_DRIVE_CLIENT_EMAIL,
     privateKey: process.env.GOOGLE_DRIVE_PRIVATE_KEY,
+    credentialsPath: process.env.GOOGLE_DRIVE_CREDENTIALS_PATH,
     apiKey: process.env.GOOGLE_DRIVE_API_KEY,
   },
   ai: {

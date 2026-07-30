@@ -1,8 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { google, drive_v3 } from 'googleapis';
 import { Readable } from 'stream';
+import {
+  assertValidPrivateKeyPem,
+  normalizePrivateKey,
+} from '../../common/utils/normalize-private-key.util';
 import { DriveFileItem } from './interfaces/drive-file.interface';
+
+interface ServiceAccountCredentials {
+  client_email?: string;
+  private_key?: string;
+}
 
 @Injectable()
 export class GoogleDriveAdapterService {
@@ -14,25 +25,87 @@ export class GoogleDriveAdapterService {
   }
 
   private initDriveClient(): void {
+    const credentialsPath = this.configService.get<string>(
+      'googleDrive.credentialsPath',
+    );
     const clientEmail = this.configService.get<string>('googleDrive.clientEmail');
     const privateKeyRaw = this.configService.get<string>('googleDrive.privateKey');
     const apiKey = this.configService.get<string>('googleDrive.apiKey');
 
-    if (clientEmail && privateKeyRaw) {
-      const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
-      const auth = new google.auth.JWT({
-        email: clientEmail,
-        key: privateKey,
-        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
-      });
-      this.driveClient = google.drive({ version: 'v3', auth });
-      this.logger.log('Google Drive Service Account JWT authentication initialized');
+    const fromFile = credentialsPath
+      ? this.loadCredentialsFromFile(credentialsPath)
+      : null;
+
+    const email = fromFile?.client_email ?? clientEmail;
+    const privateKey = fromFile?.private_key
+      ? normalizePrivateKey(fromFile.private_key)
+      : privateKeyRaw
+        ? normalizePrivateKey(privateKeyRaw)
+        : undefined;
+
+    if (email && privateKey) {
+      assertValidPrivateKeyPem(privateKey);
+
+      try {
+        const auth = new google.auth.JWT({
+          email,
+          key: privateKey,
+          scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+        });
+        this.driveClient = google.drive({ version: 'v3', auth });
+        this.logger.log(
+          fromFile
+            ? `Google Drive Service Account loaded from ${credentialsPath}`
+            : 'Google Drive Service Account JWT authentication initialized',
+        );
+      } catch (error) {
+        throw this.wrapCredentialError(error);
+      }
     } else if (apiKey) {
       this.driveClient = google.drive({ version: 'v3', auth: apiKey });
       this.logger.log('Google Drive API Key authentication initialized');
     } else {
       this.logger.warn('Google Drive credentials not provided. Mocking/Unit test mode.');
     }
+  }
+
+  private loadCredentialsFromFile(
+    credentialsPath: string,
+  ): ServiceAccountCredentials {
+    const absolutePath = resolve(credentialsPath);
+
+    try {
+      const raw = readFileSync(absolutePath, 'utf8');
+      const parsed = JSON.parse(raw) as ServiceAccountCredentials;
+
+      if (!parsed.client_email || !parsed.private_key) {
+        throw new Error(
+          'Service account JSON must include client_email and private_key',
+        );
+      }
+
+      return parsed;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('client_email')) {
+        throw error;
+      }
+
+      throw new Error(
+        `Failed to read Google Drive credentials from ${absolutePath}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private wrapCredentialError(error: unknown): Error {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes('DECODER routines::unsupported')) {
+      return new Error(
+        'Invalid GOOGLE_DRIVE_PRIVATE_KEY format. Use GOOGLE_DRIVE_CREDENTIALS_PATH pointing to the downloaded service account JSON file, or paste the full PEM on one line with \\n escapes between lines.',
+      );
+    }
+
+    return error instanceof Error ? error : new Error(message);
   }
 
   public setDriveClient(client: drive_v3.Drive): void {
@@ -48,7 +121,13 @@ export class GoogleDriveAdapterService {
     }
 
     const items: DriveFileItem[] = [];
-    await this.scanFolder(rootFolderId, currentPath, items);
+
+    try {
+      await this.scanFolder(rootFolderId, currentPath, items);
+    } catch (error) {
+      throw this.wrapCredentialError(error);
+    }
+
     return items;
   }
 

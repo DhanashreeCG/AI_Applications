@@ -20,6 +20,7 @@ import { ObservabilityModule } from './modules/observability/observability.modul
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
+      envFilePath: ['.env'],
     }),
     ObservabilityModule,
     DatabaseModule,

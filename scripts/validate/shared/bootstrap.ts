@@ -3,8 +3,20 @@ import { NestFactory } from '@nestjs/core';
 import { INestApplicationContext } from '@nestjs/common';
 import { AppModule } from '../../../src/app.module';
 
-export async function createValidationContext(): Promise<INestApplicationContext> {
+function isCacheValidationScript(): boolean {
+  return process.argv.some((arg) => arg.includes('validate-cache'));
+}
+
+export function configureValidationEnvironment(): void {
   process.env.SQS_WORKER_ENABLED = 'false';
+
+  if (!isCacheValidationScript()) {
+    process.env.REDIS_ENABLED = 'false';
+  }
+}
+
+export async function createValidationContext(): Promise<INestApplicationContext> {
+  configureValidationEnvironment();
 
   return NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
@@ -26,8 +38,16 @@ export function parseArg(name: string): string | undefined {
   return undefined;
 }
 
+function jsonReplacer(_key: string, value: unknown): unknown {
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+
+  return value;
+}
+
 export function printResult(result: unknown): void {
-  console.log(JSON.stringify(result, null, 2));
+  console.log(JSON.stringify(result, jsonReplacer, 2));
 }
 
 export async function runValidation(
