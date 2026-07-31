@@ -9,10 +9,12 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IngestionJobService } from './ingestion-job.service';
 import { CreateIngestionJobDto } from './dto/create-ingestion-job.dto';
 import { getErrorMessage } from '../../common/utils/error-message';
 
+@ApiTags('asset-ingestion')
 @Controller('asset-ingestion')
 export class IngestionController {
   private readonly logger = new Logger(IngestionController.name);
@@ -21,6 +23,7 @@ export class IngestionController {
 
   @Post('jobs')
   @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create ingestion job (FULL or DRY_RUN)' })
   async createJob(@Body() dto: CreateIngestionJobDto) {
     const job = await this.ingestionJobService.createJob(dto);
     // Trigger discovery asynchronously (fire-and-forget)
@@ -43,11 +46,13 @@ export class IngestionController {
   }
 
   @Get('jobs')
+  @ApiOperation({ summary: 'List ingestion jobs' })
   async listJobs() {
     return this.ingestionJobService.listJobs();
   }
 
   @Get('jobs/:id')
+  @ApiOperation({ summary: 'Get ingestion job by id' })
   async getJob(@Param('id') id: string) {
     const job = await this.ingestionJobService.getJob(id);
     if (!job) {
@@ -57,6 +62,7 @@ export class IngestionController {
   }
 
   @Get('jobs/:id/estimate')
+  @ApiOperation({ summary: 'Get cost estimate for a job' })
   async estimateJob(@Param('id') id: string) {
     return this.ingestionJobService.estimateJob(id);
   }
