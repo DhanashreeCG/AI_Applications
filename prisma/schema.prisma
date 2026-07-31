@@ -44,6 +44,7 @@ model IngestionJob {
   id              String    @id @default(cuid())
   sourceType      String    @default("GOOGLE_DRIVE")
   rootFolderId    String
+  mode            String    @default("FULL")
   status          JobState  @default(CREATED)
   totalDiscovered Int       @default(0)
   totalProcessed  Int       @default(0)
@@ -51,6 +52,11 @@ model IngestionJob {
   totalSkipped    Int       @default(0)
   totalFailed     Int       @default(0)
   totalDuplicate  Int       @default(0)
+  expectedGeminiCalls    Int?
+  expectedEmbeddingCalls Int?
+  estimatedGeminiCostUsd Float?
+  estimatedOpenAiCostUsd Float?
+  estimatedTotalCostUsd  Float?
   errorMessage    String?
   startedAt       DateTime?
   completedAt     DateTime?
@@ -107,6 +113,7 @@ model Asset {
   metadata       AssetMetadata?
   embeddings     AssetEmbedding[]
   attempts       ProcessingAttempt[]
+  aiUsages       AiUsage[]
 
   @@index([status])
   @@index([contentHash])
@@ -122,6 +129,7 @@ model AssetSource {
   externalId      String
   folderPath      String?
   filename        String
+  linkReason      String?
   createdAt       DateTime      @default(now())
 
   @@index([assetId])
@@ -194,4 +202,31 @@ model ProcessingAttempt {
   @@index([assetId])
   @@index([ingestionFileId])
   @@index([stage])
+}
+
+model AiUsage {
+  id             String   @id @default(cuid())
+  assetId        String?
+  asset          Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  stage          String
+  provider       String
+  model          String
+  requestId      String?
+  startedAt      DateTime
+  completedAt    DateTime?
+  latencyMs      Int?
+  inputTokens    Int?
+  outputTokens   Int?
+  totalTokens    Int?
+  estimatedCost  Float?
+  status         String
+  retryCount     Int      @default(0)
+  errorType      String?
+  createdAt      DateTime @default(now())
+
+  @@index([assetId])
+  @@index([stage])
+  @@index([provider])
+  @@index([status])
+  @@index([createdAt])
 }

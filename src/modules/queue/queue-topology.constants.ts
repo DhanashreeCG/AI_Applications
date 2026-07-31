@@ -29,9 +29,15 @@ export type QueueMessageMap = {
 export const STAGE_QUEUE_MAP: Partial<Record<AssetState, QueueName>> = {
   [AssetState.DISCOVERED]: 'ingestion',
   [AssetState.DOWNLOADING]: 'ingestion',
+  [AssetState.VALIDATING]: 'ingestion',
+  [AssetState.HASHING]: 'ingestion',
+  [AssetState.DUPLICATE_CHECK]: 'ingestion',
   [AssetState.UPLOADING_TO_S3]: 's3Upload',
+  [AssetState.STORED_IN_S3]: 's3Upload',
   [AssetState.GENERATING_METADATA]: 'aiMetadata',
+  [AssetState.METADATA_GENERATED]: 'embedding',
   [AssetState.GENERATING_EMBEDDING]: 'embedding',
+  [AssetState.EMBEDDING_GENERATED]: 'embedding',
 };
 
 export const PROCESSING_QUEUES: QueueName[] = [

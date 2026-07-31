@@ -30,6 +30,12 @@ describe('OpenAiEmbeddingProvider', () => {
           return 'test-openai-key';
         case 'ai.openaiEmbeddingModel':
           return 'text-embedding-3-small';
+        case 'ai.openaiMaxRps':
+          return 100;
+        case 'ai.circuitFailureThreshold':
+          return 5;
+        case 'ai.circuitCooldownMs':
+          return 60000;
         default:
           return null;
       }

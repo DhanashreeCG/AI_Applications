@@ -34,7 +34,11 @@ export class IngestionController {
     return {
       jobId: job.id,
       status: job.status,
-      message: 'Ingestion job started',
+      mode: job.mode,
+      message:
+        job.mode === 'DRY_RUN'
+          ? 'Dry-run ingestion job started'
+          : 'Ingestion job started',
     };
   }
 
@@ -50,5 +54,10 @@ export class IngestionController {
       throw new NotFoundException(`Job ${id} not found`);
     }
     return job;
+  }
+
+  @Get('jobs/:id/estimate')
+  async estimateJob(@Param('id') id: string) {
+    return this.ingestionJobService.estimateJob(id);
   }
 }

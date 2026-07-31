@@ -4,6 +4,7 @@ import { ImageModule } from '../image/image.module';
 import { GeminiVisionProvider } from './providers/gemini-vision.provider';
 import { OpenAiEmbeddingProvider } from './providers/openai-embedding.provider';
 import { VisionMetadataService } from './services/vision-metadata.service';
+import { AiUsageService } from './services/ai-usage.service';
 
 export const VISION_PROVIDER = Symbol('VISION_PROVIDER');
 export const EMBEDDING_PROVIDER = Symbol('EMBEDDING_PROVIDER');
@@ -14,6 +15,7 @@ export const EMBEDDING_PROVIDER = Symbol('EMBEDDING_PROVIDER');
     GeminiVisionProvider,
     OpenAiEmbeddingProvider,
     VisionMetadataService,
+    AiUsageService,
     {
       provide: VISION_PROVIDER,
       useExisting: GeminiVisionProvider,
@@ -27,6 +29,7 @@ export const EMBEDDING_PROVIDER = Symbol('EMBEDDING_PROVIDER');
     GeminiVisionProvider,
     OpenAiEmbeddingProvider,
     VisionMetadataService,
+    AiUsageService,
     VISION_PROVIDER,
     EMBEDDING_PROVIDER,
   ],

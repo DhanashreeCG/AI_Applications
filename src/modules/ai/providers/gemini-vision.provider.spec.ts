@@ -41,6 +41,12 @@ describe('GeminiVisionProvider', () => {
           return 'gemini-2.5-flash';
         case 'ai.geminiPromptVersion':
           return 'v1';
+        case 'ai.geminiMaxRps':
+          return 100;
+        case 'ai.circuitFailureThreshold':
+          return 5;
+        case 'ai.circuitCooldownMs':
+          return 60000;
         default:
           return null;
       }

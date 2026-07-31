@@ -16,7 +16,29 @@ describe('classifyProcessingError', () => {
     ).toEqual(
       expect.objectContaining({
         retryable: false,
-        errorCode: 'NON_RETRYABLE_ERROR',
+        errorCode: 'VALIDATION_ERROR',
+      }),
+    );
+  });
+
+  it('should classify auth failures as non-retryable', () => {
+    expect(classifyProcessingError(new Error('HTTP 401 Unauthorized'))).toEqual(
+      expect.objectContaining({
+        retryable: false,
+        errorCode: 'AUTH_ERROR',
+      }),
+    );
+  });
+
+  it('should classify circuit open as retryable rate limit', () => {
+    expect(
+      classifyProcessingError(
+        new Error('Circuit open for google-gemini; retry after 5000ms (429/transient)'),
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        retryable: true,
+        errorCode: 'RATE_LIMITED',
       }),
     );
   });

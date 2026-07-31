@@ -11,16 +11,21 @@ import { PrismaService } from '../database/prisma.service';
 import { SqsQueueService } from '../queue/sqs-queue.service';
 import { GoogleDriveAdapterService } from '../drive/google-drive-adapter.service';
 import { AssetState } from '../../common/enums/asset-state.enum';
-import { CreateIngestionJobDto } from './dto/create-ingestion-job.dto';
+import { CreateIngestionJobDto, IngestionJobMode } from './dto/create-ingestion-job.dto';
 import { IngestionProcessMessage } from '../../common/interfaces/sqs-messages.interface';
 import { getErrorMessage } from '../../common/utils/error-message';
 import { ImageProcessorService } from '../image/image-processor.service';
-import { S3StorageService } from '../storage/s3-storage.service';
 import { Readable } from 'stream';
 import { DriveFileItem } from '../drive/interfaces/drive-file.interface';
 import { randomUUID } from 'crypto';
 import { StructuredLoggerService } from '../observability/structured-logger.service';
 import { PipelineMetricsService } from '../observability/pipeline-metrics.service';
+import {
+  CostEstimate,
+  CostEstimatorService,
+} from './services/cost-estimator.service';
+
+const SHA256_MATCH = 'SHA256_MATCH';
 
 @Injectable()
 export class IngestionJobService {
@@ -31,15 +36,17 @@ export class IngestionJobService {
     private readonly sqsQueue: SqsQueueService,
     private readonly driveAdapter: GoogleDriveAdapterService,
     private readonly imageProcessor: ImageProcessorService,
-    private readonly storageService: S3StorageService,
     private readonly metrics: PipelineMetricsService,
+    private readonly costEstimator: CostEstimatorService,
   ) {}
 
   async createJob(dto: CreateIngestionJobDto) {
+    const mode: IngestionJobMode = dto.mode ?? 'FULL';
     const job = await this.prisma.ingestionJob.create({
       data: {
         sourceType: dto.sourceType,
         rootFolderId: dto.rootFolderId,
+        mode,
         status: DatabaseJobState.CREATED,
       },
     });
@@ -47,6 +54,7 @@ export class IngestionJobService {
     this.logger.log('Ingestion job created', {
       job_id: job.id,
       root_folder_id: dto.rootFolderId,
+      mode,
       status: 'created',
     });
     return job;
@@ -68,6 +76,8 @@ export class IngestionJobService {
       );
     }
 
+    const isDryRun = job.mode === 'DRY_RUN';
+
     await this.prisma.ingestionJob.update({
       where: { id: jobId },
       data: {
@@ -80,17 +90,23 @@ export class IngestionJobService {
     this.logger.log('Ingestion job discovery started', {
       job_id: jobId,
       root_folder_id: job.rootFolderId,
+      mode: job.mode,
       status: 'scanning',
     });
 
     let totalDiscovered = 0;
+    let totalDuplicate = 0;
+    let needingMetadata = 0;
+    let needingEmbedding = 0;
+    let alreadyProcessed = 0;
+    let totalFailed = 0;
+
     try {
       const driveFiles = await this.driveAdapter.listFilesInFolderRecursive(
         job.rootFolderId,
       );
 
       for (const file of driveFiles) {
-        // Preserve the record when a failed discovery is retried.
         const ingestionFile = await this.prisma.ingestionFile.upsert({
           where: {
             jobId_driveFileId: { jobId, driveFileId: file.id },
@@ -108,8 +124,69 @@ export class IngestionJobService {
           update: {},
         });
 
-        await this.processDiscoveredFile(jobId, ingestionFile.id, file);
         totalDiscovered++;
+
+        if (isDryRun) {
+          const result = await this.processDryRunFile(
+            jobId,
+            ingestionFile.id,
+            file,
+          );
+          if (result === 'duplicate') {
+            totalDuplicate++;
+          } else if (result === 'failed') {
+            totalFailed++;
+          } else if (result === 'already_processed') {
+            totalDuplicate++;
+            alreadyProcessed++;
+          } else {
+            needingMetadata++;
+            needingEmbedding++;
+          }
+        } else {
+          await this.enqueueDiscoveredFile(jobId, ingestionFile.id, file);
+        }
+      }
+
+      this.metrics.incrementDiscovered(totalDiscovered);
+
+      if (isDryRun) {
+        const estimate = this.costEstimator.estimateFromCounts({
+          discovered: totalDiscovered,
+          duplicates: totalDuplicate,
+          needingMetadata,
+          needingEmbedding,
+          alreadyProcessed,
+        });
+
+        await this.prisma.ingestionJob.update({
+          where: { id: jobId },
+          data: {
+            status: DatabaseJobState.COMPLETED,
+            totalDiscovered,
+            totalDuplicate,
+            totalFailed,
+            totalProcessed: totalDiscovered,
+            totalSuccessful: totalDiscovered - totalFailed,
+            expectedGeminiCalls: estimate.expectedGeminiCalls,
+            expectedEmbeddingCalls: estimate.expectedEmbeddingCalls,
+            estimatedGeminiCostUsd: estimate.estimatedGeminiCostUsd,
+            estimatedOpenAiCostUsd: estimate.estimatedOpenAiCostUsd,
+            estimatedTotalCostUsd: estimate.estimatedTotalCostUsd,
+            completedAt: new Date(),
+          },
+        });
+
+        this.logger.log('Dry-run ingestion completed', {
+          job_id: jobId,
+          total_discovered: totalDiscovered,
+          duplicates: totalDuplicate,
+          expected_gemini_calls: estimate.expectedGeminiCalls,
+          expected_embedding_calls: estimate.expectedEmbeddingCalls,
+          estimated_total_cost_usd: estimate.estimatedTotalCostUsd,
+          status: 'completed',
+        });
+        return;
       }
 
       await this.prisma.ingestionJob.update({
@@ -119,8 +196,6 @@ export class IngestionJobService {
           totalDiscovered,
         },
       });
-
-      this.metrics.incrementDiscovered(totalDiscovered);
 
       this.logger.log('Ingestion job discovery completed', {
         job_id: jobId,
@@ -162,97 +237,50 @@ export class IngestionJobService {
     });
   }
 
-  private async processDiscoveredFile(
+  async estimateJob(jobId: string): Promise<CostEstimate> {
+    const job = await this.prisma.ingestionJob.findUnique({
+      where: { id: jobId },
+    });
+    if (!job) {
+      throw new NotFoundException(`Ingestion job ${jobId} not found`);
+    }
+
+    if (
+      job.expectedGeminiCalls != null &&
+      job.expectedEmbeddingCalls != null &&
+      job.estimatedTotalCostUsd != null
+    ) {
+      return {
+        imagesDiscovered: job.totalDiscovered,
+        duplicates: job.totalDuplicate,
+        uniqueImages: Math.max(0, job.totalDiscovered - job.totalDuplicate),
+        alreadyProcessed: 0,
+        newAssets: Math.max(
+          0,
+          job.totalDiscovered - job.totalDuplicate,
+        ),
+        expectedGeminiCalls: job.expectedGeminiCalls,
+        expectedEmbeddingCalls: job.expectedEmbeddingCalls,
+        estimatedGeminiCostUsd: job.estimatedGeminiCostUsd ?? 0,
+        estimatedOpenAiCostUsd: job.estimatedOpenAiCostUsd ?? 0,
+        estimatedTotalCostUsd: job.estimatedTotalCostUsd,
+      };
+    }
+
+    return this.costEstimator.estimateForJob(jobId);
+  }
+
+  /**
+   * Metadata-only discovery: enqueue for worker (no Drive download here).
+   */
+  private async enqueueDiscoveredFile(
     jobId: string,
     ingestionFileId: string,
     file: DriveFileItem,
   ): Promise<void> {
-    const downloadStream = await this.driveAdapter.downloadFileStream(file.id);
-    const buffer = await this.streamToBuffer(downloadStream);
-    const validation = await this.imageProcessor.validateImage(buffer);
-
-    if (!validation.isValid) {
-      throw new Error(
-        `Invalid image for Drive file ${file.id}: ${validation.error || 'Unknown validation error'}`.trim(),
-      );
-    }
-
-    const contentHash = await this.imageProcessor.calculateSha256(buffer);
-    const existingAsset = await this.prisma.asset.findUnique({
-      where: { contentHash },
-    });
-
-    if (existingAsset) {
-      await this.attachToExistingAsset({
-        jobId,
-        ingestionFileId,
-        assetId: existingAsset.id,
-        contentHash,
-        file,
-      });
-      return;
-    }
-
-    const assetId = randomUUID();
-    const bucket = this.storageService.getDefaultBucket();
-    const objectKey = this.storageService.generateCanonicalKey(assetId, file.name);
-
-    const asset = await this.prisma.$transaction(async (tx) => {
-      const createdAsset = await tx.asset.create({
-        data: {
-          id: assetId,
-          contentHash,
-          mimeType: validation.mimeType || file.mimeType,
-          fileSize: BigInt(buffer.length),
-          width: validation.width ?? null,
-          height: validation.height ?? null,
-          s3Bucket: bucket,
-          s3ObjectKey: objectKey,
-          status: DatabaseAssetState.UPLOADING_TO_S3,
-        },
-      });
-
-      await tx.assetSource.create({
-        data: {
-          assetId: createdAsset.id,
-          ingestionFileId,
-          sourceType: 'GOOGLE_DRIVE',
-          externalId: file.id,
-          folderPath: file.folderPath || null,
-          filename: file.name,
-        },
-      });
-
-      await tx.ingestionFile.update({
-        where: { id: ingestionFileId },
-        data: { assetId: createdAsset.id, status: DatabaseAssetState.UPLOADING_TO_S3 },
-      });
-
-      return createdAsset;
-    }).catch(async (error: any) => {
-      if (error?.code !== 'P2002') {
-        throw error;
-      }
-
-      const existing = await this.prisma.asset.findUnique({ where: { contentHash } });
-      if (!existing) {
-        throw error;
-      }
-
-      await this.attachToExistingAsset({
-        jobId,
-        ingestionFileId,
-        assetId: existing.id,
-        contentHash,
-        file,
-      });
-      return existing;
-    });
-
     const payload: IngestionProcessMessage = {
       jobId,
       ingestionFileId,
-      assetId: asset.id,
       driveFileId: file.id,
       stage: AssetState.DISCOVERED,
       attempt: 1,
@@ -261,28 +289,111 @@ export class IngestionJobService {
     };
 
     await this.sqsQueue.sendMessage('ingestion', payload);
+
+    this.logger.log('Discovered file enqueued', {
+      job_id: jobId,
+      ingestion_file_id: ingestionFileId,
+      drive_file_id: file.id,
+      status: 'enqueued',
+    });
+  }
+
+  /**
+   * Dry-run: download once, hash, detect duplicates / already-processed.
+   * No S3 upload, Gemini, or OpenAI.
+   */
+  private async processDryRunFile(
+    jobId: string,
+    ingestionFileId: string,
+    file: DriveFileItem,
+  ): Promise<'unique' | 'duplicate' | 'already_processed' | 'failed'> {
+    try {
+      const downloadStream = await this.driveAdapter.downloadFileStream(file.id);
+      const buffer = await this.streamToBuffer(downloadStream);
+      const validation = await this.imageProcessor.validateImage(buffer);
+
+      if (!validation.isValid) {
+        await this.prisma.ingestionFile.update({
+          where: { id: ingestionFileId },
+          data: {
+            status: DatabaseAssetState.FAILED,
+            errorMessage: validation.error || 'Invalid image',
+          },
+        });
+        return 'failed';
+      }
+
+      const contentHash = await this.imageProcessor.calculateSha256(buffer);
+      const existingAsset = await this.prisma.asset.findUnique({
+        where: { contentHash },
+        include: { metadata: true, embeddings: true },
+      });
+
+      if (existingAsset) {
+        await this.attachToExistingAsset({
+          jobId,
+          ingestionFileId,
+          assetId: existingAsset.id,
+          file,
+        });
+
+        const hasMetadata = Boolean(existingAsset.metadata);
+        const hasEmbedding =
+          Array.isArray(existingAsset.embeddings) &&
+          existingAsset.embeddings.length > 0;
+
+        if (hasMetadata && hasEmbedding) {
+          return 'already_processed';
+        }
+
+        this.metrics.incrementDuplicates();
+        return 'duplicate';
+      }
+
+      await this.prisma.ingestionFile.update({
+        where: { id: ingestionFileId },
+        data: { status: DatabaseAssetState.DISCOVERED },
+      });
+
+      return 'unique';
+    } catch (error: unknown) {
+      await this.prisma.ingestionFile.update({
+        where: { id: ingestionFileId },
+        data: {
+          status: DatabaseAssetState.FAILED,
+          errorMessage: getErrorMessage(error),
+        },
+      });
+      return 'failed';
+    }
   }
 
   private async attachToExistingAsset(params: {
     jobId: string;
     ingestionFileId: string;
     assetId: string;
-    contentHash: string;
     file: DriveFileItem;
   }): Promise<void> {
     const { jobId, ingestionFileId, assetId, file } = params;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.assetSource.create({
-        data: {
-          assetId,
-          ingestionFileId,
-          sourceType: 'GOOGLE_DRIVE',
-          externalId: file.id,
-          folderPath: file.folderPath || null,
-          filename: file.name,
-        },
+      const existingSource = await tx.assetSource.findUnique({
+        where: { ingestionFileId },
       });
+
+      if (!existingSource) {
+        await tx.assetSource.create({
+          data: {
+            assetId,
+            ingestionFileId,
+            sourceType: 'GOOGLE_DRIVE',
+            externalId: file.id,
+            folderPath: file.folderPath || null,
+            filename: file.name,
+            linkReason: SHA256_MATCH,
+          },
+        });
+      }
 
       await tx.ingestionFile.update({
         where: { id: ingestionFileId },
@@ -291,20 +402,15 @@ export class IngestionJobService {
           status: DatabaseAssetState.COMPLETED,
         },
       });
-
-      await tx.ingestionJob.update({
-        where: { id: jobId },
-        data: { totalDuplicate: { increment: 1 } },
-      });
     });
-
-    this.metrics.incrementDuplicates();
-    this.metrics.incrementSuccessful();
 
     this.logger.log('Duplicate asset linked', {
       job_id: jobId,
       ingestion_file_id: ingestionFileId,
       asset_id: assetId,
+      existing_asset_id: assetId,
+      new_source: file.id,
+      reason: SHA256_MATCH,
       processing_stage: AssetState.COMPLETED,
       status: 'duplicate',
     });

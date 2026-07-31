@@ -148,6 +148,26 @@ export class VectorStorageService {
     return this.toStoredRecord(record);
   }
 
+  /**
+   * Returns true when an embedding with the given source text hash already
+   * has a stored vector — used to skip OpenAI before the provider call.
+   */
+  public async hasEmbeddingForHash(
+    assetId: string,
+    sourceTextHash: string,
+  ): Promise<boolean> {
+    const latest = await this.prisma.assetEmbedding.findFirst({
+      where: { assetId },
+      orderBy: { embeddingVersion: 'desc' },
+    });
+
+    if (!latest || latest.sourceTextHash !== sourceTextHash) {
+      return false;
+    }
+
+    return this.hasStoredVector(latest.id);
+  }
+
   public async deleteEmbedding(assetId: string): Promise<void> {
     const record = await this.prisma.assetEmbedding.findFirst({
       where: { assetId },

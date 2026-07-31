@@ -17,6 +17,7 @@ export class SqsWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly pollWaitSeconds: number;
   private readonly concurrency: number;
   private readonly shutdownTimeoutMs: number;
+  private readonly visibilityTimeoutSeconds: number;
   private running = false;
   private activeWorkers = 0;
   private readonly waitQueue: Array<() => void> = [];
@@ -34,6 +35,8 @@ export class SqsWorkerService implements OnModuleInit, OnModuleDestroy {
     this.concurrency = configService.get<number>('sqsWorker.concurrency') ?? 4;
     this.shutdownTimeoutMs =
       configService.get<number>('sqsWorker.shutdownTimeoutMs') ?? 30000;
+    this.visibilityTimeoutSeconds =
+      configService.get<number>('sqsWorker.visibilityTimeoutSeconds') ?? 900;
   }
 
   public async onModuleInit(): Promise<void> {
@@ -145,6 +148,14 @@ export class SqsWorkerService implements OnModuleInit, OnModuleDestroy {
     });
 
     try {
+      if (this.visibilityTimeoutSeconds > 0) {
+        await this.sqsQueue.changeMessageVisibility(
+          queueName,
+          message.receiptHandle,
+          this.visibilityTimeoutSeconds,
+        );
+      }
+
       await this.assetPipeline.processQueueMessage(
         queueName,
         body,

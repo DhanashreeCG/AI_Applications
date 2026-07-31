@@ -35,6 +35,12 @@ export interface AppConfig {
     geminiPromptVersion: string;
     openaiApiKey?: string;
     openaiEmbeddingModel: string;
+    costGeminiPerImageUsd: number;
+    costOpenAiEmbeddingPerCallUsd: number;
+    geminiMaxRps: number;
+    openaiMaxRps: number;
+    circuitFailureThreshold: number;
+    circuitCooldownMs: number;
   };
   pipeline: {
     maxAttempts: number;
@@ -46,6 +52,7 @@ export interface AppConfig {
     pollWaitSeconds: number;
     concurrency: number;
     shutdownTimeoutMs: number;
+    visibilityTimeoutSeconds: number;
   };
 }
 
@@ -93,6 +100,22 @@ export default (): AppConfig => ({
     openaiApiKey: process.env.OPENAI_API_KEY,
     openaiEmbeddingModel:
       process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
+    costGeminiPerImageUsd: parseFloat(
+      process.env.AI_COST_GEMINI_PER_IMAGE || '0.001',
+    ),
+    costOpenAiEmbeddingPerCallUsd: parseFloat(
+      process.env.AI_COST_OPENAI_EMBEDDING_PER_CALL || '0.00002',
+    ),
+    geminiMaxRps: parseFloat(process.env.GEMINI_MAX_RPS || '2'),
+    openaiMaxRps: parseFloat(process.env.OPENAI_MAX_RPS || '10'),
+    circuitFailureThreshold: parseInt(
+      process.env.AI_CIRCUIT_FAILURE_THRESHOLD || '5',
+      10,
+    ),
+    circuitCooldownMs: parseInt(
+      process.env.AI_CIRCUIT_COOLDOWN_MS || '60000',
+      10,
+    ),
   },
   pipeline: {
     maxAttempts: parseInt(process.env.PIPELINE_MAX_ATTEMPTS || '3', 10),
@@ -111,6 +134,10 @@ export default (): AppConfig => ({
     concurrency: parseInt(process.env.SQS_WORKER_CONCURRENCY || '4', 10),
     shutdownTimeoutMs: parseInt(
       process.env.SQS_WORKER_SHUTDOWN_TIMEOUT_MS || '30000',
+      10,
+    ),
+    visibilityTimeoutSeconds: parseInt(
+      process.env.SQS_VISIBILITY_TIMEOUT_SECONDS || '900',
       10,
     ),
   },

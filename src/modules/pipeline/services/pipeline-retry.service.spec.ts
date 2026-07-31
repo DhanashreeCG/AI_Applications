@@ -98,7 +98,7 @@ describe('PipelineRetryService', () => {
     expect(mockSqsQueue.dispatchToDlq).toHaveBeenCalledWith(
       expect.objectContaining({
         failedStage: AssetState.VALIDATING,
-        errorCode: 'NON_RETRYABLE_ERROR',
+        errorCode: 'VALIDATION_ERROR',
       }),
     );
     expect(mockPrisma.asset.update).toHaveBeenCalledWith({

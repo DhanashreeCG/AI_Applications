@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AssetState } from '@generated/prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -6,6 +7,7 @@ import { S3StorageService } from '../../storage/s3-storage.service';
 import { ImageProcessorService } from '../../image/image-processor.service';
 import { GeminiVisionProvider } from '../providers/gemini-vision.provider';
 import { VisionMetadataService } from './vision-metadata.service';
+import { AiUsageService } from './ai-usage.service';
 
 describe('VisionMetadataService', () => {
   let service: VisionMetadataService;
@@ -92,7 +94,14 @@ describe('VisionMetadataService', () => {
   };
 
   const mockVisionProvider = {
+    providerName: 'google-gemini',
+    modelName: 'gemini-2.5-flash',
     analyzeImage: jest.fn(),
+    getLastUsage: jest.fn().mockReturnValue({ latencyMs: 10 }),
+  };
+
+  const mockAiUsage = {
+    record: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -102,6 +111,7 @@ describe('VisionMetadataService', () => {
     mockImageProcessor.generateAiOptimizedRepresentation.mockReset();
     mockImageProcessor.calculateSha256.mockReset();
     mockVisionProvider.analyzeImage.mockReset();
+    mockAiUsage.record.mockClear();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -110,6 +120,16 @@ describe('VisionMetadataService', () => {
         { provide: S3StorageService, useValue: mockStorage },
         { provide: ImageProcessorService, useValue: mockImageProcessor },
         { provide: GeminiVisionProvider, useValue: mockVisionProvider },
+        { provide: AiUsageService, useValue: mockAiUsage },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === 'ai.costGeminiPerImageUsd') return 0.001;
+              return undefined;
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -150,10 +170,30 @@ describe('VisionMetadataService', () => {
       mimeType: 'image/jpeg',
       promptVersion: undefined,
     });
+    expect(mockAiUsage.record).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'success' }),
+    );
     expect(result).toEqual(mockSavedMetadata);
   });
 
-  it('should increment metadataVersion when metadata already exists', async () => {
+  it('should skip Gemini when metadata already exists', async () => {
+    const existing = { ...mockSavedMetadata, metadataVersion: 2 };
+    mockPrisma.asset.findUnique.mockResolvedValue({
+      ...mockAsset,
+      metadata: existing,
+    });
+
+    const result = await service.generateAndSaveForAsset('asset-001');
+
+    expect(mockVisionProvider.analyzeImage).not.toHaveBeenCalled();
+    expect(mockStorage.downloadBuffer).not.toHaveBeenCalled();
+    expect(mockAiUsage.record).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'skipped' }),
+    );
+    expect(result).toEqual(existing);
+  });
+
+  it('should regenerate when skipIfExists is false', async () => {
     mockPrisma.asset.findUnique.mockResolvedValue({
       ...mockAsset,
       metadata: { ...mockSavedMetadata, metadataVersion: 2 },
@@ -178,8 +218,11 @@ describe('VisionMetadataService', () => {
       }),
     );
 
-    const result = await service.generateAndSaveForAsset('asset-001');
+    const result = await service.generateAndSaveForAsset('asset-001', {
+      skipIfExists: false,
+    });
 
+    expect(mockVisionProvider.analyzeImage).toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         update: expect.objectContaining({
@@ -188,10 +231,6 @@ describe('VisionMetadataService', () => {
         }),
       }),
     );
-    expect(update).toHaveBeenCalledWith({
-      where: { id: 'asset-001' },
-      data: { status: AssetState.METADATA_GENERATED },
-    });
     expect(result.metadataVersion).toBe(3);
   });
 

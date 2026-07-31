@@ -15,6 +15,7 @@ describe('SqsWorkerService', () => {
     getProcessingQueues: jest.fn().mockReturnValue(['ingestion']),
     receiveMessages: jest.fn(),
     deleteMessage: jest.fn(),
+    changeMessageVisibility: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -135,6 +136,7 @@ describe('SqsWorkerService', () => {
               if (key === 'sqsWorker.pollWaitSeconds') return 0;
               if (key === 'sqsWorker.concurrency') return 1;
               if (key === 'sqsWorker.shutdownTimeoutMs') return 1000;
+              if (key === 'sqsWorker.visibilityTimeoutSeconds') return 900;
               return undefined;
             }),
           },

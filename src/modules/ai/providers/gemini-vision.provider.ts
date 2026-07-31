@@ -17,6 +17,16 @@ import {
 } from '../constants/vision-prompt.constants';
 import { buildSearchDescription } from '../utils/search-description.builder';
 import { parseVisionMetadata } from '../utils/vision-metadata.parser';
+import { CircuitBreaker } from '../utils/circuit-breaker.util';
+import { RateLimiter } from '../utils/rate-limiter.util';
+
+export interface GeminiUsageMetrics {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  requestId?: string;
+  latencyMs: number;
+}
 
 @Injectable()
 export class GeminiVisionProvider implements VisionProvider {
@@ -27,6 +37,9 @@ export class GeminiVisionProvider implements VisionProvider {
   private readonly logger = new Logger(GeminiVisionProvider.name);
   private client: GoogleGenAI | null;
   private readonly defaultPromptVersion: string;
+  private readonly rateLimiter: RateLimiter;
+  private readonly circuitBreaker: CircuitBreaker;
+  private lastUsage: GeminiUsageMetrics | null = null;
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('ai.geminiApiKey');
@@ -37,6 +50,19 @@ export class GeminiVisionProvider implements VisionProvider {
     this.defaultPromptVersion =
       this.configService.get<string>('ai.geminiPromptVersion') ||
       DEFAULT_VISION_PROMPT_VERSION;
+
+    const maxRps = this.configService.get<number>('ai.geminiMaxRps') ?? 2;
+    const failureThreshold =
+      this.configService.get<number>('ai.circuitFailureThreshold') ?? 5;
+    const cooldownMs =
+      this.configService.get<number>('ai.circuitCooldownMs') ?? 60000;
+
+    this.rateLimiter = new RateLimiter(maxRps);
+    this.circuitBreaker = new CircuitBreaker(
+      this.providerName,
+      failureThreshold,
+      cooldownMs,
+    );
 
     if (apiKey) {
       this.client = new GoogleGenAI({ apiKey });
@@ -55,6 +81,10 @@ export class GeminiVisionProvider implements VisionProvider {
     this.client = client;
   }
 
+  public getLastUsage(): GeminiUsageMetrics | null {
+    return this.lastUsage;
+  }
+
   public async analyzeImage(
     input: VisionProviderInput,
   ): Promise<VisionAnalysisResult> {
@@ -62,55 +92,82 @@ export class GeminiVisionProvider implements VisionProvider {
       throw new Error('Gemini vision client is not initialized');
     }
 
+    this.circuitBreaker.beforeRequest();
+    await this.rateLimiter.acquire();
+
     const promptVersion = input.promptVersion || this.defaultPromptVersion;
     const base64Image = input.imageBuffer.toString('base64');
+    const startedAt = Date.now();
 
-    const response = await this.client.models.generateContent({
-      model: this.modelName,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: VISION_ANALYSIS_PROMPT },
-            {
-              inlineData: {
-                mimeType: input.mimeType,
-                data: base64Image,
-              },
-            },
-          ],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: VISION_METADATA_JSON_SCHEMA,
-      },
-    });
-
-    const responseText = response.text?.trim();
-    if (!responseText) {
-      throw new Error('Gemini vision response did not contain JSON metadata');
-    }
-
-    let parsedResponse: unknown;
     try {
-      parsedResponse = JSON.parse(responseText);
-    } catch {
-      throw new Error('Gemini vision response was not valid JSON');
+      const response = await this.client.models.generateContent({
+        model: this.modelName,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: VISION_ANALYSIS_PROMPT },
+              {
+                inlineData: {
+                  mimeType: input.mimeType,
+                  data: base64Image,
+                },
+              },
+            ],
+          },
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: VISION_METADATA_JSON_SCHEMA,
+        },
+      });
+
+      const latencyMs = Date.now() - startedAt;
+      const usage = (response as { usageMetadata?: Record<string, number> })
+        .usageMetadata;
+      this.lastUsage = {
+        latencyMs,
+        inputTokens:
+          usage?.promptTokenCount ?? usage?.inputTokenCount ?? undefined,
+        outputTokens:
+          usage?.candidatesTokenCount ?? usage?.outputTokenCount ?? undefined,
+        totalTokens: usage?.totalTokenCount ?? undefined,
+        requestId: (response as { responseId?: string }).responseId,
+      };
+
+      const responseText = response.text?.trim();
+      if (!responseText) {
+        throw new Error('Gemini vision response did not contain JSON metadata');
+      }
+
+      let parsedResponse: unknown;
+      try {
+        parsedResponse = JSON.parse(responseText);
+      } catch {
+        throw new Error('Gemini vision response was not valid JSON');
+      }
+
+      const metadata = parseVisionMetadata(parsedResponse);
+      const searchDescription = buildSearchDescription(metadata);
+
+      this.circuitBreaker.recordSuccess();
+
+      return {
+        metadata,
+        searchDescription,
+        rawResponse: parsedResponse as Record<string, unknown>,
+        provider: this.providerName,
+        model: this.modelName,
+        modelVersion: this.modelVersion,
+        promptVersion,
+      };
+    } catch (error) {
+      this.lastUsage = {
+        latencyMs: Date.now() - startedAt,
+      };
+      this.circuitBreaker.recordFailure();
+      throw error;
     }
-
-    const metadata = parseVisionMetadata(parsedResponse);
-    const searchDescription = buildSearchDescription(metadata);
-
-    return {
-      metadata,
-      searchDescription,
-      rawResponse: parsedResponse as Record<string, unknown>,
-      provider: this.providerName,
-      model: this.modelName,
-      modelVersion: this.modelVersion,
-      promptVersion,
-    };
   }
 
   public buildSearchDescription(metadata: VisionMetadataDto): string {
