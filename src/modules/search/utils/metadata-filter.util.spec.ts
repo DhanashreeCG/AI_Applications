@@ -7,7 +7,8 @@ describe('matchesMetadataFilters', () => {
     styles: ["Children's illustration"],
     objects: ['elephant', 'balloon'],
     actions: ['holding'],
-    ageGroups: ['preschool', 'kindergarten'],
+    ageGroups: ['3-6', '6-10'],
+    grades: ['toddlers', 'kids'],
     educationalUses: ['worksheets'],
     background: 'White background',
   };
@@ -22,6 +23,7 @@ describe('matchesMetadataFilters', () => {
         orientation: 'Portrait',
         colors: ['RED'],
         objects: ['balloon'],
+        grades: ['KIDS'],
       }),
     ).toBe(true);
   });

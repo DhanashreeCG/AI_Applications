@@ -8,6 +8,7 @@ export interface VisionMetadataDto {
   composition: string;
   orientation: 'portrait' | 'landscape' | 'square' | string;
   age_groups: string[];
+  grades: Array<'toddlers' | 'kids' | 'teens' | 'adults'>;
   educational_uses: string[];
   search_keywords: string[];
   extra_tags?: Record<string, unknown>;

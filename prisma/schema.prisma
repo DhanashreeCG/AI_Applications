@@ -2,9 +2,9 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider     = "prisma-client"
-  output       = "../generated/prisma"
-  moduleFormat = "cjs"
+  provider            = "prisma-client"
+  output              = "../generated/prisma"
+  moduleFormat        = "cjs"
   importFileExtension = ""
 }
 
@@ -41,47 +41,47 @@ enum AssetState {
 }
 
 model IngestionJob {
-  id              String          @id @default(cuid())
-  sourceType      String          @default("GOOGLE_DRIVE")
+  id              String    @id @default(cuid())
+  sourceType      String    @default("GOOGLE_DRIVE")
   rootFolderId    String
-  status          JobState        @default(CREATED)
-  totalDiscovered Int             @default(0)
-  totalProcessed  Int             @default(0)
-  totalSuccessful Int             @default(0)
-  totalSkipped    Int             @default(0)
-  totalFailed     Int             @default(0)
-  totalDuplicate  Int             @default(0)
+  status          JobState  @default(CREATED)
+  totalDiscovered Int       @default(0)
+  totalProcessed  Int       @default(0)
+  totalSuccessful Int       @default(0)
+  totalSkipped    Int       @default(0)
+  totalFailed     Int       @default(0)
+  totalDuplicate  Int       @default(0)
   errorMessage    String?
   startedAt       DateTime?
   completedAt     DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  files           IngestionFile[]
+  files IngestionFile[]
 
   @@index([status])
   @@index([createdAt])
 }
 
 model IngestionFile {
-  id                 String             @id @default(cuid())
+  id                 String       @id @default(cuid())
   jobId              String
-  job                IngestionJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job                IngestionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   driveFileId        String
   filename           String
   mimeType           String?
   fileSize           BigInt?
   folderPath         String?
   driveFileCreatedAt DateTime?
-  status             AssetState         @default(DISCOVERED)
+  status             AssetState   @default(DISCOVERED)
   errorMessage       String?
   assetId            String?
-  asset              Asset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  asset              Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  assetSource        AssetSource?
-  attempts           ProcessingAttempt[]
+  assetSource AssetSource?
+  attempts    ProcessingAttempt[]
 
   @@unique([jobId, driveFileId])
   @@index([driveFileId])
@@ -90,17 +90,17 @@ model IngestionFile {
 }
 
 model Asset {
-  id             String              @id @default(cuid())
-  contentHash    String              @unique
-  mimeType       String
-  fileSize       BigInt
-  width          Int?
-  height         Int?
-  s3Bucket       String
-  s3ObjectKey    String
-  status         AssetState          @default(STORED_IN_S3)
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  id          String     @id @default(cuid())
+  contentHash String     @unique
+  mimeType    String
+  fileSize    BigInt
+  width       Int?
+  height      Int?
+  s3Bucket    String
+  s3ObjectKey String
+  status      AssetState @default(STORED_IN_S3)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   sources        AssetSource[]
   ingestionFiles IngestionFile[]
@@ -141,6 +141,7 @@ model AssetMetadata {
   composition           String?
   orientation           String?
   ageGroups             String[]
+  grades                String[] @default([])
   educationalUses       String[]
   searchKeywords        String[]
   searchDescription     String

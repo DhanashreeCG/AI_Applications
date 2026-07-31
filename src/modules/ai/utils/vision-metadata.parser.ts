@@ -1,5 +1,8 @@
 import { VisionMetadataDto } from '../../../common/dto/vision-metadata.dto';
 
+const AGE_RANGE_PATTERN = /^(\d{1,3})\s*-\s*(\d{1,3})$/;
+const ALLOWED_GRADES = new Set(['toddlers', 'kids', 'teens', 'adults']);
+
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -9,6 +12,32 @@ function asStringArray(value: unknown): string[] {
     .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function asAgeRanges(value: unknown): string[] {
+  return asStringArray(value).flatMap((item) => {
+    const match = item.match(AGE_RANGE_PATTERN);
+    if (!match) {
+      return [];
+    }
+
+    const minimumAge = Number(match[1]);
+    const maximumAge = Number(match[2]);
+    if (minimumAge > maximumAge) {
+      return [];
+    }
+
+    return [`${minimumAge}-${maximumAge}`];
+  });
+}
+
+function asGrades(value: unknown): VisionMetadataDto['grades'] {
+  return asStringArray(value)
+    .map((item) => item.toLowerCase())
+    .filter(
+      (item): item is VisionMetadataDto['grades'][number] =>
+        ALLOWED_GRADES.has(item),
+    );
 }
 
 function asString(value: unknown, fallback = ''): string {
@@ -31,7 +60,8 @@ export function parseVisionMetadata(raw: unknown): VisionMetadataDto {
     background: asString(record.background),
     composition: asString(record.composition),
     orientation: asString(record.orientation, 'square'),
-    age_groups: asStringArray(record.age_groups),
+    age_groups: asAgeRanges(record.age_groups),
+    grades: asGrades(record.grades),
     educational_uses: asStringArray(record.educational_uses),
     search_keywords: asStringArray(record.search_keywords),
     extra_tags:

@@ -5,6 +5,7 @@ export interface SearchMetadataFilters {
   objects?: string[];
   actions?: string[];
   ageGroups?: string[];
+  grades?: string[];
   educationalUses?: string[];
   background?: string;
 }
@@ -20,6 +21,7 @@ export interface SearchResultItem {
   objects: string[];
   actions: string[];
   ageGroups: string[];
+  grades: string[];
   searchDescription: string;
   s3ObjectKey: string;
   mimeType: string;

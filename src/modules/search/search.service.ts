@@ -128,6 +128,7 @@ export class SearchService {
         objects: asset.metadata.objects,
         actions: asset.metadata.actions,
         ageGroups: asset.metadata.ageGroups,
+        grades: asset.metadata.grades,
         searchDescription: asset.metadata.searchDescription,
         s3ObjectKey: asset.s3ObjectKey,
         mimeType: asset.mimeType,

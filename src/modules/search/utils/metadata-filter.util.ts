@@ -7,6 +7,7 @@ interface MetadataLike {
   objects: string[];
   actions: string[];
   ageGroups: string[];
+  grades: string[];
   educationalUses: string[];
   background: string | null;
 }
@@ -55,6 +56,10 @@ export function matchesMetadataFilters(
     filters.ageGroups?.length &&
     !hasOverlap(metadata.ageGroups, filters.ageGroups)
   ) {
+    return false;
+  }
+
+  if (filters.grades?.length && !hasOverlap(metadata.grades, filters.grades)) {
     return false;
   }
 

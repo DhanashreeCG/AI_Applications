@@ -19,7 +19,8 @@ Return JSON with these fields:
 - background: background description
 - composition: framing or layout notes
 - orientation: portrait | landscape | square
-- age_groups: suitable age groups if applicable
+- age_groups: suitable numeric age ranges using only min-max format, for example 1-3, 3-6, 6-10, 10-13, 13-18, 18-65
+- grades: suitable audience categories using only: toddlers, kids, teens, adults
 - educational_uses: educational use cases if applicable
 - search_keywords: additional retrieval keywords`;
 
@@ -34,7 +35,17 @@ export const VISION_METADATA_JSON_SCHEMA = {
     background: { type: 'string' },
     composition: { type: 'string' },
     orientation: { type: 'string' },
-    age_groups: { type: 'array', items: { type: 'string' } },
+    age_groups: {
+      type: 'array',
+      items: { type: 'string', pattern: '^\\d{1,3}-\\d{1,3}$' },
+    },
+    grades: {
+      type: 'array',
+      items: {
+        type: 'string',
+        enum: ['toddlers', 'kids', 'teens', 'adults'],
+      },
+    },
     educational_uses: { type: 'array', items: { type: 'string' } },
     search_keywords: { type: 'array', items: { type: 'string' } },
   },
@@ -48,6 +59,7 @@ export const VISION_METADATA_JSON_SCHEMA = {
     'composition',
     'orientation',
     'age_groups',
+    'grades',
     'educational_uses',
     'search_keywords',
   ],

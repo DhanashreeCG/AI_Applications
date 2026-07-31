@@ -26,7 +26,8 @@ describe('GeminiVisionProvider', () => {
     background: 'White background.',
     composition: 'Single animal character.',
     orientation: 'portrait',
-    age_groups: ['preschool', 'kindergarten'],
+    age_groups: ['3-6', '6-10'],
+    grades: ['toddlers', 'kids'],
     educational_uses: ['worksheets'],
     search_keywords: ['cartoon', 'animal'],
   };

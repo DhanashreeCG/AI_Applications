@@ -20,6 +20,7 @@ export function mapVisionAnalysisToAssetMetadata(
     composition: metadata.composition || null,
     orientation: metadata.orientation || null,
     ageGroups: metadata.age_groups,
+    grades: metadata.grades,
     educationalUses: metadata.educational_uses,
     searchKeywords: metadata.search_keywords,
     searchDescription: analysis.searchDescription,

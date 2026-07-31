@@ -5,6 +5,7 @@ export class SearchMetadataFiltersDto {
   objects?: string[];
   actions?: string[];
   ageGroups?: string[];
+  grades?: string[];
   educationalUses?: string[];
   background?: string;
 }
