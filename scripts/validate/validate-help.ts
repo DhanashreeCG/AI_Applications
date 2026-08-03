@@ -9,10 +9,11 @@ Asset Ingestion Component Validation Commands
   npm run validate:vector -- [--asset-id <ASSET_ID>] [--text "sample"] [--top-k 5]
   npm run validate:search -- --query "orange cat"
   npm run validate:cache -- [--query "orange cat"]
-  npm run validate:sqs -- [--queue ingestion]
+  npm run validate:queue -- [--queue ingestion]
 
 Notes:
   - Requires a configured .env.local or .env with real credentials for the target module.
-  - SQS workers and Redis are disabled automatically for validation scripts (except validate:cache keeps Redis).
+  - Queue workers are disabled automatically for validation scripts.
+  - validate:queue requires Redis (BullMQ). validate:cache keeps Redis enabled.
   - These commands exercise one module at a time and do not run the full pipeline unless noted.
 `);

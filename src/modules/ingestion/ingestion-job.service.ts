@@ -8,11 +8,11 @@ import {
   JobState as DatabaseJobState,
 } from '@generated/prisma/client';
 import { PrismaService } from '../database/prisma.service';
-import { SqsQueueService } from '../queue/sqs-queue.service';
+import { BullmqQueueService } from '../queue/bullmq/bullmq-queue.service';
 import { GoogleDriveAdapterService } from '../drive/google-drive-adapter.service';
 import { AssetState } from '../../common/enums/asset-state.enum';
 import { CreateIngestionJobDto, IngestionJobMode } from './dto/create-ingestion-job.dto';
-import { IngestionProcessMessage } from '../../common/interfaces/sqs-messages.interface';
+import { IngestionProcessMessage } from '../../common/interfaces/pipeline-messages.interface';
 import { getErrorMessage } from '../../common/utils/error-message';
 import { ImageProcessorService } from '../image/image-processor.service';
 import { Readable } from 'stream';
@@ -33,7 +33,7 @@ export class IngestionJobService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sqsQueue: SqsQueueService,
+    private readonly queue: BullmqQueueService,
     private readonly driveAdapter: GoogleDriveAdapterService,
     private readonly imageProcessor: ImageProcessorService,
     private readonly metrics: PipelineMetricsService,
@@ -288,7 +288,7 @@ export class IngestionJobService {
       timestamp: new Date().toISOString(),
     };
 
-    await this.sqsQueue.sendMessage('ingestion', payload);
+    await this.queue.sendMessage('ingestion', payload);
 
     this.logger.log('Discovered file enqueued', {
       job_id: jobId,

@@ -5,7 +5,8 @@ interface QueuedMessage<T = unknown> {
   body: T;
 }
 
-export class MockSqsQueueService {
+/** In-memory BullMQ queue stand-in for unit/e2e tests. */
+export class MockPipelineQueueService {
   private readonly queues: Record<QueueName, QueuedMessage[]> = {
     ingestion: [],
     s3Upload: [],
@@ -29,7 +30,7 @@ export class MockSqsQueueService {
     message: T,
     _options?: { delaySeconds?: number },
   ): Promise<string> {
-    const messageId = `mock-sqs-${++this.messageCounter}`;
+    const messageId = `mock-queue-${++this.messageCounter}`;
     this.queues[queueName].push({
       messageId,
       body: message,
@@ -57,6 +58,10 @@ export class MockSqsQueueService {
     return this.sendMessage('dlq', this.withTimestamp(message));
   }
 
+  public async getQueueDepth(queueName: QueueName): Promise<number> {
+    return this.queues[queueName].length;
+  }
+
   public peekQueue(queueName: QueueName): QueuedMessage[] {
     return [...this.queues[queueName]];
   }
@@ -76,8 +81,10 @@ export class MockSqsQueueService {
     return {
       ...message,
       timestamp:
-        (message.timestamp as string | undefined) ??
-        new Date().toISOString(),
+        (message.timestamp as string | undefined) ?? new Date().toISOString(),
     };
   }
 }
+
+/** @deprecated Use MockPipelineQueueService */
+export { MockPipelineQueueService as MockSqsQueueService };

@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AssetState } from '../../../common/enums/asset-state.enum';
 import { PrismaService } from '../../database/prisma.service';
-import { SqsQueueService } from '../../queue/sqs-queue.service';
+import { BullmqQueueService } from '../../queue/bullmq/bullmq-queue.service';
 import { PipelineRetryService } from './pipeline-retry.service';
 import { PipelineMetricsService } from '../../observability/pipeline-metrics.service';
 
@@ -23,7 +23,7 @@ describe('PipelineRetryService', () => {
     assetMetadata: { findUnique: jest.fn() },
   };
 
-  const mockSqsQueue = {
+  const mockQueue = {
     sendMessage: jest.fn(),
     dispatchToDlq: jest.fn(),
     dispatchIngestion: jest.fn(),
@@ -47,7 +47,7 @@ describe('PipelineRetryService', () => {
       providers: [
         PipelineRetryService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: SqsQueueService, useValue: mockSqsQueue },
+        { provide: BullmqQueueService, useValue: mockQueue },
         {
           provide: ConfigService,
           useValue: {
@@ -67,7 +67,7 @@ describe('PipelineRetryService', () => {
   });
 
   it('should schedule a delayed retry for transient failures', async () => {
-    mockSqsQueue.sendMessage.mockResolvedValue('retry-msg-001');
+    mockQueue.sendMessage.mockResolvedValue('retry-msg-001');
 
     await service.handleFailure({
       stage: AssetState.GENERATING_METADATA,
@@ -75,7 +75,7 @@ describe('PipelineRetryService', () => {
       error: new Error('HTTP 503 Service Unavailable'),
     });
 
-    expect(mockSqsQueue.sendMessage).toHaveBeenCalledWith(
+    expect(mockQueue.sendMessage).toHaveBeenCalledWith(
       'aiMetadata',
       expect.objectContaining({ attempt: 2 }),
       expect.objectContaining({ delaySeconds: expect.any(Number) }),
@@ -84,7 +84,7 @@ describe('PipelineRetryService', () => {
       where: { id: 'asset-001' },
       data: { status: 'RETRY_PENDING' },
     });
-    expect(mockSqsQueue.dispatchToDlq).not.toHaveBeenCalled();
+    expect(mockQueue.dispatchToDlq).not.toHaveBeenCalled();
     expect(mockMetrics.incrementRetries).toHaveBeenCalled();
   });
 
@@ -95,7 +95,7 @@ describe('PipelineRetryService', () => {
       error: new Error('Corrupted or invalid image file'),
     });
 
-    expect(mockSqsQueue.dispatchToDlq).toHaveBeenCalledWith(
+    expect(mockQueue.dispatchToDlq).toHaveBeenCalledWith(
       expect.objectContaining({
         failedStage: AssetState.VALIDATING,
         errorCode: 'VALIDATION_ERROR',
@@ -119,7 +119,7 @@ describe('PipelineRetryService', () => {
       contentHash: 'hash-123',
       s3ObjectKey: 'assets/asset-001/original/cat.png',
     });
-    mockSqsQueue.dispatchIngestion.mockResolvedValue('replay-msg-001');
+    mockQueue.dispatchIngestion.mockResolvedValue('replay-msg-001');
 
     const messageId = await service.replayFromDlq({
       ...baseMessage,
@@ -128,7 +128,7 @@ describe('PipelineRetryService', () => {
       errorMessage: 'Temporary outage',
     });
 
-    expect(mockSqsQueue.dispatchIngestion).toHaveBeenCalledWith(
+    expect(mockQueue.dispatchIngestion).toHaveBeenCalledWith(
       expect.objectContaining({
         driveFileId: 'drive-001',
         attempt: 1,
@@ -147,7 +147,7 @@ describe('PipelineRetryService', () => {
       contentHash: 'hash-123',
       s3ObjectKey: 'assets/asset-001/original/cat.png',
     });
-    mockSqsQueue.dispatchIngestion.mockResolvedValue('replay-msg-002');
+    mockQueue.dispatchIngestion.mockResolvedValue('replay-msg-002');
 
     const messageId = await service.replayFromDlq({
       ...baseMessage,
@@ -156,7 +156,7 @@ describe('PipelineRetryService', () => {
       errorMessage: 'Corrupted image',
     });
 
-    expect(mockSqsQueue.dispatchIngestion).toHaveBeenCalledWith(
+    expect(mockQueue.dispatchIngestion).toHaveBeenCalledWith(
       expect.objectContaining({
         driveFileId: 'drive-001',
         stage: AssetState.DOWNLOADING,

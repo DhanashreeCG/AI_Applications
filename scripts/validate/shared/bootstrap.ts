@@ -8,9 +8,15 @@ function isCacheValidationScript(): boolean {
 }
 
 export function configureValidationEnvironment(): void {
+  process.env.QUEUE_WORKER_ENABLED = 'false';
   process.env.SQS_WORKER_ENABLED = 'false';
 
-  if (!isCacheValidationScript()) {
+  // Keep Redis available for BullMQ producer connection and cache validation.
+  // Only disable Redis cache client for non-cache / non-queue scripts.
+  const isQueueScript = process.argv.some((arg) =>
+    arg.includes('validate-queue'),
+  );
+  if (!isCacheValidationScript() && !isQueueScript) {
     process.env.REDIS_ENABLED = 'false';
   }
 }

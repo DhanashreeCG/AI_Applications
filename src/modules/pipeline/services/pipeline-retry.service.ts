@@ -2,9 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetState as DatabaseAssetState } from '@generated/prisma/client';
 import { AssetState } from '../../../common/enums/asset-state.enum';
-import { BaseSqsMessage, DlqMessage } from '../../../common/interfaces/sqs-messages.interface';
+import {
+  BasePipelineMessage,
+  DlqMessage,
+} from '../../../common/interfaces/pipeline-messages.interface';
 import { PrismaService } from '../../database/prisma.service';
-import { SqsQueueService } from '../../queue/sqs-queue.service';
+import { BullmqQueueService } from '../../queue/bullmq/bullmq-queue.service';
 import { getQueueForStage } from '../../queue/queue-topology.constants';
 import {
   DEFAULT_BACKOFF_BASE_SECONDS,
@@ -20,7 +23,7 @@ import { buildPipelineLogFields } from '../../observability/utils/pipeline-log-f
 
 export interface PipelineFailureContext {
   stage: AssetState;
-  message: BaseSqsMessage;
+  message: BasePipelineMessage;
   error: unknown;
   sqsMessageId?: string;
   durationMs?: number;
@@ -35,7 +38,7 @@ export class PipelineRetryService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sqsQueue: SqsQueueService,
+    private readonly queue: BullmqQueueService,
     configService: ConfigService,
     private readonly metrics: PipelineMetricsService,
   ) {
@@ -103,7 +106,7 @@ export class PipelineRetryService {
 
     switch (targetQueue) {
       case 'ingestion':
-        messageId = await this.sqsQueue.dispatchIngestion({
+        messageId = await this.queue.dispatchIngestion({
           ...base,
           driveFileId: ingestionFile.driveFileId,
           stage:
@@ -116,7 +119,7 @@ export class PipelineRetryService {
         if (!asset) {
           throw new Error('Cannot replay s3Upload stage without assetId');
         }
-        messageId = await this.sqsQueue.dispatchS3Upload({
+        messageId = await this.queue.dispatchS3Upload({
           ...base,
           assetId: asset.id,
           contentHash: asset.contentHash,
@@ -126,7 +129,7 @@ export class PipelineRetryService {
         if (!asset) {
           throw new Error('Cannot replay aiMetadata stage without assetId');
         }
-        messageId = await this.sqsQueue.dispatchAiMetadata({
+        messageId = await this.queue.dispatchAiMetadata({
           ...base,
           assetId: asset.id,
           s3ObjectKey: asset.s3ObjectKey,
@@ -145,7 +148,7 @@ export class PipelineRetryService {
             `Cannot replay embedding stage: metadata missing for asset ${asset.id}`,
           );
         }
-        messageId = await this.sqsQueue.dispatchEmbedding({
+        messageId = await this.queue.dispatchEmbedding({
           ...base,
           assetId: asset.id,
           searchDescription: metadata.searchDescription,
@@ -201,7 +204,7 @@ export class PipelineRetryService {
       timestamp: new Date().toISOString(),
     };
 
-    await this.sqsQueue.sendMessage(queueName, retryMessage as never, {
+    await this.queue.sendMessage(queueName, retryMessage as never, {
       delaySeconds,
     });
 
@@ -243,7 +246,7 @@ export class PipelineRetryService {
     const stackTrace =
       context.error instanceof Error ? context.error.stack : undefined;
 
-    await this.sqsQueue.dispatchToDlq({
+    await this.queue.dispatchToDlq({
       jobId: context.message.jobId,
       ingestionFileId: context.message.ingestionFileId,
       assetId: context.message.assetId,
@@ -293,7 +296,7 @@ export class PipelineRetryService {
 
   private async recordAttempt(params: {
     stage: AssetState;
-    message: BaseSqsMessage;
+    message: BasePipelineMessage;
     status: string;
     errorCode?: string;
     errorMessage?: string;

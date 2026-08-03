@@ -5,7 +5,7 @@ import {
   EmbeddingMessage,
   IngestionProcessMessage,
   S3UploadMessage,
-} from '../../common/interfaces/sqs-messages.interface';
+} from '../../common/interfaces/pipeline-messages.interface';
 
 export const QUEUE_NAMES = {
   ingestion: 'ingestion',
@@ -25,7 +25,7 @@ export type QueueMessageMap = {
   dlq: DlqMessage;
 };
 
-/** Maps pipeline asset states to their dedicated SQS processing queue. */
+/** Maps pipeline asset states to their BullMQ processing queue. */
 export const STAGE_QUEUE_MAP: Partial<Record<AssetState, QueueName>> = {
   [AssetState.DISCOVERED]: 'ingestion',
   [AssetState.DOWNLOADING]: 'ingestion',

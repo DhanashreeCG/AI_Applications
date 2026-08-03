@@ -11,9 +11,9 @@ import {
   EmbeddingMessage,
   IngestionProcessMessage,
   S3UploadMessage,
-} from '../../../common/interfaces/sqs-messages.interface';
+} from '../../../common/interfaces/pipeline-messages.interface';
 import { PrismaService } from '../../database/prisma.service';
-import { SqsQueueService } from '../../queue/sqs-queue.service';
+import { BullmqQueueService } from '../../queue/bullmq/bullmq-queue.service';
 import { GoogleDriveAdapterService } from '../../drive/google-drive-adapter.service';
 import { ImageProcessorService } from '../../image/image-processor.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
@@ -47,7 +47,7 @@ export class AssetPipelineService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sqsQueue: SqsQueueService,
+    private readonly queue: BullmqQueueService,
     private readonly driveAdapter: GoogleDriveAdapterService,
     private readonly imageProcessor: ImageProcessorService,
     private readonly storageService: S3StorageService,
@@ -292,7 +292,7 @@ export class AssetPipelineService {
                   });
                   await this.updateStates(message, AssetState.STORED_IN_S3);
 
-                  await this.sqsQueue.dispatchAiMetadata({
+                  await this.queue.dispatchAiMetadata({
                     jobId: message.jobId,
                     ingestionFileId: message.ingestionFileId,
                     assetId: asset.id,
@@ -332,7 +332,7 @@ export class AssetPipelineService {
     message.assetId = asset.id;
 
     if (asset.metadata) {
-      await this.sqsQueue.dispatchEmbedding({
+      await this.queue.dispatchEmbedding({
         jobId: message.jobId,
         ingestionFileId: message.ingestionFileId,
         assetId: asset.id,
@@ -351,7 +351,7 @@ export class AssetPipelineService {
     });
     await this.updateStates(message, AssetState.STORED_IN_S3);
 
-    await this.sqsQueue.dispatchAiMetadata({
+    await this.queue.dispatchAiMetadata({
       jobId: message.jobId,
       ingestionFileId: message.ingestionFileId,
       assetId: asset.id,
@@ -391,7 +391,7 @@ export class AssetPipelineService {
         });
 
         if (withMeta?.metadata) {
-          await this.sqsQueue.dispatchEmbedding({
+          await this.queue.dispatchEmbedding({
             jobId: message.jobId,
             ingestionFileId: message.ingestionFileId,
             assetId: asset.id,
@@ -415,7 +415,7 @@ export class AssetPipelineService {
         });
         await this.updateStates(message, AssetState.STORED_IN_S3);
 
-        await this.sqsQueue.dispatchAiMetadata({
+        await this.queue.dispatchAiMetadata({
           jobId: message.jobId,
           ingestionFileId: message.ingestionFileId,
           assetId: asset.id,
@@ -475,7 +475,7 @@ export class AssetPipelineService {
           });
         });
 
-        await this.sqsQueue.dispatchEmbedding({
+        await this.queue.dispatchEmbedding({
           jobId: message.jobId,
           ingestionFileId: message.ingestionFileId,
           assetId: message.assetId,

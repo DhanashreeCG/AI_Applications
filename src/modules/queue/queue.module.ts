@@ -1,8 +1,13 @@
 import { Module } from '@nestjs/common';
-import { SqsQueueService } from './sqs-queue.service';
+import { BullmqQueueModule } from './bullmq/bullmq-queue.module';
+import { BullmqQueueService } from './bullmq/bullmq-queue.service';
 
+/**
+ * Application queue module — BullMQ producer surface.
+ * Workers/processors are registered in PipelineModule.
+ */
 @Module({
-  providers: [SqsQueueService],
-  exports: [SqsQueueService],
+  imports: [BullmqQueueModule],
+  exports: [BullmqQueueModule, BullmqQueueService],
 })
 export class QueueModule {}

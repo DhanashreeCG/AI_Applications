@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { IngestionJobService } from './ingestion-job.service';
 import { PrismaService } from '../database/prisma.service';
-import { SqsQueueService } from '../queue/sqs-queue.service';
+import { BullmqQueueService } from '../queue/bullmq/bullmq-queue.service';
 import { GoogleDriveAdapterService } from '../drive/google-drive-adapter.service';
 import { ImageProcessorService } from '../image/image-processor.service';
 import { PipelineMetricsService } from '../observability/pipeline-metrics.service';
@@ -34,8 +34,8 @@ describe('IngestionJobService', () => {
     $transaction: jest.fn(async (fn: any) => fn(mockPrisma)),
   };
 
-  const mockSqsQueue = {
-    sendMessage: jest.fn().mockResolvedValue('sqs-msg-id-123'),
+  const mockQueue = {
+    sendMessage: jest.fn().mockResolvedValue('queue-job-id-123'),
   };
 
   const mockDriveAdapter = {
@@ -77,7 +77,7 @@ describe('IngestionJobService', () => {
       providers: [
         IngestionJobService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: SqsQueueService, useValue: mockSqsQueue },
+        { provide: BullmqQueueService, useValue: mockQueue },
         { provide: GoogleDriveAdapterService, useValue: mockDriveAdapter },
         { provide: ImageProcessorService, useValue: mockImageProcessor },
         { provide: PipelineMetricsService, useValue: mockMetrics },
@@ -152,7 +152,7 @@ describe('IngestionJobService', () => {
     expect(mockPrisma.ingestionFile.upsert).toHaveBeenCalledTimes(1);
     expect(mockDriveAdapter.downloadFileStream).not.toHaveBeenCalled();
     expect(mockPrisma.asset.create).not.toHaveBeenCalled();
-    expect(mockSqsQueue.sendMessage).toHaveBeenCalledWith(
+    expect(mockQueue.sendMessage).toHaveBeenCalledWith(
       'ingestion',
       expect.objectContaining({
         jobId,

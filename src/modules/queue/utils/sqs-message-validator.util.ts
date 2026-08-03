@@ -1,6 +1,8 @@
-import { BaseSqsMessage } from '../../../common/interfaces/sqs-messages.interface';
+import { BasePipelineMessage } from '../../../common/interfaces/pipeline-messages.interface';
 
-export function isValidPipelineMessage(body: unknown): body is BaseSqsMessage {
+export function isValidPipelineMessage(
+  body: unknown,
+): body is BasePipelineMessage {
   if (!body || typeof body !== 'object') {
     return false;
   }

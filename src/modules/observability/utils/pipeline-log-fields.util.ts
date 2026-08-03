@@ -1,9 +1,9 @@
-import { BaseSqsMessage } from '../../../common/interfaces/sqs-messages.interface';
+import { BasePipelineMessage } from '../../../common/interfaces/pipeline-messages.interface';
 import { AssetState } from '../../../common/enums/asset-state.enum';
 import { StructuredLogFields } from '../interfaces/structured-log.interface';
 
 export function buildPipelineLogFields(
-  message: BaseSqsMessage,
+  message: BasePipelineMessage,
   stage: AssetState,
   extras?: StructuredLogFields,
 ): StructuredLogFields {

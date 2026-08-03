@@ -9,11 +9,6 @@ export interface AppConfig {
     accessKeyId: string;
     secretAccessKey: string;
     s3BucketName: string;
-    sqsIngestionQueueUrl: string;
-    sqsS3UploadQueueUrl: string;
-    sqsAiMetadataQueueUrl: string;
-    sqsEmbeddingQueueUrl: string;
-    sqsDlqUrl: string;
   };
   redis: {
     host: string;
@@ -47,13 +42,28 @@ export interface AppConfig {
     backoffBaseSeconds: number;
     backoffMaxSeconds: number;
   };
-  sqsWorker: {
+  queueWorker: {
     enabled: boolean;
-    pollWaitSeconds: number;
     concurrency: number;
+    lockDurationMs: number;
     shutdownTimeoutMs: number;
-    visibilityTimeoutSeconds: number;
+    prefix: string;
   };
+}
+
+function envFlagEnabled(primary: string, fallback: string): boolean {
+  if (process.env[primary] !== undefined) {
+    return process.env[primary] !== 'false';
+  }
+  if (process.env[fallback] !== undefined) {
+    return process.env[fallback] !== 'false';
+  }
+  return true;
+}
+
+function envInt(primary: string, fallback: string, defaultValue: number): number {
+  const raw = process.env[primary] ?? process.env[fallback];
+  return parseInt(raw || String(defaultValue), 10);
 }
 
 export default (): AppConfig => ({
@@ -67,11 +77,6 @@ export default (): AppConfig => ({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
     s3BucketName: process.env.AWS_S3_BUCKET_NAME || 'ai-asset-ingestion',
-    sqsIngestionQueueUrl: process.env.AWS_SQS_INGESTION_QUEUE_URL || '',
-    sqsS3UploadQueueUrl: process.env.AWS_SQS_S3_UPLOAD_QUEUE_URL || '',
-    sqsAiMetadataQueueUrl: process.env.AWS_SQS_AI_METADATA_QUEUE_URL || '',
-    sqsEmbeddingQueueUrl: process.env.AWS_SQS_EMBEDDING_QUEUE_URL || '',
-    sqsDlqUrl: process.env.AWS_SQS_DLQ_URL || '',
   },
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
@@ -128,17 +133,23 @@ export default (): AppConfig => ({
       10,
     ),
   },
-  sqsWorker: {
-    enabled: process.env.SQS_WORKER_ENABLED !== 'false',
-    pollWaitSeconds: parseInt(process.env.SQS_WORKER_POLL_WAIT_SECONDS || '20', 10),
-    concurrency: parseInt(process.env.SQS_WORKER_CONCURRENCY || '4', 10),
-    shutdownTimeoutMs: parseInt(
-      process.env.SQS_WORKER_SHUTDOWN_TIMEOUT_MS || '30000',
-      10,
+  queueWorker: {
+    enabled: envFlagEnabled('QUEUE_WORKER_ENABLED', 'SQS_WORKER_ENABLED'),
+    concurrency: envInt('QUEUE_WORKER_CONCURRENCY', 'SQS_WORKER_CONCURRENCY', 4),
+    lockDurationMs: (() => {
+      if (process.env.QUEUE_WORKER_LOCK_DURATION_MS) {
+        return parseInt(process.env.QUEUE_WORKER_LOCK_DURATION_MS, 10);
+      }
+      if (process.env.SQS_VISIBILITY_TIMEOUT_SECONDS) {
+        return parseInt(process.env.SQS_VISIBILITY_TIMEOUT_SECONDS, 10) * 1000;
+      }
+      return 900000;
+    })(),
+    shutdownTimeoutMs: envInt(
+      'QUEUE_WORKER_SHUTDOWN_TIMEOUT_MS',
+      'SQS_WORKER_SHUTDOWN_TIMEOUT_MS',
+      30000,
     ),
-    visibilityTimeoutSeconds: parseInt(
-      process.env.SQS_VISIBILITY_TIMEOUT_SECONDS || '900',
-      10,
-    ),
+    prefix: process.env.BULLMQ_PREFIX || 'asset-ingestion',
   },
 });

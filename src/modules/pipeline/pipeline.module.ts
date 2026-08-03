@@ -8,7 +8,23 @@ import { SearchModule } from '../search/search.module';
 import { AssetPipelineService } from './services/asset-pipeline.service';
 import { PipelineRetryService } from './services/pipeline-retry.service';
 import { PipelineController } from './pipeline.controller';
-import { SqsWorkerService } from '../queue/sqs-worker.service';
+import { IngestionProcessor } from '../queue/bullmq/processors/ingestion.processor';
+import { S3UploadProcessor } from '../queue/bullmq/processors/s3-upload.processor';
+import { AiMetadataProcessor } from '../queue/bullmq/processors/ai-metadata.processor';
+import { EmbeddingProcessor } from '../queue/bullmq/processors/embedding.processor';
+
+const workersEnabled =
+  (process.env.QUEUE_WORKER_ENABLED ?? process.env.SQS_WORKER_ENABLED) !==
+  'false';
+
+const workerProviders = workersEnabled
+  ? [
+      IngestionProcessor,
+      S3UploadProcessor,
+      AiMetadataProcessor,
+      EmbeddingProcessor,
+    ]
+  : [];
 
 @Module({
   imports: [
@@ -20,7 +36,7 @@ import { SqsWorkerService } from '../queue/sqs-worker.service';
     SearchModule,
   ],
   controllers: [PipelineController],
-  providers: [AssetPipelineService, PipelineRetryService, SqsWorkerService],
-  exports: [AssetPipelineService, PipelineRetryService, SqsWorkerService],
+  providers: [AssetPipelineService, PipelineRetryService, ...workerProviders],
+  exports: [AssetPipelineService, PipelineRetryService],
 })
 export class PipelineModule {}

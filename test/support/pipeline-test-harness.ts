@@ -12,7 +12,8 @@ import { PipelineModule } from '../../src/modules/pipeline/pipeline.module';
 import { SearchModule } from '../../src/modules/search/search.module';
 import { AiModule } from '../../src/modules/ai/ai.module';
 import { PrismaService } from '../../src/modules/database/prisma.service';
-import { SqsQueueService } from '../../src/modules/queue/sqs-queue.service';
+import { QueueModule } from '../../src/modules/queue/queue.module';
+import { BullmqQueueService } from '../../src/modules/queue/bullmq/bullmq-queue.service';
 import { GoogleDriveAdapterService } from '../../src/modules/drive/google-drive-adapter.service';
 import { S3StorageService } from '../../src/modules/storage/s3-storage.service';
 import { GeminiVisionProvider } from '../../src/modules/ai/providers/gemini-vision.provider';
@@ -24,7 +25,8 @@ import { AssetPipelineService } from '../../src/modules/pipeline/services/asset-
 import { IngestionJobService } from '../../src/modules/ingestion/ingestion-job.service';
 import { InMemoryDatabase } from './in-memory-database';
 import { TestPrismaService } from './test-prisma.service';
-import { MockSqsQueueService } from './mock-sqs-queue.service';
+import { MockPipelineQueueService } from './mock-pipeline-queue.service';
+import { TestQueueModule } from './test-queue.module';
 import {
   MockGeminiVisionProvider,
   MockGoogleDriveAdapterService,
@@ -46,7 +48,9 @@ export class PipelineTestHarness {
   private app!: INestApplication<App>;
 
   public readonly db = new InMemoryDatabase();
-  public readonly mockSqs = new MockSqsQueueService();
+  public readonly mockQueue = new MockPipelineQueueService();
+  /** @deprecated Use mockQueue */
+  public readonly mockSqs = this.mockQueue;
   public readonly mockRedis = new MockRedisCacheService();
   public readonly testPrisma = new TestPrismaService(this.db);
 
@@ -55,8 +59,10 @@ export class PipelineTestHarness {
   public moduleRef!: TestingModule;
 
   public async init(): Promise<void> {
+    process.env.QUEUE_WORKER_ENABLED = 'false';
+
     this.db.reset();
-    this.mockSqs.reset();
+    this.mockQueue.reset();
     this.mockRedis.reset();
 
     this.moduleRef = await Test.createTestingModule({
@@ -74,10 +80,12 @@ export class PipelineTestHarness {
         SearchModule,
       ],
     })
+      .overrideModule(QueueModule)
+      .useModule(TestQueueModule)
       .overrideProvider(PrismaService)
       .useValue(this.testPrisma)
-      .overrideProvider(SqsQueueService)
-      .useValue(this.mockSqs)
+      .overrideProvider(BullmqQueueService)
+      .useValue(this.mockQueue)
       .overrideProvider(GoogleDriveAdapterService)
       .useValue(new MockGoogleDriveAdapterService())
       .overrideProvider(S3StorageService)
@@ -145,7 +153,7 @@ export class PipelineTestHarness {
 
   public async processAllQueuedMessages(): Promise<void> {
     for (const queueName of PROCESSING_QUEUE_ORDER) {
-      let message = this.mockSqs.dequeue(queueName);
+      let message = this.mockQueue.dequeue(queueName);
 
       while (message) {
         await this.pipelineService.processQueueMessage(
@@ -153,7 +161,7 @@ export class PipelineTestHarness {
           message.body as never,
           message.messageId,
         );
-        message = this.mockSqs.dequeue(queueName);
+        message = this.mockQueue.dequeue(queueName);
       }
     }
   }
