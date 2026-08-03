@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { BullmqQueueModule } from './bullmq/bullmq-queue.module';
-import { BullmqQueueService } from './bullmq/bullmq-queue.service';
 
 /**
  * Application queue module — BullMQ producer surface.
@@ -8,6 +7,6 @@ import { BullmqQueueService } from './bullmq/bullmq-queue.service';
  */
 @Module({
   imports: [BullmqQueueModule],
-  exports: [BullmqQueueModule, BullmqQueueService],
+  exports: [BullmqQueueModule],
 })
 export class QueueModule {}
