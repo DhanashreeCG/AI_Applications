@@ -1,9 +1,9 @@
 # AI Asset Ingestion — Session Handoff Context
 
 > **Last updated:** 2026-08-03  
-> **Progress:** TASK-001 through TASK-019 **COMPLETED**; Phase 2 TASK-021..025 **COMPLETED**; TASK-026/027 **DOCUMENTED**; Token-saving optimizations **IMPLEMENTED**; **SQS replaced with BullMQ**  
-> **Next task:** Test FULL ingestion with Redis + BullMQ workers → TASK-026 integration → TASK-027 → **TASK-020 (DEFERRED)**  
-> **Test status:** Unit suite updated for BullMQ; Redis required for FULL mode workers
+> **Progress:** TASK-001 through TASK-019 **COMPLETED**; Phase 2 TASK-021..025 **COMPLETED**; TASK-026/027 **DOCUMENTED**; Token-saving optimizations **IMPLEMENTED**; **SQS replaced with BullMQ**; DLQ replay hardened  
+> **Next task:** Complete incomplete assets (S3 + AI) after duplicate short-circuit → TASK-026 integration → TASK-027 → **TASK-020 (DEFERRED)**  
+> **Test status:** Unit suite green (79 tests); FULL ingestion tested against live Drive + Redis + BullMQ
 
 ---
 
@@ -14,6 +14,7 @@ NestJS 11 backend that ingests images from Google Drive, stores canonical copies
 **Repo:** `D:/AI Team/AI_Applications`  
 **Primary plan doc:** `docs/asset-ingestion/IMPLEMENTATION_PLAN.md`  
 **Optimization requirements:** `docs/optimization.md`  
+**Search / asset API notes:** `docs/asset-ingestion/ASSET_SEARCH.md`  
 **Validation report:** `docs/asset-ingestion/COMPONENT_VALIDATION_REPORT.md`  
 **Full spec:** `docs/task.md`
 
@@ -46,17 +47,17 @@ src/
 ├── common/interfaces/pipeline-messages.interface.ts
 ├── modules/
 │   ├── queue/
-│   │   ├── queue.module.ts          # exports BullMQ producer
+│   │   ├── queue.module.ts          # re-exports BullmqQueueModule
 │   │   ├── queue-topology.constants.ts
 │   │   └── bullmq/
 │   │       ├── bullmq-queue.module.ts
 │   │       ├── bullmq-queue.service.ts
 │   │       └── processors/          # ingestion, s3Upload, aiMetadata, embedding
 │   ├── ingestion/
-│   ├── ai/
+│   ├── ai/                          # vision, embedding, AiUsageService, rate/circuit
 │   ├── search/
 │   ├── cache/
-│   ├── pipeline/                    # AssetPipelineService + processors registered here
+│   ├── pipeline/                    # AssetPipelineService, PipelineRetryService, ReplayDlqDto
 │   └── observability/
 ```
 
@@ -71,7 +72,7 @@ BullMQ: ingestion queue
     ↓  IngestionProcessor → AssetPipelineService
 DOWNLOAD once → VALIDATING → HASHING
     ↓
-Duplicate (SHA-256)? → AssetSource(linkReason=SHA256_MATCH) → STOP
+Duplicate (SHA-256)? → AssetSource(linkReason=SHA256_MATCH) → COMPLETED (stops here)
     ↓ new
 Create Asset → S3 → STORED_IN_S3
     ↓
@@ -84,9 +85,16 @@ COMPLETED
 
 **Retries:** app-managed via `PipelineRetryService` (delayed BullMQ jobs). Jobs use `attempts: 1` so BullMQ does not double-retry.
 
-**DLQ:** BullMQ `dlq` queue (no processor). Replay via `POST /pipeline/dlq/replay`.
+**DLQ:** BullMQ `dlq` queue (no processor). Jobs live in Redis (survive Nest restart). DB marks `IngestionFile` / `Asset` as `DEAD_LETTER` and records `ProcessingAttempt`.
 
-**Dry-run:** `mode: "DRY_RUN"` — no BullMQ enqueue for AI/S3; Redis not required for dry-run path itself.
+**DLQ replay:** `POST /pipeline/dlq/replay`  
+Body only needs `{ "ingestionFileId": "..." }`. Service derives `jobId`, `assetId`, and `failedStage` from DB (`ProcessingAttempt` / file). Optional explicit `failedStage` supported.
+
+**Resume (when message has `assetId` and S3 object exists):** skip download/upload → continue metadata if missing, else embedding.
+
+**Known gap:** re-ingesting the same Drive folder hashes to an existing `Asset` and short-circuits as duplicate **without** checking whether S3 / metadata / embedding are incomplete. Incomplete orphans (e.g. Asset row created, S3 `PutObject` failed) stay incomplete on re-run.
+
+**Dry-run:** `mode: "DRY_RUN"` — hash/dedup/estimate only; no S3/AI/BullMQ AI path.
 
 ---
 
@@ -96,13 +104,21 @@ COMPLETED
 |---|---|---|
 | POST | `/asset-ingestion/jobs` | Create job (`FULL` \| `DRY_RUN`) |
 | GET | `/asset-ingestion/jobs` | List jobs |
-| GET | `/asset-ingestion/jobs/:id` | Get job |
+| GET | `/asset-ingestion/jobs/:id` | Get job (totals + file count; not per-file detail) |
 | GET | `/asset-ingestion/jobs/:id/estimate` | Cost estimate |
 | POST | `/search` | Semantic search |
 | POST | `/search/cache/flush` | Flush cache |
-| POST | `/pipeline/dlq/replay` | Replay DLQ message |
-| GET | `/observability/metrics` | Metrics snapshot |
+| POST | `/pipeline/dlq/replay` | Replay DLQ (`ingestionFileId` required) |
+| GET | `/observability/metrics` | In-memory metrics (reset on restart) |
 | GET | `/api` | Swagger UI |
+
+---
+
+## Recent Live Test Notes
+
+- S3 `AccessDenied` on `s3:PutObject` for IAM user → file went to DLQ on attempt 1 (`DOWNLOADING` stage includes upload).
+- After Asset rows exist, re-running the same folder yields `SHA256_MATCH` / `COMPLETED` for all files — no metadata/embedding if those never completed on the first pass.
+- `/observability/metrics` `dlqCount` is in-memory only; Redis DLQ + DB `DEAD_LETTER` persist across Nest restarts.
 
 ---
 
@@ -136,7 +152,8 @@ npm run start:dev
 npm run validate:queue -- --queue ingestion
 ```
 
-Swagger: http://localhost:3000/api
+Swagger: http://localhost:3000/api  
+Compiled entrypoint: `dist/src/main.js`
 
 ---
 
@@ -144,9 +161,10 @@ Swagger: http://localhost:3000/api
 
 1. Expensive stages stay independently idempotent
 2. Discovery remains metadata-only
-3. BullMQ payloads — minimal JSON IDs only (same shapes as former SQS messages)
+3. BullMQ payloads — minimal JSON IDs only
 4. Prisma 7 — `@generated/prisma/client`
-5. No commits unless explicitly requested
+5. `QueueModule` re-exports `BullmqQueueModule` only (do not export `BullmqQueueService` directly from `QueueModule`)
+6. No commits unless explicitly requested
 
 ---
 
@@ -155,8 +173,10 @@ Swagger: http://localhost:3000/api
 ```
 Continue AI Asset Ingestion in D:/AI Team/AI_Applications.
 
-Queue backend is BullMQ (Redis). SQS has been removed from the runtime path.
+Queue backend is BullMQ (Redis). SQS removed from runtime.
 
-Test FULL ingestion with QUEUE_WORKER_ENABLED=true and Redis running,
-then dry-run, skip-on-replay, and TASK-026/027.
+Known gap: SHA256 duplicate path marks COMPLETED without finishing
+missing S3/metadata/embedding on incomplete assets.
+
+Next: fix incomplete-asset resume on duplicate, then TASK-026/027.
 ```
