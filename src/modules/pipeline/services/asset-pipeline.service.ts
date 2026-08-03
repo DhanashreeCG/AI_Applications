@@ -7,7 +7,6 @@ import { AssetState } from '../../../common/enums/asset-state.enum';
 import {
   AiMetadataMessage,
   BaseSqsMessage,
-  DlqMessage,
   EmbeddingMessage,
   IngestionProcessMessage,
   S3UploadMessage,
@@ -22,7 +21,7 @@ import { OpenAiEmbeddingProvider } from '../../ai/providers/openai-embedding.pro
 import { VectorStorageService } from '../../search/vector-storage.service';
 import { AiUsageService } from '../../ai/services/ai-usage.service';
 import { QueueName } from '../../queue/queue-topology.constants';
-import { PipelineRetryService } from './pipeline-retry.service';
+import { PipelineRetryService, ReplayDlqRequest } from './pipeline-retry.service';
 import { StructuredLoggerService } from '../../observability/structured-logger.service';
 import { PipelineMetricsService } from '../../observability/pipeline-metrics.service';
 import { buildPipelineLogFields } from '../../observability/utils/pipeline-log-fields.util';
@@ -104,8 +103,8 @@ export class AssetPipelineService {
     }
   }
 
-  public async replayDlqMessage(message: DlqMessage): Promise<string> {
-    return this.pipelineRetry.replayFromDlq(message);
+  public async replayDlqMessage(request: ReplayDlqRequest): Promise<string> {
+    return this.pipelineRetry.replayFromDlq(request);
   }
 
   /**

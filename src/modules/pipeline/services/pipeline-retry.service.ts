@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetState as DatabaseAssetState } from '@generated/prisma/client';
 import { AssetState } from '../../../common/enums/asset-state.enum';
@@ -8,7 +12,10 @@ import {
 } from '../../../common/interfaces/pipeline-messages.interface';
 import { PrismaService } from '../../database/prisma.service';
 import { BullmqQueueService } from '../../queue/bullmq/bullmq-queue.service';
-import { getQueueForStage } from '../../queue/queue-topology.constants';
+import {
+  STAGE_QUEUE_MAP,
+  getQueueForStage,
+} from '../../queue/queue-topology.constants';
 import {
   DEFAULT_BACKOFF_BASE_SECONDS,
   DEFAULT_BACKOFF_MAX_SECONDS,
@@ -28,6 +35,16 @@ export interface PipelineFailureContext {
   sqsMessageId?: string;
   durationMs?: number;
 }
+
+/**
+ * A replay only needs the ingestion file; the rest is recovered from the
+ * database so operators can retry without reconstructing the whole DLQ payload.
+ */
+export type ReplayDlqRequest = Partial<DlqMessage> & { ingestionFileId: string };
+
+const REPLAYABLE_STAGES = new Set<AssetState>(
+  Object.keys(STAGE_QUEUE_MAP) as AssetState[],
+);
 
 @Injectable()
 export class PipelineRetryService {
@@ -77,27 +94,36 @@ export class PipelineRetryService {
     await this.moveToDeadLetter(context, classification);
   }
 
-  public async replayFromDlq(message: DlqMessage): Promise<string> {
-    const targetQueue = this.resolveRetryQueue(message.failedStage);
-
-    const ingestionFile = await this.prisma.ingestionFile.findUnique({
-      where: { id: message.ingestionFileId },
-    });
-    if (!ingestionFile) {
-      throw new Error(
-        `Cannot replay DLQ message: ingestion file ${message.ingestionFileId} not found`,
+  public async replayFromDlq(request: ReplayDlqRequest): Promise<string> {
+    const ingestionFileId = request?.ingestionFileId;
+    if (!ingestionFileId) {
+      throw new BadRequestException(
+        'ingestionFileId is required to replay a DLQ message',
       );
     }
 
-    const asset = message.assetId
-      ? await this.prisma.asset.findUnique({ where: { id: message.assetId } })
+    const ingestionFile = await this.prisma.ingestionFile.findUnique({
+      where: { id: ingestionFileId },
+    });
+    if (!ingestionFile) {
+      throw new NotFoundException(
+        `Cannot replay DLQ message: ingestion file ${ingestionFileId} not found`,
+      );
+    }
+
+    const failedStage = await this.resolveReplayStage(request, ingestionFile);
+    const targetQueue = this.resolveRetryQueue(failedStage);
+
+    const assetId = request.assetId ?? ingestionFile.assetId ?? undefined;
+    const asset = assetId
+      ? await this.prisma.asset.findUnique({ where: { id: assetId } })
       : null;
 
     const base = {
-      jobId: message.jobId,
-      ingestionFileId: message.ingestionFileId,
-      assetId: message.assetId,
-      traceId: message.traceId,
+      jobId: request.jobId ?? ingestionFile.jobId,
+      ingestionFileId,
+      assetId,
+      traceId: request.traceId,
       attempt: 1,
       timestamp: new Date().toISOString(),
     };
@@ -110,14 +136,16 @@ export class PipelineRetryService {
           ...base,
           driveFileId: ingestionFile.driveFileId,
           stage:
-            message.failedStage === AssetState.DISCOVERED
+            failedStage === AssetState.DISCOVERED
               ? AssetState.DISCOVERED
               : AssetState.DOWNLOADING,
         });
         break;
       case 's3Upload':
         if (!asset) {
-          throw new Error('Cannot replay s3Upload stage without assetId');
+          throw new BadRequestException(
+            `Cannot replay ${failedStage}: no asset linked to ingestion file ${ingestionFileId}`,
+          );
         }
         messageId = await this.queue.dispatchS3Upload({
           ...base,
@@ -127,7 +155,9 @@ export class PipelineRetryService {
         break;
       case 'aiMetadata':
         if (!asset) {
-          throw new Error('Cannot replay aiMetadata stage without assetId');
+          throw new BadRequestException(
+            `Cannot replay ${failedStage}: no asset linked to ingestion file ${ingestionFileId}`,
+          );
         }
         messageId = await this.queue.dispatchAiMetadata({
           ...base,
@@ -138,14 +168,16 @@ export class PipelineRetryService {
         break;
       case 'embedding': {
         if (!asset) {
-          throw new Error('Cannot replay embedding stage without assetId');
+          throw new BadRequestException(
+            `Cannot replay ${failedStage}: no asset linked to ingestion file ${ingestionFileId}`,
+          );
         }
         const metadata = await this.prisma.assetMetadata.findUnique({
           where: { assetId: asset.id },
         });
         if (!metadata) {
-          throw new Error(
-            `Cannot replay embedding stage: metadata missing for asset ${asset.id}`,
+          throw new BadRequestException(
+            `Cannot replay ${failedStage}: metadata missing for asset ${asset.id}. Replay from GENERATING_METADATA instead.`,
           );
         }
         messageId = await this.queue.dispatchEmbedding({
@@ -160,30 +192,69 @@ export class PipelineRetryService {
         throw new Error(`Unsupported replay queue: ${targetQueue}`);
     }
 
-    if (message.assetId) {
+    if (assetId) {
       await this.prisma.asset.update({
-        where: { id: message.assetId },
-        data: { status: message.failedStage as DatabaseAssetState },
+        where: { id: assetId },
+        data: { status: failedStage as DatabaseAssetState },
       });
     }
 
     await this.prisma.ingestionFile.update({
-      where: { id: message.ingestionFileId },
+      where: { id: ingestionFileId },
       data: {
-        status: message.failedStage as DatabaseAssetState,
+        status: failedStage as DatabaseAssetState,
         errorMessage: null,
       },
     });
 
     this.logger.log(
       'DLQ message replayed',
-      buildPipelineLogFields(message, message.failedStage, {
+      buildPipelineLogFields(base, failedStage, {
         status: 'replayed',
         target_queue: targetQueue,
       }),
     );
 
     return messageId;
+  }
+
+  /**
+   * Trusts an explicit stage when given, otherwise reconstructs it from the
+   * last failed attempt. Falls back to DISCOVERED because the pipeline resumes
+   * past work it already completed.
+   */
+  private async resolveReplayStage(
+    request: ReplayDlqRequest,
+    ingestionFile: { id: string; status: DatabaseAssetState },
+  ): Promise<AssetState> {
+    if (request.failedStage) {
+      if (!REPLAYABLE_STAGES.has(request.failedStage)) {
+        throw new BadRequestException(
+          `failedStage "${request.failedStage}" cannot be replayed. Expected one of: ${[
+            ...REPLAYABLE_STAGES,
+          ].join(', ')}`,
+        );
+      }
+      return request.failedStage;
+    }
+
+    const lastFailure = await this.prisma.processingAttempt.findFirst({
+      where: { ingestionFileId: ingestionFile.id, status: 'FAILED' },
+      orderBy: { createdAt: 'desc' },
+      select: { stage: true },
+    });
+
+    const lastFailedStage = lastFailure?.stage as AssetState | undefined;
+    if (lastFailedStage && REPLAYABLE_STAGES.has(lastFailedStage)) {
+      return lastFailedStage;
+    }
+
+    const currentStage = ingestionFile.status as unknown as AssetState;
+    if (REPLAYABLE_STAGES.has(currentStage)) {
+      return currentStage;
+    }
+
+    return AssetState.DISCOVERED;
   }
 
   private async scheduleRetry(

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetState } from '../../../common/enums/asset-state.enum';
 import { PrismaService } from '../../database/prisma.service';
@@ -16,7 +17,7 @@ describe('PipelineRetryService', () => {
   };
 
   const mockPrisma = {
-    processingAttempt: { create: jest.fn() },
+    processingAttempt: { create: jest.fn(), findFirst: jest.fn() },
     asset: { update: jest.fn(), findUnique: jest.fn() },
     ingestionFile: { update: jest.fn(), findUnique: jest.fn() },
     ingestionJob: { update: jest.fn() },
@@ -163,5 +164,94 @@ describe('PipelineRetryService', () => {
       }),
     );
     expect(messageId).toBe('replay-msg-002');
+  });
+
+  it('should derive job, asset and stage from the database when only the file id is given', async () => {
+    mockPrisma.ingestionFile.findUnique.mockResolvedValue({
+      id: 'file-001',
+      jobId: 'job-001',
+      assetId: 'asset-001',
+      driveFileId: 'drive-001',
+      status: 'DEAD_LETTER',
+    });
+    mockPrisma.processingAttempt.findFirst.mockResolvedValue({
+      stage: AssetState.GENERATING_METADATA,
+    });
+    mockPrisma.asset.findUnique.mockResolvedValue({
+      id: 'asset-001',
+      contentHash: 'hash-123',
+      s3ObjectKey: 'assets/asset-001/original/cat.png',
+    });
+    mockQueue.dispatchAiMetadata.mockResolvedValue('replay-msg-003');
+
+    const messageId = await service.replayFromDlq({
+      ingestionFileId: 'file-001',
+    });
+
+    expect(mockQueue.dispatchAiMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: 'job-001',
+        assetId: 'asset-001',
+        contentHash: 'hash-123',
+        attempt: 1,
+      }),
+    );
+    expect(messageId).toBe('replay-msg-003');
+  });
+
+  it('should restart from discovery when no failed attempt was recorded', async () => {
+    mockPrisma.ingestionFile.findUnique.mockResolvedValue({
+      id: 'file-001',
+      jobId: 'job-001',
+      assetId: null,
+      driveFileId: 'drive-001',
+      status: 'DEAD_LETTER',
+    });
+    mockPrisma.processingAttempt.findFirst.mockResolvedValue(null);
+    mockQueue.dispatchIngestion.mockResolvedValue('replay-msg-004');
+
+    const messageId = await service.replayFromDlq({
+      ingestionFileId: 'file-001',
+    });
+
+    expect(mockPrisma.asset.findUnique).not.toHaveBeenCalled();
+    expect(mockQueue.dispatchIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: AssetState.DISCOVERED }),
+    );
+    expect(messageId).toBe('replay-msg-004');
+  });
+
+  it('should reject a replay with a missing or empty body', async () => {
+    await expect(
+      service.replayFromDlq(undefined as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.replayFromDlq({} as never)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(mockPrisma.ingestionFile.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('should reject an unknown ingestion file', async () => {
+    mockPrisma.ingestionFile.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.replayFromDlq({ ingestionFileId: 'missing' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('should reject a stage that has no queue', async () => {
+    mockPrisma.ingestionFile.findUnique.mockResolvedValue({
+      id: 'file-001',
+      jobId: 'job-001',
+      driveFileId: 'drive-001',
+      status: 'DEAD_LETTER',
+    });
+
+    await expect(
+      service.replayFromDlq({
+        ingestionFileId: 'file-001',
+        failedStage: AssetState.DEAD_LETTER,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
