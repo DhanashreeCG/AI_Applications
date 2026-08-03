@@ -1,0 +1,1643 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flashcard Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+      :root {
+        --bg: #0f1226;
+        --bg-soft: #171b3a;
+        --panel: rgba(255, 255, 255, 0.06);
+        --panel-strong: rgba(255, 255, 255, 0.12);
+        --border: rgba(255, 255, 255, 0.14);
+        --text: #f4f6ff;
+        --muted: #a8b0d8;
+        --accent: #6c7bff;
+        --accent-2: #ff7ac4;
+        --ok: #46d39a;
+        --warn: #ffc861;
+        --err: #ff7a7a;
+        --card-radius: 24px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        min-height: 100vh;
+        font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(1200px 600px at 12% -10%, #2b2f6b 0%, transparent 60%),
+          radial-gradient(900px 500px at 92% 0%, #6b2f5f 0%, transparent 55%),
+          var(--bg);
+        background-attachment: fixed;
+      }
+
+      .wrap {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 32px 24px 80px;
+      }
+
+      header.masthead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand-mark {
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        display: grid;
+        place-items: center;
+        font-size: 24px;
+        box-shadow: 0 10px 30px rgba(108, 123, 255, 0.4);
+      }
+
+      .brand h1 {
+        font-family: 'Baloo 2', cursive;
+        font-size: 26px;
+        margin: 0;
+        letter-spacing: 0.2px;
+      }
+
+      .brand p {
+        margin: 2px 0 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .api-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 8px 8px 8px 16px;
+        font-size: 13px;
+      }
+
+      .api-field label {
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .api-field input {
+        background: transparent;
+        border: none;
+        color: var(--text);
+        font: inherit;
+        width: 190px;
+        outline: none;
+      }
+
+      /* ---------- Controls ---------- */
+
+      .console {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.09),
+          rgba(255, 255, 255, 0.04)
+        );
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        padding: 20px;
+        backdrop-filter: blur(14px);
+        box-shadow: 0 24px 60px rgba(6, 8, 25, 0.45);
+      }
+
+      .console-grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 1fr) 150px 130px auto;
+        gap: 14px;
+        align-items: end;
+      }
+
+      @media (max-width: 860px) {
+        .console-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .field label {
+        display: block;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--muted);
+        margin-bottom: 7px;
+        font-weight: 700;
+      }
+
+      .field input,
+      .field select {
+        width: 100%;
+        padding: 13px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(10, 12, 32, 0.55);
+        color: var(--text);
+        font: inherit;
+        outline: none;
+        transition: border-color 0.18s, box-shadow 0.18s;
+      }
+
+      .field input:focus,
+      .field select:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 4px rgba(108, 123, 255, 0.18);
+      }
+
+      button {
+        font: inherit;
+        cursor: pointer;
+        border: none;
+        border-radius: 14px;
+        transition: transform 0.15s, box-shadow 0.2s, background 0.2s,
+          opacity 0.2s;
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        padding: 13px 26px;
+        font-weight: 800;
+        color: #fff;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        box-shadow: 0 12px 28px rgba(108, 123, 255, 0.38);
+        white-space: nowrap;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 34px rgba(108, 123, 255, 0.5);
+      }
+
+      .btn-ghost {
+        padding: 10px 16px;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        font-weight: 700;
+        font-size: 13px;
+      }
+
+      .btn-ghost:hover:not(:disabled) {
+        background: var(--panel-strong);
+      }
+
+      .examples {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+        align-items: center;
+      }
+
+      .examples span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .chip {
+        padding: 6px 13px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid var(--border);
+        font-size: 12.5px;
+        color: var(--text);
+      }
+
+      .chip:hover {
+        background: rgba(255, 255, 255, 0.14);
+      }
+
+      /* ---------- Status ---------- */
+
+      .banner {
+        margin-top: 18px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        font-size: 14px;
+        display: none;
+        gap: 10px;
+        align-items: flex-start;
+      }
+
+      .banner.show {
+        display: flex;
+      }
+
+      .banner.error {
+        background: rgba(255, 122, 122, 0.12);
+        border: 1px solid rgba(255, 122, 122, 0.4);
+        color: #ffd9d9;
+      }
+
+      .banner.warn {
+        background: rgba(255, 200, 97, 0.12);
+        border: 1px solid rgba(255, 200, 97, 0.38);
+        color: #ffeec4;
+      }
+
+      .banner code {
+        font-size: 12.5px;
+        opacity: 0.85;
+      }
+
+      /* ---------- Summary ---------- */
+
+      .summary {
+        display: none;
+        margin: 28px 0 18px;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: space-between;
+      }
+
+      .summary.show {
+        display: flex;
+      }
+
+      .meta-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 13px;
+        border-radius: 999px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+
+      .pill b {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .bulk-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      /* ---------- Card grid ---------- */
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+        gap: 24px;
+      }
+
+      .tile {
+        position: relative;
+      }
+
+      .tile-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 12px;
+        opacity: 0;
+        transform: translateY(-4px);
+        transition: opacity 0.18s, transform 0.18s;
+      }
+
+      .tile:hover .tile-actions,
+      .tile:focus-within .tile-actions {
+        opacity: 1;
+        transform: none;
+      }
+
+      /* ---------- The flashcard ---------- */
+
+      .card {
+        position: relative;
+        aspect-ratio: 3 / 4;
+        border-radius: var(--card-radius);
+        background: linear-gradient(170deg, #ffffff, #f4f6ff 62%, #eef1ff);
+        color: #1b1f3b;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 18px 46px rgba(5, 7, 24, 0.5);
+        cursor: zoom-in;
+        transition: transform 0.22s ease, box-shadow 0.22s ease;
+      }
+
+      .tile .card:hover {
+        transform: translateY(-6px) scale(1.012);
+        box-shadow: 0 26px 60px rgba(5, 7, 24, 0.62);
+      }
+
+      .card::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        border: 1px solid rgba(27, 31, 59, 0.08);
+        pointer-events: none;
+      }
+
+      .card-ribbon {
+        position: absolute;
+        top: 14px;
+        left: 14px;
+        z-index: 3;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 11px;
+        border-radius: 999px;
+        background: rgba(27, 31, 59, 0.78);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .card-figure {
+        position: relative;
+        flex: 0 0 auto;
+        height: 52%;
+        background:
+          radial-gradient(circle at 30% 20%, #dfe5ff 0%, transparent 60%),
+          linear-gradient(135deg, #e9ecff, #f7f0ff);
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+      }
+
+      .card[data-image-dominance='high'] .card-figure {
+        height: 60%;
+      }
+
+      .card[data-image-dominance='low'] .card-figure {
+        height: 42%;
+      }
+
+      .card-figure img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .figure-fallback {
+        text-align: center;
+        padding: 18px;
+        color: #6a739f;
+      }
+
+      .figure-fallback .glyph {
+        font-size: 40px;
+        line-height: 1;
+        margin-bottom: 8px;
+        opacity: 0.75;
+      }
+
+      .figure-fallback small {
+        display: block;
+        font-size: 11.5px;
+        line-height: 1.45;
+        max-width: 190px;
+        margin: 0 auto;
+      }
+
+      .card-body {
+        flex: 1 1 auto;
+        padding: 18px 20px 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .c-title {
+        font-family: 'Baloo 2', cursive;
+        font-weight: 800;
+        font-size: 30px;
+        line-height: 1.1;
+        letter-spacing: -0.01em;
+        color: #171a38;
+      }
+
+      .card[data-text-scale='xlarge'] .c-title {
+        font-size: 38px;
+      }
+
+      .card[data-text-scale='small'] .c-title {
+        font-size: 25px;
+      }
+
+      .c-subtitle {
+        font-size: 15px;
+        font-weight: 700;
+        color: #4d5588;
+      }
+
+      .c-sentence {
+        font-size: 16px;
+        line-height: 1.45;
+        color: #333a63;
+      }
+
+      .card[data-text-scale='xlarge'] .c-sentence {
+        font-size: 18px;
+      }
+
+      .c-callout {
+        border-radius: 14px;
+        padding: 11px 13px;
+        font-size: 14px;
+        line-height: 1.4;
+        display: flex;
+        gap: 9px;
+        align-items: flex-start;
+      }
+
+      .c-fact {
+        background: rgba(108, 123, 255, 0.1);
+        border-left: 4px solid var(--accent);
+        color: #2c3268;
+      }
+
+      .c-question {
+        background: rgba(255, 122, 196, 0.12);
+        border-left: 4px solid var(--accent-2);
+        color: #6c2450;
+        font-weight: 700;
+      }
+
+      .c-answer {
+        background: rgba(70, 211, 154, 0.14);
+        border-left: 4px solid #2fae7c;
+        color: #175a41;
+      }
+
+      .c-callout .tag {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        opacity: 0.72;
+        white-space: nowrap;
+        padding-top: 2px;
+      }
+
+      .c-pron {
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        color: #5a6194;
+        letter-spacing: 0.02em;
+      }
+
+      .c-badge {
+        align-self: flex-start;
+        padding: 5px 12px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color: #fff;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .c-footer {
+        margin-top: auto;
+        font-size: 11.5px;
+        color: #7c84ad;
+      }
+
+      .card-watermark {
+        position: absolute;
+        right: 14px;
+        bottom: 12px;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: rgba(27, 31, 59, 0.28);
+        font-weight: 800;
+      }
+
+      /* Export-sized card (offscreen) */
+      .export-stage {
+        position: fixed;
+        left: -12000px;
+        top: 0;
+        width: 900px;
+        pointer-events: none;
+        opacity: 1;
+        z-index: -1;
+      }
+
+      .export-stage .card {
+        width: 900px;
+        cursor: default;
+        border-radius: 28px;
+        box-shadow: none;
+      }
+
+      .export-stage .c-title {
+        font-size: 62px;
+      }
+
+      .export-stage .card[data-text-scale='xlarge'] .c-title {
+        font-size: 76px;
+      }
+
+      .export-stage .c-subtitle {
+        font-size: 27px;
+      }
+
+      .export-stage .c-sentence {
+        font-size: 30px;
+      }
+
+      .export-stage .c-callout {
+        font-size: 26px;
+        padding: 20px 22px;
+        border-radius: 20px;
+      }
+
+      .export-stage .c-callout .tag {
+        font-size: 15px;
+      }
+
+      .export-stage .c-pron {
+        font-size: 25px;
+      }
+
+      .export-stage .c-badge {
+        font-size: 20px;
+        padding: 8px 20px;
+      }
+
+      .export-stage .c-footer {
+        font-size: 20px;
+      }
+
+      .export-stage .card-body {
+        padding: 34px 40px 42px;
+        gap: 18px;
+      }
+
+      .export-stage .card-ribbon {
+        font-size: 19px;
+        padding: 9px 20px;
+        top: 26px;
+        left: 26px;
+      }
+
+      .export-stage .card-watermark {
+        font-size: 17px;
+        right: 28px;
+        bottom: 22px;
+      }
+
+      .export-stage .figure-fallback .glyph {
+        font-size: 90px;
+      }
+
+      .export-stage .figure-fallback small {
+        font-size: 21px;
+        max-width: 420px;
+      }
+
+      /* ---------- Skeletons ---------- */
+
+      .skeleton {
+        aspect-ratio: 3 / 4;
+        border-radius: var(--card-radius);
+        background: linear-gradient(
+          100deg,
+          rgba(255, 255, 255, 0.05) 30%,
+          rgba(255, 255, 255, 0.14) 50%,
+          rgba(255, 255, 255, 0.05) 70%
+        );
+        background-size: 220% 100%;
+        animation: shimmer 1.25s infinite linear;
+        border: 1px solid var(--border);
+      }
+
+      @keyframes shimmer {
+        from {
+          background-position: 160% 0;
+        }
+        to {
+          background-position: -60% 0;
+        }
+      }
+
+      /* ---------- Empty state ---------- */
+
+      .empty {
+        text-align: center;
+        padding: 76px 20px;
+        color: var(--muted);
+      }
+
+      .empty .big {
+        font-size: 54px;
+        margin-bottom: 12px;
+      }
+
+      .empty h2 {
+        font-family: 'Baloo 2', cursive;
+        color: var(--text);
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+
+      .empty p {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      /* ---------- Modal ---------- */
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: none;
+        padding: 28px;
+        background: rgba(6, 8, 24, 0.82);
+        backdrop-filter: blur(10px);
+        overflow: auto;
+      }
+
+      .modal.show {
+        display: grid;
+        place-items: center;
+      }
+
+      .modal-inner {
+        width: min(1080px, 100%);
+        display: grid;
+        grid-template-columns: minmax(300px, 420px) 1fr;
+        gap: 28px;
+        align-items: start;
+      }
+
+      @media (max-width: 900px) {
+        .modal-inner {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .modal-card-holder .card {
+        cursor: default;
+      }
+
+      .modal-side {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 22px;
+      }
+
+      .modal-side h3 {
+        font-family: 'Baloo 2', cursive;
+        margin: 0 0 4px;
+        font-size: 22px;
+      }
+
+      .modal-side .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 18px;
+      }
+
+      .kv {
+        display: grid;
+        grid-template-columns: 132px 1fr;
+        gap: 8px 12px;
+        font-size: 13px;
+        margin-bottom: 18px;
+      }
+
+      .kv dt {
+        color: var(--muted);
+      }
+
+      .kv dd {
+        margin: 0;
+        word-break: break-word;
+      }
+
+      .comp-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 20px;
+      }
+
+      .comp-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12.5px;
+        padding: 8px 11px;
+        border-radius: 11px;
+        background: rgba(10, 12, 32, 0.4);
+        border: 1px solid var(--border);
+      }
+
+      .comp-row code {
+        color: #cdd4ff;
+      }
+
+      .comp-row .type {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+      }
+
+      .dot.ok {
+        background: var(--ok);
+      }
+
+      .dot.empty-dot {
+        background: var(--warn);
+      }
+
+      .modal-nav {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .modal-close {
+        position: fixed;
+        top: 18px;
+        right: 22px;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: var(--panel-strong);
+        color: var(--text);
+        font-size: 20px;
+        border: 1px solid var(--border);
+      }
+
+      /* ---------- Toast ---------- */
+
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 26px;
+        transform: translate(-50%, 30px);
+        padding: 13px 22px;
+        border-radius: 999px;
+        background: rgba(15, 18, 45, 0.94);
+        border: 1px solid var(--border);
+        font-size: 13.5px;
+        font-weight: 700;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.22s, transform 0.22s;
+        z-index: 90;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      }
+
+      .toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+
+      .spinner {
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-top-color: #fff;
+        display: inline-block;
+        animation: spin 0.7s linear infinite;
+        vertical-align: -2px;
+        margin-right: 8px;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <div class="brand">
+          <div class="brand-mark">🎴</div>
+          <div>
+            <h1>Flashcard Studio</h1>
+            <p>Rendering engine for the flashcard generation API</p>
+          </div>
+        </div>
+        <div class="api-field">
+          <label for="apiBase">API</label>
+          <input id="apiBase" value="" placeholder="http://localhost:3000" />
+        </div>
+      </header>
+
+      <section class="console">
+        <div class="console-grid">
+          <div class="field">
+            <label for="query">What should we teach?</label>
+            <input
+              id="query"
+              placeholder="Generate flashcards on vegetables"
+              value="Generate flashcards on vegetables"
+            />
+          </div>
+          <div class="field">
+            <label for="ageGroup">Age group</label>
+            <input id="ageGroup" value="3-4" placeholder="3-4" />
+          </div>
+          <div class="field">
+            <label for="count">Cards</label>
+            <input id="count" type="number" min="1" max="20" value="5" />
+          </div>
+          <button class="btn-primary" id="generateBtn">Generate</button>
+        </div>
+
+        <div class="examples">
+          <span>Try:</span>
+          <button class="chip" data-q="Generate flashcards on vegetables" data-a="3-4">
+            Vegetables · 3-4
+          </button>
+          <button class="chip" data-q="Teach animal names to toddlers" data-a="2-3">
+            Animals · 2-3
+          </button>
+          <button class="chip" data-q="Fun science facts about planets" data-a="5-6">
+            Planets · 5-6
+          </button>
+          <button class="chip" data-q="Make a quiz about the water cycle" data-a="8-10">
+            Water cycle quiz · 8-10
+          </button>
+        </div>
+
+        <div class="banner error" id="errorBanner"></div>
+        <div class="banner warn" id="warnBanner"></div>
+      </section>
+
+      <section class="summary" id="summary">
+        <div class="meta-pills" id="metaPills"></div>
+        <div class="bulk-actions">
+          <button class="btn-ghost" id="downloadAllPdf">⬇ All as PDF</button>
+          <button class="btn-ghost" id="downloadAllPng">⬇ All as PNG</button>
+        </div>
+      </section>
+
+      <div class="grid" id="grid"></div>
+
+      <div class="empty" id="empty">
+        <div class="big">✨</div>
+        <h2>No flashcards yet</h2>
+        <p>Enter a request and an age group, then hit Generate.</p>
+      </div>
+    </div>
+
+    <div class="modal" id="modal">
+      <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
+      <div class="modal-inner">
+        <div class="modal-card-holder" id="modalCard"></div>
+        <aside class="modal-side">
+          <h3 id="modalTitle">Card</h3>
+          <div class="sub" id="modalSub"></div>
+          <dl class="kv" id="modalKv"></dl>
+          <div class="comp-list" id="modalComps"></div>
+          <div class="modal-nav">
+            <button class="btn-ghost" id="prevCard">← Prev</button>
+            <button class="btn-ghost" id="nextCard">Next →</button>
+            <button class="btn-primary" id="modalPng">⬇ PNG</button>
+            <button class="btn-ghost" id="modalPdf">⬇ PDF</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="export-stage" id="exportStage"></div>
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const el = (id) => document.getElementById(id);
+      const state = {
+        payload: null,
+        imageCache: new Map(),
+        activeIndex: 0,
+        busy: false,
+      };
+
+      const TYPE_META = {
+        title: { cls: 'c-title' },
+        subtitle: { cls: 'c-subtitle' },
+        sentence: { cls: 'c-sentence' },
+        fact: { cls: 'c-callout c-fact', tag: 'Fact' },
+        question: { cls: 'c-callout c-question', tag: 'Q' },
+        answer: { cls: 'c-callout c-answer', tag: 'A' },
+        pronunciation: { cls: 'c-pron' },
+        phonics: { cls: 'c-pron' },
+        badge: { cls: 'c-badge' },
+        footer: { cls: 'c-footer' },
+      };
+
+      /* ---------------- helpers ---------------- */
+
+      function defaultApiBase() {
+        return location.protocol.startsWith('http')
+          ? location.origin
+          : 'http://localhost:3000';
+      }
+
+      function apiBase() {
+        return (el('apiBase').value || defaultApiBase()).replace(/\/+$/, '');
+      }
+
+      function toast(message, ms = 2600) {
+        const node = el('toast');
+        node.innerHTML = message;
+        node.classList.add('show');
+        clearTimeout(node._t);
+        node._t = setTimeout(() => node.classList.remove('show'), ms);
+      }
+
+      function showBanner(which, html) {
+        const node = el(which === 'error' ? 'errorBanner' : 'warnBanner');
+        node.innerHTML = html;
+        node.classList.add('show');
+      }
+
+      function clearBanners() {
+        el('errorBanner').classList.remove('show');
+        el('warnBanner').classList.remove('show');
+      }
+
+      function slugify(text) {
+        return (text || 'flashcard')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 40);
+      }
+
+      function setBusy(busy) {
+        state.busy = busy;
+        el('generateBtn').disabled = busy;
+        el('downloadAllPdf').disabled = busy;
+        el('downloadAllPng').disabled = busy;
+      }
+
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      /* ---------------- API ---------------- */
+
+      async function generate() {
+        const query = el('query').value.trim();
+        const ageGroup = el('ageGroup').value.trim();
+        const count = Number(el('count').value) || 5;
+
+        if (!query || !ageGroup) {
+          showBanner('error', '<div>Both a request and an age group are required.</div>');
+          return;
+        }
+
+        clearBanners();
+        setBusy(true);
+        renderSkeletons(count);
+
+        try {
+          const response = await fetch(apiBase() + '/flashcards/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, ageGroup, count }),
+          });
+
+          const body = await response.json().catch(() => null);
+
+          if (!response.ok) {
+            const err = body && body.error ? body.error : null;
+            showBanner(
+              'error',
+              '<div><b>' +
+                (err ? err.code : 'HTTP ' + response.status) +
+                '</b><br>' +
+                escapeHtml(err ? err.message : (body && body.message) || response.statusText) +
+                (err && err.details
+                  ? '<br><code>' + escapeHtml(JSON.stringify(err.details)) + '</code>'
+                  : '') +
+                '</div>',
+            );
+            el('grid').innerHTML = '';
+            el('empty').style.display = 'block';
+            el('summary').classList.remove('show');
+            return;
+          }
+
+          state.payload = body;
+          state.imageCache.clear();
+          await preloadImages(body);
+          renderSummary(body);
+          renderGrid(body);
+        } catch (error) {
+          el('grid').innerHTML = '';
+          el('empty').style.display = 'block';
+          showBanner(
+            'error',
+            '<div><b>Could not reach the API</b><br>' +
+              escapeHtml(error.message) +
+              '<br><code>Check the API URL, that the server is running, and that CORS allows this origin.</code></div>',
+          );
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value).replace(
+          /[&<>"']/g,
+          (ch) =>
+            ({
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+            })[ch],
+        );
+      }
+
+      /**
+       * Prefers the API's same-origin proxy path so neither display nor canvas
+       * export depends on an S3 CORS rule. Falls back to the raw signed URL.
+       */
+      function imageSourceFor(ref) {
+        if (!ref) return null;
+        if (ref.imageUrl) {
+          return ref.imageUrl.startsWith('http')
+            ? ref.imageUrl
+            : apiBase() + ref.imageUrl;
+        }
+        return ref.signedUrl || null;
+      }
+
+      /**
+       * Canvas export taints on cross-origin images, so sources are inlined as
+       * data URLs up front wherever the response allows it.
+       */
+      async function preloadImages(payload) {
+        const sources = new Set();
+        for (const card of payload.cards || []) {
+          for (const component of card.components || []) {
+            const source = imageSourceFor(component.assetReference);
+            if (source) sources.add(source);
+          }
+        }
+
+        let blocked = 0;
+        await Promise.all(
+          Array.from(sources).map(async (source) => {
+            if (state.imageCache.has(source)) return;
+            try {
+              const response = await fetch(source, { mode: 'cors' });
+              if (!response.ok) throw new Error('HTTP ' + response.status);
+              const blob = await response.blob();
+              const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              state.imageCache.set(source, dataUrl);
+            } catch {
+              blocked += 1;
+              state.imageCache.set(source, null);
+            }
+          }),
+        );
+
+        if (blocked > 0) {
+          showBanner(
+            'warn',
+            '<div><b>' +
+              blocked +
+              ' image(s) could not be inlined.</b> They still display, but may be missing from PNG/PDF exports.</div>',
+          );
+        }
+      }
+
+      /* ---------------- rendering ---------------- */
+
+      function renderSkeletons(count) {
+        el('empty').style.display = 'none';
+        el('summary').classList.remove('show');
+        const grid = el('grid');
+        grid.innerHTML = '';
+        for (let i = 0; i < count; i += 1) {
+          const node = document.createElement('div');
+          node.className = 'skeleton';
+          grid.appendChild(node);
+        }
+      }
+
+      function renderSummary(payload) {
+        const req = payload.request || {};
+        const template = payload.template || {};
+        const meta = payload.renderingMetadata || {};
+        const pills = [
+          ['Topic', req.topic],
+          ['Age', req.ageGroup],
+          ['Objective', (req.learningObjective || '').replace(/_/g, ' ')],
+          ['Template', template.name + ' v' + template.templateVersion],
+          ['Cards', (payload.cards || []).length],
+          ['Model', meta.contentModel],
+        ];
+        el('metaPills').innerHTML = pills
+          .filter(([, value]) => value !== undefined && value !== null && value !== '')
+          .map(
+            ([label, value]) =>
+              '<span class="pill">' +
+              escapeHtml(label) +
+              ' <b>' +
+              escapeHtml(value) +
+              '</b></span>',
+          )
+          .join('');
+        el('summary').classList.add('show');
+      }
+
+      function orderedComponents(card, template) {
+        const hierarchy = Array.isArray(template && template.componentHierarchy)
+          ? template.componentHierarchy
+          : null;
+        const components = card.components || [];
+        if (!hierarchy) return components;
+
+        const byId = new Map(components.map((c) => [c.componentId, c]));
+        const ordered = [];
+        for (const id of hierarchy) {
+          if (byId.has(id)) {
+            ordered.push(byId.get(id));
+            byId.delete(id);
+          }
+        }
+        return ordered.concat(Array.from(byId.values()));
+      }
+
+      function buildCardElement(card, index) {
+        const payload = state.payload;
+        const template = payload.template || {};
+        const hints = template.renderingHints || {};
+        const components = orderedComponents(card, template);
+
+        const root = document.createElement('div');
+        root.className = 'card';
+        root.dataset.imageDominance = hints.imageDominance || 'medium';
+        root.dataset.textScale = hints.textScale || 'medium';
+
+        const ribbon = document.createElement('div');
+        ribbon.className = 'card-ribbon';
+        ribbon.textContent =
+          (payload.request.learningObjective || 'flashcard').replace(/_/g, ' ') +
+          ' · ' +
+          (index + 1) +
+          '/' +
+          payload.cards.length;
+        root.appendChild(ribbon);
+
+        const imageComponent = components.find((c) => c.componentType === 'image');
+        root.appendChild(buildFigure(imageComponent));
+
+        const body = document.createElement('div');
+        body.className = 'card-body';
+
+        for (const component of components) {
+          if (component.componentType === 'image') continue;
+          if (!component.content) continue;
+          body.appendChild(buildTextComponent(component));
+        }
+
+        root.appendChild(body);
+
+        const watermark = document.createElement('div');
+        watermark.className = 'card-watermark';
+        watermark.textContent = payload.request.topic || '';
+        root.appendChild(watermark);
+
+        return root;
+      }
+
+      function buildFigure(component) {
+        const figure = document.createElement('div');
+        figure.className = 'card-figure';
+        const ref = component && component.assetReference;
+        const source = imageSourceFor(ref);
+        const cached = source ? state.imageCache.get(source) : null;
+
+        if (source) {
+          const img = document.createElement('img');
+          // crossOrigin only helps once the bytes are readable; setting it on an
+          // opaque response makes the browser discard a successful load.
+          if (cached) {
+            img.crossOrigin = 'anonymous';
+          }
+          img.alt = ref.caption || '';
+          img.src = cached || source;
+          figure.appendChild(img);
+          return figure;
+        }
+
+        const fallback = document.createElement('div');
+        fallback.className = 'figure-fallback';
+        const status = ref ? ref.status : 'not_found';
+        fallback.innerHTML =
+          '<div class="glyph">🖼️</div><small>No asset matched<br>' +
+          escapeHtml(ref ? '"' + ref.queryUsed + '" · ' + status : status) +
+          '</small>';
+        figure.appendChild(fallback);
+        return figure;
+      }
+
+      function buildTextComponent(component) {
+        const meta = TYPE_META[component.componentType] || { cls: 'c-sentence' };
+        const node = document.createElement('div');
+        node.className = meta.cls;
+        node.dataset.componentId = component.componentId;
+
+        if (meta.tag) {
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          tag.textContent = meta.tag;
+          node.appendChild(tag);
+          const text = document.createElement('span');
+          text.textContent = component.content;
+          node.appendChild(text);
+        } else {
+          node.textContent = component.content;
+        }
+        return node;
+      }
+
+      function renderGrid(payload) {
+        const grid = el('grid');
+        grid.innerHTML = '';
+        el('empty').style.display = (payload.cards || []).length ? 'none' : 'block';
+
+        (payload.cards || []).forEach((card, index) => {
+          const tile = document.createElement('div');
+          tile.className = 'tile';
+
+          const cardNode = buildCardElement(card, index);
+          cardNode.tabIndex = 0;
+          cardNode.setAttribute('role', 'button');
+          cardNode.setAttribute('aria-label', 'View card ' + (index + 1));
+          cardNode.addEventListener('click', () => openModal(index));
+          cardNode.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              openModal(index);
+            }
+          });
+          tile.appendChild(cardNode);
+
+          const actions = document.createElement('div');
+          actions.className = 'tile-actions';
+
+          const viewBtn = document.createElement('button');
+          viewBtn.className = 'btn-ghost';
+          viewBtn.textContent = '🔍 View';
+          viewBtn.addEventListener('click', () => openModal(index));
+
+          const pngBtn = document.createElement('button');
+          pngBtn.className = 'btn-ghost';
+          pngBtn.textContent = '⬇ PNG';
+          pngBtn.addEventListener('click', () => downloadCardPng(index));
+
+          const pdfBtn = document.createElement('button');
+          pdfBtn.className = 'btn-ghost';
+          pdfBtn.textContent = '⬇ PDF';
+          pdfBtn.addEventListener('click', () => downloadCardPdf(index));
+
+          actions.append(viewBtn, pngBtn, pdfBtn);
+          tile.appendChild(actions);
+          grid.appendChild(tile);
+        });
+      }
+
+      /* ---------------- modal ---------------- */
+
+      function openModal(index) {
+        const payload = state.payload;
+        if (!payload || !payload.cards[index]) return;
+        state.activeIndex = index;
+
+        const card = payload.cards[index];
+        el('modalCard').innerHTML = '';
+        el('modalCard').appendChild(buildCardElement(card, index));
+
+        el('modalTitle').textContent = 'Card ' + (index + 1) + ' of ' + payload.cards.length;
+        el('modalSub').textContent =
+          payload.template.name + ' · v' + payload.template.templateVersion;
+
+        const imageRef = (card.components.find((c) => c.componentType === 'image') || {})
+          .assetReference;
+        const rows = [
+          ['Topic', payload.request.topic],
+          ['Age group', payload.request.ageGroup],
+          ['Objective', (payload.request.learningObjective || '').replace(/_/g, ' ')],
+          ['Rule', payload.selection.ruleName],
+          ['Asset status', imageRef ? imageRef.status : 'no image slot'],
+          ['Asset query', imageRef ? imageRef.queryUsed : '—'],
+          [
+            'Similarity',
+            imageRef && imageRef.similarity != null
+              ? imageRef.similarity.toFixed(3)
+              : '—',
+          ],
+        ];
+        el('modalKv').innerHTML = rows
+          .map(
+            ([key, value]) =>
+              '<dt>' + escapeHtml(key) + '</dt><dd>' + escapeHtml(value) + '</dd>',
+          )
+          .join('');
+
+        el('modalComps').innerHTML = card.components
+          .map((component) => {
+            const filled =
+              component.componentType === 'image'
+                ? !!(component.assetReference && component.assetReference.assetId)
+                : !!component.content;
+            return (
+              '<div class="comp-row"><span class="dot ' +
+              (filled ? 'ok' : 'empty-dot') +
+              '"></span><code>' +
+              escapeHtml(component.componentId) +
+              '</code><span class="type">' +
+              escapeHtml(component.componentType) +
+              (component.editable ? ' · editable' : '') +
+              '</span></div>'
+            );
+          })
+          .join('');
+
+        el('prevCard').disabled = index === 0;
+        el('nextCard').disabled = index === payload.cards.length - 1;
+        el('modal').classList.add('show');
+      }
+
+      function closeModal() {
+        el('modal').classList.remove('show');
+      }
+
+      /* ---------------- export ---------------- */
+
+      async function renderCardCanvas(index) {
+        const stage = el('exportStage');
+        stage.innerHTML = '';
+        const node = buildCardElement(state.payload.cards[index], index);
+        stage.appendChild(node);
+
+        if (document.fonts && document.fonts.ready) {
+          await document.fonts.ready;
+        }
+        await Promise.all(
+          Array.from(node.querySelectorAll('img')).map(
+            (img) =>
+              img.complete
+                ? Promise.resolve()
+                : new Promise((resolve) => {
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                  }),
+          ),
+        );
+
+        const canvas = await html2canvas(node, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true,
+          allowTaint: false,
+          logging: false,
+        });
+        stage.innerHTML = '';
+        return canvas;
+      }
+
+      function cardFileName(index, extension) {
+        const req = state.payload.request || {};
+        return (
+          slugify(req.topic || req.query) +
+          '-' +
+          slugify(req.ageGroup) +
+          '-card-' +
+          (index + 1) +
+          '.' +
+          extension
+        );
+      }
+
+      function saveDataUrl(dataUrl, filename) {
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+
+      async function downloadCardPng(index) {
+        if (!state.payload || state.busy) return;
+        setBusy(true);
+        toast('<span class="spinner"></span>Rendering PNG…');
+        try {
+          const canvas = await renderCardCanvas(index);
+          saveDataUrl(canvas.toDataURL('image/png'), cardFileName(index, 'png'));
+          toast('✅ Card ' + (index + 1) + ' saved as PNG');
+        } catch (error) {
+          toast('⚠️ PNG export failed: ' + error.message, 4200);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      function newPdfForCanvas(canvas) {
+        const { jsPDF } = window.jspdf;
+        const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+        return new jsPDF({
+          orientation,
+          unit: 'pt',
+          format: [canvas.width / 2, canvas.height / 2],
+        });
+      }
+
+      async function downloadCardPdf(index) {
+        if (!state.payload || state.busy) return;
+        setBusy(true);
+        toast('<span class="spinner"></span>Rendering PDF…');
+        try {
+          const canvas = await renderCardCanvas(index);
+          const pdf = newPdfForCanvas(canvas);
+          pdf.addImage(
+            canvas.toDataURL('image/png'),
+            'PNG',
+            0,
+            0,
+            canvas.width / 2,
+            canvas.height / 2,
+          );
+          pdf.save(cardFileName(index, 'pdf'));
+          toast('✅ Card ' + (index + 1) + ' saved as PDF');
+        } catch (error) {
+          toast('⚠️ PDF export failed: ' + error.message, 4200);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function downloadAllPng() {
+        if (!state.payload || state.busy) return;
+        const total = state.payload.cards.length;
+        setBusy(true);
+        try {
+          for (let index = 0; index < total; index += 1) {
+            toast('<span class="spinner"></span>Rendering PNG ' + (index + 1) + '/' + total);
+            const canvas = await renderCardCanvas(index);
+            saveDataUrl(canvas.toDataURL('image/png'), cardFileName(index, 'png'));
+            await wait(320);
+          }
+          toast('✅ ' + total + ' PNG files saved');
+        } catch (error) {
+          toast('⚠️ Export failed: ' + error.message, 4200);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function downloadAllPdf() {
+        if (!state.payload || state.busy) return;
+        const total = state.payload.cards.length;
+        setBusy(true);
+        try {
+          let pdf = null;
+          for (let index = 0; index < total; index += 1) {
+            toast('<span class="spinner"></span>Building PDF ' + (index + 1) + '/' + total);
+            const canvas = await renderCardCanvas(index);
+            const width = canvas.width / 2;
+            const height = canvas.height / 2;
+            if (!pdf) {
+              pdf = newPdfForCanvas(canvas);
+            } else {
+              pdf.addPage([width, height], width > height ? 'landscape' : 'portrait');
+            }
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, width, height);
+          }
+          const req = state.payload.request || {};
+          pdf.save(
+            slugify(req.topic || req.query) + '-' + slugify(req.ageGroup) + '-flashcards.pdf',
+          );
+          toast('✅ PDF with ' + total + ' cards saved');
+        } catch (error) {
+          toast('⚠️ PDF export failed: ' + error.message, 4200);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      /* ---------------- wiring ---------------- */
+
+      el('apiBase').value = defaultApiBase();
+      el('generateBtn').addEventListener('click', generate);
+      el('downloadAllPdf').addEventListener('click', downloadAllPdf);
+      el('downloadAllPng').addEventListener('click', downloadAllPng);
+      el('modalClose').addEventListener('click', closeModal);
+      el('modalPng').addEventListener('click', () => downloadCardPng(state.activeIndex));
+      el('modalPdf').addEventListener('click', () => downloadCardPdf(state.activeIndex));
+      el('prevCard').addEventListener('click', () => openModal(state.activeIndex - 1));
+      el('nextCard').addEventListener('click', () => openModal(state.activeIndex + 1));
+
+      el('modal').addEventListener('click', (event) => {
+        if (event.target === el('modal')) closeModal();
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (!el('modal').classList.contains('show')) {
+          if (event.key === 'Enter' && document.activeElement.tagName === 'INPUT') {
+            generate();
+          }
+          return;
+        }
+        if (event.key === 'Escape') closeModal();
+        if (event.key === 'ArrowLeft' && state.activeIndex > 0) {
+          openModal(state.activeIndex - 1);
+        }
+        if (
+          event.key === 'ArrowRight' &&
+          state.payload &&
+          state.activeIndex < state.payload.cards.length - 1
+        ) {
+          openModal(state.activeIndex + 1);
+        }
+      });
+
+      document.querySelectorAll('.chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+          el('query').value = chip.dataset.q;
+          el('ageGroup').value = chip.dataset.a;
+          generate();
+        });
+      });
+    </script>
+  </body>
+</html>
