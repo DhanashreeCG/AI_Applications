@@ -28,6 +28,7 @@ export interface AppConfig {
     geminiApiKey?: string;
     geminiModel: string;
     geminiPromptVersion: string;
+    flashcardPromptVersion: string;
     openaiApiKey?: string;
     openaiEmbeddingModel: string;
     costGeminiPerImageUsd: number;
@@ -48,6 +49,10 @@ export interface AppConfig {
     lockDurationMs: number;
     shutdownTimeoutMs: number;
     prefix: string;
+  };
+  flashcards: {
+    imageConcurrency: number;
+    signedUrlTtlSeconds: number;
   };
 }
 
@@ -102,6 +107,7 @@ export default (): AppConfig => ({
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     geminiPromptVersion: process.env.GEMINI_PROMPT_VERSION || 'v1',
+    flashcardPromptVersion: process.env.FLASHCARD_PROMPT_VERSION || 'v1',
     openaiApiKey: process.env.OPENAI_API_KEY,
     openaiEmbeddingModel:
       process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
@@ -151,5 +157,15 @@ export default (): AppConfig => ({
       30000,
     ),
     prefix: process.env.BULLMQ_PREFIX || 'asset-ingestion',
+  },
+  flashcards: {
+    imageConcurrency: parseInt(
+      process.env.FLASHCARD_IMAGE_CONCURRENCY || '3',
+      10,
+    ),
+    signedUrlTtlSeconds: parseInt(
+      process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS || '3600',
+      10,
+    ),
   },
 });

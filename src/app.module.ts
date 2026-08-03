@@ -14,6 +14,7 @@ import { CacheModule } from './modules/cache/cache.module';
 import { SearchModule } from './modules/search/search.module';
 import { PipelineModule } from './modules/pipeline/pipeline.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
+import { FlashcardsModule } from './modules/flashcards/flashcards.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ObservabilityModule } from './modules/observability/observability.modul
     SearchModule,
     PipelineModule,
     IngestionModule,
+    FlashcardsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -230,3 +230,55 @@ model AiUsage {
   @@index([status])
   @@index([createdAt])
 }
+
+/// Layout-only flashcard template. Never stores educational content.
+model FlashcardTemplate {
+  id                   String   @id @default(cuid())
+  name                 String
+  description          String?
+  supportedAgeMin      Int
+  supportedAgeMax      Int
+  supportedGrades      String[] @default([])
+  learningObjectives   String[]
+  subjectsSupported    String[] @default([])
+  difficultyLevels     String[] @default([])
+  templateVersion      String   @default("1.0")
+  active               Boolean  @default(true)
+  layoutDefinition     Json
+  editableComponents   Json
+  componentHierarchy   Json
+  componentConstraints Json?
+  renderingHints       Json?
+  defaultStyles        Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  selectionRules TemplateSelectionRule[]
+
+  @@index([active])
+  @@index([supportedAgeMin, supportedAgeMax])
+  @@unique([name, templateVersion])
+}
+
+/// Configurable, deterministic template selection rules (no hardcoded age→template chains).
+model TemplateSelectionRule {
+  id                 String   @id @default(cuid())
+  name               String
+  priority           Int      @default(100)
+  active             Boolean  @default(true)
+  ageMin             Int?
+  ageMax             Int?
+  grades             String[] @default([])
+  subjects           String[] @default([])
+  learningObjectives String[] @default([])
+  difficulties       String[] @default([])
+  intents            String[] @default([])
+  topics             String[] @default([])
+  templateId         String
+  template           FlashcardTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([active, priority])
+  @@index([templateId])
+}
