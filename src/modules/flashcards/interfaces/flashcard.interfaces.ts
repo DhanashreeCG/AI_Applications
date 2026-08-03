@@ -58,6 +58,8 @@ export interface AssetReference {
   assetId: string | null;
   s3ObjectKey: string | null;
   signedUrl: string | null;
+  /** Same-origin proxy path; avoids S3 CORS for canvas-based renderers. */
+  imageUrl: string | null;
   caption: string | null;
   similarity: number | null;
   mimeType: string | null;

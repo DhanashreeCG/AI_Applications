@@ -34,6 +34,7 @@ export const COMPONENT_TYPES = [
 export type ComponentType = (typeof COMPONENT_TYPES)[number];
 
 export const FLASHCARD_CONTENT_STAGE = 'flashcard_content';
+export const FLASHCARD_ASSET_IMAGE_PATH = '/flashcards/assets';
 export const DEFAULT_FLASHCARD_COUNT = 5;
 export const DEFAULT_IMAGE_CONCURRENCY = 3;
 export const DEFAULT_SIGNED_URL_TTL_SECONDS = 3600;

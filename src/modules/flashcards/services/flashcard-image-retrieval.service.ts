@@ -6,6 +6,7 @@ import { S3StorageService } from '../../storage/s3-storage.service';
 import {
   DEFAULT_IMAGE_CONCURRENCY,
   DEFAULT_SIGNED_URL_TTL_SECONDS,
+  FLASHCARD_ASSET_IMAGE_PATH,
 } from '../constants/flashcard.constants';
 import {
   AssetReference,
@@ -116,6 +117,7 @@ export class FlashcardImageRetrievalService {
           assetId: candidate.assetId,
           s3ObjectKey: candidate.s3ObjectKey,
           signedUrl,
+          imageUrl: `${FLASHCARD_ASSET_IMAGE_PATH}/${candidate.assetId}/image`,
           caption: candidate.caption,
           similarity: candidate.similarity,
           mimeType: candidate.mimeType,
@@ -137,6 +139,7 @@ export class FlashcardImageRetrievalService {
       assetId: null,
       s3ObjectKey: null,
       signedUrl: null,
+      imageUrl: null,
       caption: null,
       similarity: null,
       mimeType: null,
