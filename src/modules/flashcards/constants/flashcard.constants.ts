@@ -40,3 +40,5 @@ export const FLASHCARD_ASSET_IMAGE_PATH = '/flashcards/assets';
 export const DEFAULT_FLASHCARD_COUNT = 5;
 export const DEFAULT_IMAGE_CONCURRENCY = 3;
 export const DEFAULT_SIGNED_URL_TTL_SECONDS = 3600;
+/** Nearby embedding hits to choose from (unused-first) in one search call. */
+export const DEFAULT_IMAGE_SEARCH_LIMIT = 5;

@@ -53,6 +53,7 @@ export interface AppConfig {
   flashcards: {
     imageConcurrency: number;
     signedUrlTtlSeconds: number;
+    imageSearchLimit: number;
   };
   pipelineTracking: {
     enabled: boolean;
@@ -170,6 +171,10 @@ export default (): AppConfig => ({
     ),
     signedUrlTtlSeconds: parseInt(
       process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS || '3600',
+      10,
+    ),
+    imageSearchLimit: parseInt(
+      process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '5',
       10,
     ),
   },

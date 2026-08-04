@@ -16,6 +16,7 @@ describe('FlashcardImageRetrievalService', () => {
     get: (key: string) => {
       if (key === 'flashcards.imageConcurrency') return 2;
       if (key === 'flashcards.signedUrlTtlSeconds') return 3600;
+      if (key === 'flashcards.imageSearchLimit') return 5;
       return undefined;
     },
   };
@@ -43,7 +44,7 @@ describe('FlashcardImageRetrievalService', () => {
     workflowType: 'flashcards',
   };
 
-  it('calls search once with limit 1 and returns the single result', async () => {
+  it('searches by embeddings without hard age filters and returns a hit', async () => {
     searchService.search.mockResolvedValue({
       query: 'carrot vegetable',
       total: 1,
@@ -54,6 +55,7 @@ describe('FlashcardImageRetrievalService', () => {
           caption: 'carrot',
           similarity: 0.9,
           mimeType: 'image/png',
+          ageGroups: ['3-6'],
         },
       ],
       usage: {
@@ -69,7 +71,7 @@ describe('FlashcardImageRetrievalService', () => {
       {
         queries: ['carrot vegetable'],
         ageMin: 3,
-        ageMax: 5,
+        ageMax: 4,
       },
       telemetry,
     );
@@ -77,12 +79,11 @@ describe('FlashcardImageRetrievalService', () => {
     expect(searchService.search).toHaveBeenCalledTimes(1);
     expect(searchService.search).toHaveBeenCalledWith({
       query: 'carrot vegetable',
-      limit: 1,
-      filters: { ageGroups: ['3-5'] },
+      limit: 5,
     });
     expect(result.status).toBe('found');
     expect(result.assetId).toBe('asset-1');
-    expect(result.attempts).toEqual(['primary+age']);
+    expect(result.attempts).toEqual(['semantic']);
 
     const started = eventEmitter.emit.mock.calls.filter(
       ([event]) => event === PIPELINE_TRACKER_EVENTS.IMAGE_SEARCH_STARTED,
@@ -101,7 +102,88 @@ describe('FlashcardImageRetrievalService', () => {
     expect(embeddingStarted).toHaveLength(1);
   });
 
-  it('does not retry when search returns empty', async () => {
+  it('prefers unused age-overlapping hits, then any unused nearby hit', async () => {
+    searchService.search.mockResolvedValue({
+      query: 'apple',
+      total: 3,
+      results: [
+        {
+          assetId: 'used-1',
+          s3ObjectKey: 'assets/used-1/original.png',
+          caption: 'apple a',
+          similarity: 0.95,
+          mimeType: 'image/png',
+          ageGroups: ['8-12'],
+        },
+        {
+          assetId: 'asset-2',
+          s3ObjectKey: 'assets/asset-2/original.png',
+          caption: 'apple b',
+          similarity: 0.9,
+          mimeType: 'image/png',
+          ageGroups: ['3-6'],
+        },
+        {
+          assetId: 'asset-3',
+          s3ObjectKey: 'assets/asset-3/original.png',
+          caption: 'apple c',
+          similarity: 0.85,
+          mimeType: 'image/png',
+          ageGroups: [],
+        },
+      ],
+    });
+
+    const result = await service.retrieveForCard({
+      queries: ['apple'],
+      ageMin: 3,
+      ageMax: 4,
+      usedAssetIds: new Set(['used-1']),
+    });
+
+    expect(searchService.search).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe('found');
+    expect(result.assetId).toBe('asset-2');
+  });
+
+  it('still attaches the top embedding hit when every candidate is already used', async () => {
+    searchService.search.mockResolvedValue({
+      query: 'apple',
+      total: 1,
+      results: [
+        {
+          assetId: 'used-1',
+          s3ObjectKey: 'assets/used-1/original.png',
+          caption: 'apple',
+          similarity: 0.8,
+          mimeType: 'image/png',
+          ageGroups: [],
+        },
+      ],
+      fromCache: true,
+      usage: { fromCache: true, inputTokens: 0, totalTokens: 0 },
+    });
+
+    const result = await service.retrieveForCard({
+      queries: ['apple'],
+      ageMin: 4,
+      ageMax: 6,
+      usedAssetIds: new Set(['used-1']),
+    });
+
+    expect(searchService.search).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe('found');
+    expect(result.assetId).toBe('used-1');
+    expect(
+      eventEmitter.emit.mock.calls.some(
+        ([event, payload]) =>
+          event === PIPELINE_TRACKER_EVENTS.AI_INVOCATION_STARTED &&
+          payload.purpose === 'flashcard_image_search_embedding',
+      ),
+    ).toBe(false);
+  });
+
+  it('returns not_found only when embeddings yield no results', async () => {
     searchService.search.mockResolvedValue({
       query: 'missing object',
       total: 0,
@@ -118,45 +200,9 @@ describe('FlashcardImageRetrievalService', () => {
     expect(searchService.search).toHaveBeenCalledTimes(1);
     expect(searchService.search).toHaveBeenCalledWith({
       query: 'missing object',
-      limit: 1,
-      filters: undefined,
+      limit: 5,
     });
     expect(result.status).toBe('not_found');
     expect(result.assetId).toBeNull();
-  });
-
-  it('marks not_found without a second search when the only hit is already used', async () => {
-    searchService.search.mockResolvedValue({
-      query: 'apple',
-      total: 1,
-      results: [
-        {
-          assetId: 'used-1',
-          s3ObjectKey: 'assets/used-1/original.png',
-          caption: 'apple',
-          similarity: 0.8,
-          mimeType: 'image/png',
-        },
-      ],
-      fromCache: true,
-      usage: { fromCache: true, inputTokens: 0, totalTokens: 0 },
-    });
-
-    const result = await service.retrieveForCard({
-      queries: ['apple'],
-      ageMin: 4,
-      ageMax: 6,
-      usedAssetIds: new Set(['used-1']),
-    });
-
-    expect(searchService.search).toHaveBeenCalledTimes(1);
-    expect(result.status).toBe('not_found');
-    expect(
-      eventEmitter.emit.mock.calls.some(
-        ([event, payload]) =>
-          event === PIPELINE_TRACKER_EVENTS.AI_INVOCATION_STARTED &&
-          payload.purpose === 'flashcard_image_search_embedding',
-      ),
-    ).toBe(false);
   });
 });
