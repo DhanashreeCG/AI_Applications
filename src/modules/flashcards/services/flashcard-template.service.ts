@@ -96,7 +96,17 @@ export class FlashcardTemplateService {
         );
       }
 
-      // Region-based layout: editable flags live on each component.
+      // New uploads must use region-based layout (id/type/editable on each component).
+      if (
+        !Array.isArray(dto.layoutDefinition.regions) ||
+        dto.layoutDefinition.regions.length === 0
+      ) {
+        throw new FlashcardException(
+          'INVALID_REQUEST',
+          'layoutDefinition.regions must be a non-empty array',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
       parseEditableComponentsFromLayout(dto.layoutDefinition);
 
       return {

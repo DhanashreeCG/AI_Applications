@@ -1,5 +1,6 @@
 import { FlashcardException } from '../errors/flashcard.exception';
 import {
+  ImageSearchQuery,
   LlmCardContent,
   LlmFlashcardPayload,
   TemplateComponentDefinition,
@@ -100,10 +101,78 @@ function normalizeCardComponents(
         `cards[${cardIndex}].components.${key} must be a string`,
       );
     }
-    components[resolveComponentId(key, definitions) ?? key] = text;
+    if (!text) {
+      throw new FlashcardException(
+        'INVALID_LLM_OUTPUT',
+        `cards[${cardIndex}].components.${key} must not be empty`,
+      );
+    }
+
+    const resolvedId = resolveComponentId(key, definitions);
+    if (!resolvedId) {
+      throw new FlashcardException(
+        'INVALID_LLM_OUTPUT',
+        `cards[${cardIndex}] has unsupported component id "${key}"`,
+        undefined,
+        {
+          expectedComponentIds: definitions.map((item) => item.componentId),
+        },
+      );
+    }
+    components[resolvedId] = text;
   }
 
   return components;
+}
+
+function normalizeImageSearchQuery(
+  raw: unknown,
+  cardIndex: number,
+  queryIndex: number,
+): ImageSearchQuery {
+  // Backward compatible: plain string queries from older prompts.
+  const asPlain = asString(raw);
+  if (asPlain) {
+    return {
+      searchQuery: asPlain,
+      expectedObjects: [],
+      preferredStyle: 'cartoon',
+      preferredBackground: 'white',
+      orientation: 'portrait',
+      educationalUse: 'flashcard',
+    };
+  }
+
+  if (!isRecord(raw)) {
+    throw new FlashcardException(
+      'INVALID_LLM_OUTPUT',
+      `cards[${cardIndex}].imageSearchQueries[${queryIndex}] must be an object`,
+    );
+  }
+
+  const searchQuery = asString(raw.searchQuery);
+  if (!searchQuery) {
+    throw new FlashcardException(
+      'INVALID_LLM_OUTPUT',
+      `cards[${cardIndex}].imageSearchQueries[${queryIndex}].searchQuery is required`,
+    );
+  }
+
+  const expectedRaw = raw.expectedObjects;
+  const expectedObjects = Array.isArray(expectedRaw)
+    ? expectedRaw
+        .map((item) => asString(item))
+        .filter((item): item is string => Boolean(item))
+    : [];
+
+  return {
+    searchQuery,
+    expectedObjects,
+    preferredStyle: asString(raw.preferredStyle) ?? undefined,
+    preferredBackground: asString(raw.preferredBackground) ?? undefined,
+    orientation: asString(raw.orientation) ?? undefined,
+    educationalUse: asString(raw.educationalUse) ?? undefined,
+  };
 }
 
 export function validateLlmFlashcardPayload(
@@ -111,6 +180,13 @@ export function validateLlmFlashcardPayload(
   expectedCount: number,
   textComponents: TemplateComponentDefinition[],
 ): LlmFlashcardPayload {
+  if (isRecord(raw) && (raw.layout || raw.layoutDefinition || raw.styling)) {
+    throw new FlashcardException(
+      'INVALID_LLM_OUTPUT',
+      'LLM response must not include layout or styling information',
+    );
+  }
+
   if (!isRecord(raw) || !Array.isArray(raw.cards)) {
     throw new FlashcardException(
       'INVALID_LLM_OUTPUT',
@@ -125,6 +201,10 @@ export function validateLlmFlashcardPayload(
     );
   }
 
+  const allowedIds = new Set(
+    textComponents.map((component) => component.componentId),
+  );
+
   const cards: LlmCardContent[] = raw.cards.map((card, index) => {
     if (!isRecord(card)) {
       throw new FlashcardException(
@@ -138,6 +218,15 @@ export function validateLlmFlashcardPayload(
       textComponents,
       index,
     );
+
+    for (const key of Object.keys(components)) {
+      if (!allowedIds.has(key)) {
+        throw new FlashcardException(
+          'INVALID_LLM_OUTPUT',
+          `cards[${index}] has unsupported component id "${key}"`,
+        );
+      }
+    }
 
     for (const definition of textComponents) {
       if (definition.required && !components[definition.componentId]) {
@@ -159,20 +248,13 @@ export function validateLlmFlashcardPayload(
     if (!Array.isArray(queriesRaw) || queriesRaw.length === 0) {
       throw new FlashcardException(
         'INVALID_LLM_OUTPUT',
-        `cards[${index}].imageSearchQueries must be a non-empty string array`,
+        `cards[${index}].imageSearchQueries must be a non-empty array`,
       );
     }
 
-    const imageSearchQueries = queriesRaw.map((query, queryIndex) => {
-      const text = asString(query);
-      if (!text) {
-        throw new FlashcardException(
-          'INVALID_LLM_OUTPUT',
-          `cards[${index}].imageSearchQueries[${queryIndex}] must be a string`,
-        );
-      }
-      return text;
-    });
+    const imageSearchQueries = queriesRaw.map((query, queryIndex) =>
+      normalizeImageSearchQuery(query, index, queryIndex),
+    );
 
     return {
       cardIndex:
@@ -184,6 +266,24 @@ export function validateLlmFlashcardPayload(
 
   return {
     cards,
-    resolvedLearningObjective: asString(raw.resolvedLearningObjective) ?? undefined,
+    resolvedLearningObjective:
+      asString(raw.resolvedLearningObjective) ?? undefined,
+  };
+}
+
+/** Validate a single card payload (used for per-card regeneration). */
+export function validateLlmCardContent(
+  raw: unknown,
+  cardIndex: number,
+  textComponents: TemplateComponentDefinition[],
+): LlmCardContent {
+  const wrapped = validateLlmFlashcardPayload(
+    { cards: [raw] },
+    1,
+    textComponents,
+  );
+  return {
+    ...wrapped.cards[0],
+    cardIndex,
   };
 }

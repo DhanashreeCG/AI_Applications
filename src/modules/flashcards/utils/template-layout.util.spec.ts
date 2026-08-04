@@ -73,6 +73,61 @@ describe('template-layout.util', () => {
     );
   });
 
+  it('normalizes legacy editableComponents layouts for generate', () => {
+    const layout = parseLayoutDefinition({
+      root: 'card',
+      slots: [{ componentId: 'img_main', role: 'hero-image' }],
+      editableComponents: [
+        {
+          componentId: 'img_main',
+          componentType: 'image',
+          editable: true,
+          required: true,
+        },
+        {
+          componentId: 'title_word',
+          componentType: 'title',
+          editable: true,
+          required: true,
+        },
+      ],
+      componentHierarchy: ['img_main', 'title_word'],
+    });
+
+    expect(layout.regions).toEqual([
+      {
+        id: 'body',
+        components: [
+          {
+            id: 'img_main',
+            type: 'image',
+            editable: true,
+            required: true,
+            validationRules: undefined,
+          },
+          {
+            id: 'title_word',
+            type: 'title',
+            editable: true,
+            required: true,
+            validationRules: undefined,
+          },
+        ],
+      },
+    ]);
+
+    const editable = parseEditableComponentsFromLayout({
+      editableComponents: [
+        { componentId: 'img_main', componentType: 'image' },
+        { componentId: 'title_word', componentType: 'title' },
+      ],
+    });
+    expect(editable.map((item) => item.componentId)).toEqual([
+      'img_main',
+      'title_word',
+    ]);
+  });
+
   it('builds a region layout', () => {
     expect(
       buildRegionLayout({

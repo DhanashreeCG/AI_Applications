@@ -2,20 +2,84 @@ export const LEARNING_OBJECTIVES = [
   'vocabulary',
   'recognition',
   'reading',
+  'phonics',
   'classification',
   'comparison',
-  'memory',
   'science_facts',
-  'language_learning',
-  'general_knowledge',
-  'matching',
   'counting',
   'question_answer',
+  'matching',
   'sorting',
+  'general_knowledge',
+  // legacy aliases kept for existing templates/rules
+  'memory',
+  'language_learning',
   'identification',
 ] as const;
 
 export type LearningObjective = (typeof LEARNING_OBJECTIVES)[number];
+
+export const DIFFICULTY_LEVELS = [
+  'beginner',
+  'intermediate',
+  'advanced',
+] as const;
+
+export type DifficultyLevel = (typeof DIFFICULTY_LEVELS)[number];
+
+/** Normalize seed / legacy difficulty labels to the revised taxonomy. */
+export function canonicalizeDifficulty(
+  value: string | undefined | null,
+): DifficultyLevel | null {
+  if (!value?.trim()) return null;
+  const key = value.trim().toLowerCase();
+  if (key === 'easy' || key === 'basic' || key === 'simple' || key === 'beginner') {
+    return 'beginner';
+  }
+  if (key === 'medium' || key === 'moderate' || key === 'intermediate') {
+    return 'intermediate';
+  }
+  if (
+    key === 'hard' ||
+    key === 'difficult' ||
+    key === 'challenging' ||
+    key === 'advanced'
+  ) {
+    return 'advanced';
+  }
+  if ((DIFFICULTY_LEVELS as readonly string[]).includes(key)) {
+    return key as DifficultyLevel;
+  }
+  return null;
+}
+
+export const SUBJECTS = [
+  'evs',
+  'math',
+  'english',
+  'science',
+  'general',
+] as const;
+
+export type Subject = (typeof SUBJECTS)[number];
+
+/** Grade label → typical age band used when ageGroup is omitted. */
+export const GRADE_AGE_DEFAULTS: Record<
+  string,
+  { ageMin: number; ageMax: number; difficulty: DifficultyLevel }
+> = {
+  nursery: { ageMin: 2, ageMax: 3, difficulty: 'beginner' },
+  preschool: { ageMin: 3, ageMax: 4, difficulty: 'beginner' },
+  kg: { ageMin: 4, ageMax: 5, difficulty: 'beginner' },
+  'grade 1': { ageMin: 5, ageMax: 6, difficulty: 'beginner' },
+  'grade 2': { ageMin: 6, ageMax: 7, difficulty: 'beginner' },
+  'grade 3': { ageMin: 7, ageMax: 8, difficulty: 'intermediate' },
+  'grade 4': { ageMin: 8, ageMax: 9, difficulty: 'intermediate' },
+  'grade 5': { ageMin: 9, ageMax: 10, difficulty: 'intermediate' },
+  'grade 6': { ageMin: 10, ageMax: 11, difficulty: 'advanced' },
+  'grade 7': { ageMin: 11, ageMax: 12, difficulty: 'advanced' },
+  'grade 8': { ageMin: 12, ageMax: 13, difficulty: 'advanced' },
+};
 
 export const COMPONENT_TYPES = [
   'image',
@@ -43,3 +107,6 @@ export const DEFAULT_IMAGE_CONCURRENCY = 3;
 export const DEFAULT_SIGNED_URL_TTL_SECONDS = 3600;
 /** Nearby embedding hits to choose from (unused-first) in one search call. */
 export const DEFAULT_IMAGE_SEARCH_LIMIT = 5;
+/** Similarity band for random rotation among top image hits. */
+export const IMAGE_TOP_ROTATION_COUNT = 3;
+export const DEFAULT_LANGUAGE = 'English';

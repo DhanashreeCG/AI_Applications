@@ -19,10 +19,12 @@ import {
   DEFAULT_SIGNED_URL_TTL_SECONDS,
   FLASHCARD_ASSET_IMAGE_PATH,
   FLASHCARD_IMAGE_SEARCH_EMBEDDING_PURPOSE,
+  IMAGE_TOP_ROTATION_COUNT,
 } from '../constants/flashcard.constants';
 import {
   AssetReference,
   ImageRetrievalStatus,
+  ImageSearchQuery,
 } from '../interfaces/flashcard.interfaces';
 import {
   FlashcardPipelineEmitter,
@@ -30,7 +32,8 @@ import {
 } from '../telemetry/flashcard-pipeline.events';
 
 interface RetrieveImagesInput {
-  queries: string[];
+  queries: Array<ImageSearchQuery | string>;
+  topic?: string;
   ageMin: number | null;
   ageMax: number | null;
   usedAssetIds?: Set<string>;
@@ -70,157 +73,32 @@ export class FlashcardImageRetrievalService {
     input: RetrieveImagesInput,
     telemetry?: PipelineTelemetryContext,
   ): Promise<AssetReference> {
-    const primaryQuery = input.queries[0] ?? '';
-    const attemptLabel = 'semantic';
+    const primary = this.normalizeQuery(input.queries[0]);
+    const cascade = this.buildCascadeQueries(primary, input.topic);
+    const attempts: string[] = [];
 
-    if (!primaryQuery.trim()) {
-      return {
-        assetId: null,
-        s3ObjectKey: null,
-        signedUrl: null,
-        imageUrl: null,
-        caption: null,
-        similarity: null,
-        mimeType: null,
-        status: 'not_found',
-        queryUsed: primaryQuery,
-        attempts: [],
-      };
+    if (!cascade.length) {
+      return this.emptyReference('', attempts, 'IMAGE_NOT_FOUND');
     }
 
-    const searchId = randomUUID();
-    const startedAt = Date.now();
-
-    if (telemetry) {
-      this.emitter.emitImageSearchStarted({
-        ...telemetry,
-        searchId,
-        stageName: PIPELINE_STAGES.IMAGE_SEARCH,
-        query: primaryQuery,
-      });
-    }
-
-    try {
-      // Embedding search only — do not hard-filter ageGroups. Asset age labels
-      // rarely equal the flashcard age band exactly, so filters were zeroing
-      // out hits that the Search API returns for the same query.
-      const response = await this.searchService.search({
-        query: primaryQuery,
-        limit: this.searchLimit,
-      });
-
-      this.emitEmbeddingUsage(telemetry, primaryQuery, response);
-
-      const candidate = this.selectCandidate(
-        response.results,
-        input.ageMin,
-        input.ageMax,
-        input.usedAssetIds,
+    for (const attempt of cascade) {
+      attempts.push(attempt.label);
+      const hit = await this.searchOnce(
+        attempt.query,
+        input,
+        telemetry,
+        attempts,
       );
-
-      if (!candidate) {
-        if (telemetry) {
-          this.emitter.emitImageSearchCompleted({
-            ...telemetry,
-            searchId,
-            stageName: PIPELINE_STAGES.IMAGE_SEARCH,
-            query: primaryQuery,
-            resultCount: response.results.length,
-            selectedAssetId: null,
-            cacheHit: response.fromCache === true,
-            failed: false,
-            durationMs: Date.now() - startedAt,
-          });
-        }
-
-        return {
-          assetId: null,
-          s3ObjectKey: null,
-          signedUrl: null,
-          imageUrl: null,
-          caption: null,
-          similarity: null,
-          mimeType: null,
-          status: 'not_found',
-          queryUsed: primaryQuery,
-          attempts: [attemptLabel],
-        };
+      if (hit) {
+        return hit;
       }
-
-      // Claim before signed-URL await so concurrent cards don't race the same hit.
-      input.usedAssetIds?.add(candidate.assetId);
-
-      let signedUrl: string | null = null;
-      try {
-        signedUrl = await this.s3StorageService.getSignedUrl(
-          candidate.s3ObjectKey,
-          this.signedUrlTtlSeconds,
-        );
-      } catch (error) {
-        this.logger.warn(
-          `Signed URL failed for ${candidate.assetId}: ${getErrorMessage(error)}`,
-        );
-      }
-
-      if (telemetry) {
-        this.emitter.emitImageSearchCompleted({
-          ...telemetry,
-          searchId,
-          stageName: PIPELINE_STAGES.IMAGE_SEARCH,
-          query: primaryQuery,
-          resultCount: response.results.length,
-          selectedAssetId: candidate.assetId,
-          cacheHit: response.fromCache === true,
-          failed: false,
-          durationMs: Date.now() - startedAt,
-        });
-      }
-
-      return {
-        assetId: candidate.assetId,
-        s3ObjectKey: candidate.s3ObjectKey,
-        signedUrl,
-        imageUrl: `${FLASHCARD_ASSET_IMAGE_PATH}/${candidate.assetId}/image`,
-        caption: candidate.caption,
-        similarity: candidate.similarity,
-        mimeType: candidate.mimeType,
-        status: 'found',
-        queryUsed: primaryQuery,
-        attempts: [attemptLabel],
-      };
-    } catch (error) {
-      const message = getErrorMessage(error);
-      const status: ImageRetrievalStatus = /timeout/i.test(message)
-        ? 'timeout'
-        : 'error';
-      this.logger.warn(`Image search failed: ${message}`);
-      if (telemetry) {
-        this.emitter.emitImageSearchCompleted({
-          ...telemetry,
-          searchId,
-          stageName: PIPELINE_STAGES.IMAGE_SEARCH,
-          query: primaryQuery,
-          resultCount: 0,
-          selectedAssetId: null,
-          failed: true,
-          errorMessage: message,
-          durationMs: Date.now() - startedAt,
-        });
-      }
-
-      return {
-        assetId: null,
-        s3ObjectKey: null,
-        signedUrl: null,
-        imageUrl: null,
-        caption: null,
-        similarity: null,
-        mimeType: null,
-        status,
-        queryUsed: primaryQuery,
-        attempts: [attemptLabel],
-      };
     }
+
+    return this.emptyReference(
+      cascade[0]?.query ?? '',
+      attempts,
+      'IMAGE_NOT_FOUND',
+    );
   }
 
   public async mapWithConcurrency<T, R>(
@@ -245,9 +123,197 @@ export class FlashcardImageRetrievalService {
     return results;
   }
 
+  private normalizeQuery(
+    raw: ImageSearchQuery | string | undefined,
+  ): ImageSearchQuery | null {
+    if (!raw) return null;
+    if (typeof raw === 'string') {
+      const searchQuery = raw.trim();
+      if (!searchQuery) return null;
+      return { searchQuery, expectedObjects: [] };
+    }
+    if (!raw.searchQuery?.trim()) return null;
+    return raw;
+  }
+
   /**
-   * Prefer unused hits whose age band overlaps the request; otherwise any
-   * unused nearby embedding hit; otherwise the top hit (still attach an image).
+   * Search priority:
+   * primary semantic → expected object → object name only → topic → no filters (topic-less short query)
+   */
+  private buildCascadeQueries(
+    primary: ImageSearchQuery | null,
+    topic?: string,
+  ): Array<{ label: string; query: string }> {
+    const cascade: Array<{ label: string; query: string }> = [];
+    const seen = new Set<string>();
+
+    const push = (label: string, query: string | undefined) => {
+      const trimmed = query?.trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      cascade.push({ label, query: trimmed });
+    };
+
+    if (primary) {
+      push('semantic', primary.searchQuery);
+
+      const enriched = [
+        primary.searchQuery,
+        primary.preferredStyle,
+        primary.preferredBackground
+          ? `${primary.preferredBackground} background`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      push('semantic_enriched', enriched);
+
+      if (primary.expectedObjects.length) {
+        push('expected_objects', primary.expectedObjects.join(' '));
+        push('object_name', primary.expectedObjects[0]);
+      }
+    }
+
+    push('topic', topic);
+    push('unfiltered', primary?.expectedObjects[0] || primary?.searchQuery);
+
+    return cascade;
+  }
+
+  private async searchOnce(
+    query: string,
+    input: RetrieveImagesInput,
+    telemetry: PipelineTelemetryContext | undefined,
+    attempts: string[],
+  ): Promise<AssetReference | null> {
+    const searchId = randomUUID();
+    const startedAt = Date.now();
+
+    if (telemetry) {
+      this.emitter.emitImageSearchStarted({
+        ...telemetry,
+        searchId,
+        stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+        query,
+      });
+    }
+
+    try {
+      const response = await this.searchService.search({
+        query,
+        limit: this.searchLimit,
+      });
+
+      this.emitEmbeddingUsage(telemetry, query, response);
+
+      const candidate = this.selectCandidate(
+        response.results,
+        input.ageMin,
+        input.ageMax,
+        input.usedAssetIds,
+      );
+
+      if (!candidate) {
+        if (telemetry) {
+          this.emitter.emitImageSearchCompleted({
+            ...telemetry,
+            searchId,
+            stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+            query,
+            resultCount: response.results.length,
+            selectedAssetId: null,
+            cacheHit: response.fromCache === true,
+            failed: false,
+            durationMs: Date.now() - startedAt,
+          });
+        }
+        return null;
+      }
+
+      input.usedAssetIds?.add(candidate.assetId);
+
+      let signedUrl: string | null = null;
+      try {
+        signedUrl = await this.s3StorageService.getSignedUrl(
+          candidate.s3ObjectKey,
+          this.signedUrlTtlSeconds,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Signed URL failed for ${candidate.assetId}: ${getErrorMessage(error)}`,
+        );
+      }
+
+      if (telemetry) {
+        this.emitter.emitImageSearchCompleted({
+          ...telemetry,
+          searchId,
+          stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+          query,
+          resultCount: response.results.length,
+          selectedAssetId: candidate.assetId,
+          cacheHit: response.fromCache === true,
+          failed: false,
+          durationMs: Date.now() - startedAt,
+        });
+      }
+
+      return {
+        assetId: candidate.assetId,
+        s3ObjectKey: candidate.s3ObjectKey,
+        signedUrl,
+        imageUrl: `${FLASHCARD_ASSET_IMAGE_PATH}/${candidate.assetId}/image`,
+        caption: candidate.caption,
+        similarity: candidate.similarity,
+        mimeType: candidate.mimeType,
+        status: 'found',
+        queryUsed: query,
+        attempts: [...attempts],
+      };
+    } catch (error) {
+      const message = getErrorMessage(error);
+      this.logger.warn(`Image search failed for "${query}": ${message}`);
+      if (telemetry) {
+        this.emitter.emitImageSearchCompleted({
+          ...telemetry,
+          searchId,
+          stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+          query,
+          resultCount: 0,
+          selectedAssetId: null,
+          failed: true,
+          errorMessage: message,
+          durationMs: Date.now() - startedAt,
+        });
+      }
+      return null;
+    }
+  }
+
+  private emptyReference(
+    queryUsed: string,
+    attempts: string[],
+    status: ImageRetrievalStatus,
+  ): AssetReference {
+    return {
+      assetId: null,
+      s3ObjectKey: null,
+      signedUrl: null,
+      imageUrl: null,
+      caption: null,
+      similarity: null,
+      mimeType: null,
+      status,
+      queryUsed,
+      attempts,
+    };
+  }
+
+  /**
+   * Prefer unused age-overlapping hits; rotate randomly among the top-N of
+   * that tier to reduce visual repetition while keeping relevance.
    */
   private selectCandidate(
     results: SearchResultItem[],
@@ -260,8 +326,25 @@ export class FlashcardImageRetrievalService {
     }
 
     const ranked = this.rankByAgePreference(results, ageMin, ageMax);
-    const unused = ranked.find((item) => !usedAssetIds?.has(item.assetId));
-    return unused ?? ranked[0] ?? null;
+    const unused = ranked.filter((item) => !usedAssetIds?.has(item.assetId));
+    const pool = unused.length ? unused : ranked;
+    if (!pool.length) {
+      return null;
+    }
+
+    let tier = pool;
+    if (ageMin !== null && ageMax !== null) {
+      const overlapping = pool.filter((item) =>
+        this.ageGroupsOverlap(item.ageGroups, ageMin, ageMax),
+      );
+      if (overlapping.length) {
+        tier = overlapping;
+      }
+    }
+
+    const top = tier.slice(0, IMAGE_TOP_ROTATION_COUNT);
+    const index = Math.floor(Math.random() * top.length);
+    return top[index];
   }
 
   private rankByAgePreference(
@@ -321,7 +404,7 @@ export class FlashcardImageRetrievalService {
     this.emitter.emitAiStarted({
       ...telemetry,
       invocationId,
-      stageName: PIPELINE_STAGES.IMAGE_SEARCH,
+      stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
       provider: 'openai',
       model,
       purpose: FLASHCARD_IMAGE_SEARCH_EMBEDDING_PURPOSE,
@@ -330,7 +413,7 @@ export class FlashcardImageRetrievalService {
     this.emitter.emitAiCompleted({
       ...telemetry,
       invocationId,
-      stageName: PIPELINE_STAGES.IMAGE_SEARCH,
+      stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
       status: 'success',
       inputTokens: response.usage.inputTokens,
       totalTokens: response.usage.totalTokens,

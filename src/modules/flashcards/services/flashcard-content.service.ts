@@ -26,7 +26,10 @@ import {
   FlashcardPipelineEmitter,
   hashPayload,
 } from '../telemetry/flashcard-pipeline.events';
-import { validateLlmFlashcardPayload } from '../utils/llm-content.validator';
+import {
+  validateLlmCardContent,
+  validateLlmFlashcardPayload,
+} from '../utils/llm-content.validator';
 
 export interface GenerateContentInput {
   query: string;
@@ -36,6 +39,10 @@ export interface GenerateContentInput {
   learningObjective: string;
   count: number;
   textComponents: TemplateComponentDefinition[];
+  grade?: string | null;
+  subject?: string | null;
+  difficulty?: string | null;
+  language?: string;
 }
 
 @Injectable()
@@ -98,21 +105,87 @@ export class FlashcardContentService {
     input: GenerateContentInput,
     telemetry?: PipelineTelemetryContext,
   ): Promise<LlmFlashcardPayload> {
+    if (telemetry) {
+      this.emitter.emitStageStarted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.LLM_CONTENT_GENERATION,
+      });
+      this.emitter.emitStageStarted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.IMAGE_QUERY_GENERATION,
+      });
+    }
+
     try {
-      return await this.requestContent(input, undefined, telemetry);
-    } catch (error) {
-      if (
-        !(error instanceof FlashcardException) ||
-        error.code !== 'INVALID_LLM_OUTPUT'
-      ) {
-        throw error;
+      let payload: LlmFlashcardPayload;
+      try {
+        payload = await this.requestContent(input, undefined, telemetry);
+      } catch (error) {
+        if (
+          !(error instanceof FlashcardException) ||
+          error.code !== 'INVALID_LLM_OUTPUT'
+        ) {
+          throw error;
+        }
+
+        this.logger.warn(
+          `Retrying full flashcard content generation after invalid output: ${getErrorMessage(error)}`,
+        );
+        payload = await this.requestContent(
+          input,
+          getErrorMessage(error),
+          telemetry,
+          1,
+        );
       }
 
-      this.logger.warn(
-        `Retrying flashcard content generation after invalid output: ${getErrorMessage(error)}`,
-      );
-      return this.requestContent(input, getErrorMessage(error), telemetry, 1);
+      if (telemetry) {
+        this.emitter.emitStageCompleted({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.IMAGE_QUERY_GENERATION,
+          metadata: {
+            queryCount: payload.cards.reduce(
+              (sum, card) => sum + card.imageSearchQueries.length,
+              0,
+            ),
+          },
+        });
+        this.emitter.emitStageCompleted({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.LLM_CONTENT_GENERATION,
+          metadata: { cardCount: payload.cards.length },
+        });
+      }
+
+      return payload;
+    } catch (error) {
+      if (telemetry) {
+        this.emitter.emitStageFailed({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.LLM_CONTENT_GENERATION,
+          errorMessage: getErrorMessage(error),
+        });
+      }
+      throw error;
     }
+  }
+
+  /**
+   * Regenerate a single card. Never regenerates the full flashcard set.
+   */
+  public async regenerateCard(
+    input: Omit<GenerateContentInput, 'count'>,
+    cardIndex: number,
+    reason: string,
+    telemetry?: PipelineTelemetryContext,
+  ): Promise<LlmFlashcardPayload['cards'][number]> {
+    const single = await this.requestContent(
+      { ...input, count: 1 },
+      `Card ${cardIndex} was invalid: ${reason}. Return exactly 1 corrected card as cards[0].`,
+      telemetry,
+      1,
+    );
+    return { ...single.cards[0], cardIndex };
   }
 
   private async requestContent(
@@ -226,20 +299,21 @@ export class FlashcardContentService {
         });
         this.emitter.emitStageStarted({
           ...telemetry,
-          stageName: PIPELINE_STAGES.LLM_RESPONSE_VALIDATION,
+          stageName: PIPELINE_STAGES.CONTENT_VALIDATION,
         });
       }
 
-      const payload = validateLlmFlashcardPayload(
+      const payload = await this.validateOrRepairCards(
         parsed,
-        input.count,
-        input.textComponents,
+        input,
+        telemetry,
+        retryCount,
       );
 
       if (telemetry) {
         this.emitter.emitStageCompleted({
           ...telemetry,
-          stageName: PIPELINE_STAGES.LLM_RESPONSE_VALIDATION,
+          stageName: PIPELINE_STAGES.CONTENT_VALIDATION,
           metadata: {
             cardCount: payload.cards.length,
             responsePreview: {
@@ -331,6 +405,85 @@ export class FlashcardContentService {
         `Flashcard content generation failed: ${message}`,
         HttpStatus.BAD_GATEWAY,
       );
+    }
+  }
+
+  /**
+   * Accept a full valid payload, or repair individual invalid cards without
+   * regenerating the entire set.
+   */
+  private async validateOrRepairCards(
+    parsed: unknown,
+    input: GenerateContentInput,
+    telemetry: PipelineTelemetryContext | undefined,
+    retryCount: number,
+  ): Promise<LlmFlashcardPayload> {
+    try {
+      return validateLlmFlashcardPayload(
+        parsed,
+        input.count,
+        input.textComponents,
+      );
+    } catch (error) {
+      if (input.count <= 1) {
+        throw error;
+      }
+
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        !Array.isArray((parsed as { cards?: unknown }).cards)
+      ) {
+        throw error;
+      }
+
+      const rawCards = (parsed as { cards: unknown[] }).cards;
+      if (rawCards.length !== input.count) {
+        throw error;
+      }
+
+      this.logger.warn(
+        `Full payload validation failed (${getErrorMessage(error)}); repairing individual cards`,
+      );
+
+      const cards: LlmFlashcardPayload['cards'] = [];
+      for (let index = 0; index < rawCards.length; index += 1) {
+        try {
+          cards.push(
+            validateLlmCardContent(
+              rawCards[index],
+              index,
+              input.textComponents,
+            ),
+          );
+        } catch (cardError) {
+          const reason = getErrorMessage(cardError);
+          this.logger.warn(
+            `Regenerating card ${index} only (retry ${retryCount}): ${reason}`,
+          );
+          cards.push(
+            await this.regenerateCard(
+              {
+                query: input.query,
+                topic: input.topic,
+                ageMin: input.ageMin,
+                ageMax: input.ageMax,
+                learningObjective: input.learningObjective,
+                textComponents: input.textComponents,
+                grade: input.grade,
+                subject: input.subject,
+                difficulty: input.difficulty,
+                language: input.language,
+              },
+              index,
+              reason,
+              telemetry,
+            ),
+          );
+        }
+      }
+
+      return { cards };
     }
   }
 }

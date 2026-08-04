@@ -905,8 +905,8 @@
             />
           </div>
           <div class="field">
-            <label for="ageGroup">Age group</label>
-            <input id="ageGroup" value="3-4" placeholder="3-4" />
+            <label for="ageGroup">Age group (optional if grade is in query)</label>
+            <input id="ageGroup" value="3-4" placeholder="3-4 or leave blank for Grade N" />
           </div>
           <div class="field">
             <label for="count">Cards</label>
@@ -919,6 +919,9 @@
           <span>Try:</span>
           <button class="chip" data-q="Generate flashcards on vegetables" data-a="3-4">
             Vegetables · 3-4
+          </button>
+          <button class="chip" data-q="Generate 12 flashcards on vegetables for Grade 1" data-a="">
+            Vegetables · Grade 1
           </button>
           <button class="chip" data-q="Teach animal names to toddlers" data-a="2-3">
             Animals · 2-3
@@ -1053,8 +1056,15 @@
         const ageGroup = el('ageGroup').value.trim();
         const count = Number(el('count').value) || 5;
 
-        if (!query || !ageGroup) {
-          showBanner('error', '<div>Both a request and an age group are required.</div>');
+        if (!query) {
+          showBanner('error', '<div>A request is required.</div>');
+          return;
+        }
+        if (!ageGroup && !/grade|class|\bg\s*\d/i.test(query)) {
+          showBanner(
+            'error',
+            '<div>Provide an age group (e.g. 3-4) or include a grade in the query.</div>',
+          );
           return;
         }
 
@@ -1063,10 +1073,12 @@
         renderSkeletons(count);
 
         try {
+          const payload = { query, count };
+          if (ageGroup) payload.ageGroup = ageGroup;
           const response = await fetch(apiBase() + '/flashcards/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, ageGroup, count }),
+            body: JSON.stringify(payload),
           });
 
           const body = await response.json().catch(() => null);

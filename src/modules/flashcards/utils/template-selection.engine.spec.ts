@@ -3,7 +3,10 @@ import {
   selectBestTemplate,
 } from './template-selection.engine';
 
-function rule(overrides: Partial<SelectableRule> & Pick<SelectableRule, 'id' | 'templateId'>): SelectableRule {
+function rule(
+  overrides: Partial<SelectableRule> &
+    Pick<SelectableRule, 'id' | 'templateId'>,
+): SelectableRule {
   return {
     name: overrides.name ?? overrides.id,
     priority: overrides.priority ?? 100,
@@ -65,21 +68,82 @@ describe('selectBestTemplate', () => {
     expect(match?.ruleId).toBe('r2');
   });
 
-  it('prefers higher priority when scores tie', () => {
+  it('ignores topic when choosing templates', () => {
     const rules = [
       rule({
-        id: 'low',
-        templateId: 't-low',
-        priority: 10,
+        id: 'r-vocab',
+        templateId: 't-vocab',
         learningObjectives: ['vocabulary'],
         templateObjectives: ['vocabulary'],
+        topics: ['animals'],
+      }),
+    ];
+
+    const fruits = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageMin: 5,
+      ageMax: 6,
+      topic: 'fruits',
+    });
+    const veggies = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageMin: 5,
+      ageMax: 6,
+      topic: 'vegetables',
+    });
+
+    expect(fruits?.templateId).toBe('t-vocab');
+    expect(veggies?.templateId).toBe('t-vocab');
+  });
+
+  it('prefers exact grade match over age-only match', () => {
+    const rules = [
+      rule({
+        id: 'age-only',
+        templateId: 't-age',
+        ageMin: 5,
+        ageMax: 6,
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateVersion: '2.0',
       }),
       rule({
-        id: 'high',
-        templateId: 't-high',
-        priority: 200,
+        id: 'grade-exact',
+        templateId: 't-grade',
+        grades: ['Grade 1'],
         learningObjectives: ['vocabulary'],
         templateObjectives: ['vocabulary'],
+        templateVersion: '1.0',
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      grade: 'Grade 1',
+      ageMin: 5,
+      ageMax: 6,
+    });
+
+    expect(match?.templateId).toBe('t-grade');
+  });
+
+  it('prefers newer template version when other ranks tie', () => {
+    const rules = [
+      rule({
+        id: 'old',
+        templateId: 't-old',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateVersion: '1.0',
+        priority: 100,
+      }),
+      rule({
+        id: 'new',
+        templateId: 't-new',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateVersion: '2.1',
+        priority: 100,
       }),
     ];
 
@@ -89,7 +153,59 @@ describe('selectBestTemplate', () => {
       ageMax: null,
     });
 
-    expect(match?.templateId).toBe('t-high');
+    expect(match?.templateId).toBe('t-new');
+  });
+
+  it('matches beginner requests to templates labeled easy', () => {
+    const rules = [
+      rule({
+        id: 'r-easy',
+        templateId: 't-easy',
+        ageMin: 3,
+        ageMax: 4,
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateDifficulties: ['easy'],
+        templateAgeMin: 3,
+        templateAgeMax: 4,
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      difficulty: 'beginner',
+      ageMin: 3,
+      ageMax: 4,
+      subject: 'EVS',
+    });
+
+    expect(match?.templateId).toBe('t-easy');
+  });
+
+  it('does not hard-fail when template subjects omit the inferred subject', () => {
+    const rules = [
+      rule({
+        id: 'r1',
+        templateId: 't1',
+        ageMin: 3,
+        ageMax: 4,
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateSubjects: ['science', 'general'],
+        templateAgeMin: 3,
+        templateAgeMax: 4,
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      subject: 'EVS',
+      difficulty: 'beginner',
+      ageMin: 3,
+      ageMax: 4,
+    });
+
+    expect(match?.templateId).toBe('t1');
   });
 
   it('returns null when no rule matches', () => {

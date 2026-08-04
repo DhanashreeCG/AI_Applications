@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { getErrorMessage } from '../../../common/utils/error-message';
@@ -31,6 +31,7 @@ export interface GenerateFlashcardsOptions {
 
 @Injectable()
 export class FlashcardOrchestratorService {
+  private readonly logger = new Logger(FlashcardOrchestratorService.name);
   private readonly emitter: FlashcardPipelineEmitter;
   private readonly workflowType: string;
 
@@ -61,6 +62,7 @@ export class FlashcardOrchestratorService {
       metadata: {
         query: dto.query,
         ageGroup: dto.ageGroup,
+        grade: dto.grade,
         count: dto.count ?? DEFAULT_FLASHCARD_COUNT,
       },
     });
@@ -73,13 +75,30 @@ export class FlashcardOrchestratorService {
         metadata: {
           topic: response.request.topic,
           ageGroup: response.request.ageGroup,
+          grade: response.request.grade,
           templateId: response.template.id,
           learningObjective: response.request.learningObjective,
           cardCount: response.cards.length,
         },
       });
+
+      this.emitter.emitStageStarted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.RESPONSE_RETURN,
+      });
+      this.emitter.emitStageCompleted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.RESPONSE_RETURN,
+      });
+
       return {
         ...response,
+        metadata: {
+          ...response.metadata,
+          requestId: telemetry.requestId,
+          executionId: telemetry.executionId,
+          correlationId: telemetry.correlationId,
+        },
         renderingMetadata: {
           ...response.renderingMetadata,
           requestId: telemetry.requestId,
@@ -125,11 +144,7 @@ export class FlashcardOrchestratorService {
 
     this.emitter.emitStageStarted({
       ...telemetry,
-      stageName: PIPELINE_STAGES.AGE_IDENTIFICATION,
-    });
-    this.emitter.emitStageStarted({
-      ...telemetry,
-      stageName: PIPELINE_STAGES.LEARNING_OBJECTIVE_SELECTION,
+      stageName: PIPELINE_STAGES.REQUEST_ANALYSIS,
     });
 
     let resolved;
@@ -137,11 +152,15 @@ export class FlashcardOrchestratorService {
       resolved = resolveUserRequest({
         query: dto.query,
         ageGroup: dto.ageGroup,
+        grade: dto.grade,
+        subject: dto.subject,
+        difficulty: dto.difficulty,
+        language: dto.language,
       });
     } catch (error) {
       this.emitter.emitStageFailed({
         ...telemetry,
-        stageName: PIPELINE_STAGES.AGE_IDENTIFICATION,
+        stageName: PIPELINE_STAGES.REQUEST_ANALYSIS,
         errorMessage: getErrorMessage(error),
       });
       throw error;
@@ -149,44 +168,31 @@ export class FlashcardOrchestratorService {
 
     this.emitter.emitStageCompleted({
       ...telemetry,
-      stageName: PIPELINE_STAGES.AGE_IDENTIFICATION,
-      metadata: { ageGroup: resolved.ageGroup },
-    });
-    this.emitter.emitStageCompleted({
-      ...telemetry,
-      stageName: PIPELINE_STAGES.LEARNING_OBJECTIVE_SELECTION,
-      metadata: { learningObjective: resolved.learningObjective },
+      stageName: PIPELINE_STAGES.REQUEST_ANALYSIS,
+      metadata: {
+        topic: resolved.topic,
+        ageGroup: resolved.ageGroup,
+        grade: resolved.grade,
+        subject: resolved.subject,
+        difficulty: resolved.difficulty,
+        language: resolved.language,
+      },
     });
 
     this.emitter.emitStageStarted({
       ...telemetry,
-      stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+      stageName: PIPELINE_STAGES.EDUCATIONAL_OBJECTIVE_DETERMINATION,
     });
-    let selected;
-    try {
-      selected = await this.templateSelectionService.select({
-        topic: resolved.topic,
-        ageMin: resolved.ageMin,
-        ageMax: resolved.ageMax,
-        learningObjective: resolved.learningObjective,
-        query: resolved.query,
-      });
-    } catch (error) {
-      this.emitter.emitStageFailed({
-        ...telemetry,
-        stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
-        errorMessage: getErrorMessage(error),
-      });
-      throw error;
-    }
     this.emitter.emitStageCompleted({
       ...telemetry,
-      stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+      stageName: PIPELINE_STAGES.EDUCATIONAL_OBJECTIVE_DETERMINATION,
       metadata: {
-        templateId: selected.template.id,
-        ruleId: selected.selection.ruleId,
+        learningObjective: resolved.learningObjective,
+        educationalIntent: resolved.educationalIntent,
       },
     });
+
+    const selected = await this.selectTemplateWithRetry(resolved, telemetry);
 
     const editableComponents = parseEditableComponentsFromLayout(
       selected.template.layoutDefinition,
@@ -207,33 +213,41 @@ export class FlashcardOrchestratorService {
         learningObjective: selected.learningObjective,
         count,
         textComponents,
+        grade: resolved.grade,
+        subject: resolved.subject,
+        difficulty: resolved.difficulty,
+        language: resolved.language,
       },
       telemetry,
     );
 
     this.emitter.emitStageStarted({
       ...telemetry,
-      stageName: PIPELINE_STAGES.IMAGE_SEARCH,
-    });
-    this.emitter.emitStageStarted({
-      ...telemetry,
-      stageName: PIPELINE_STAGES.IMAGE_MAPPING,
+      stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
     });
 
     const usedAssetIds = new Set<string>();
     const cards = await this.imageRetrievalService.mapWithConcurrency(
       llmPayload.cards,
       async (card): Promise<FlashcardCardPayload> => {
-        const assetReference =
-          await this.imageRetrievalService.retrieveForCard(
-            {
-              queries: card.imageSearchQueries,
-              ageMin: selected.ageMin,
-              ageMax: selected.ageMax,
-              usedAssetIds,
-            },
-            telemetry,
-          );
+        const imageRefs = await this.imageRetrievalService.mapWithConcurrency(
+          imageComponents,
+          async (imageDef, imageIndex) => {
+            const query =
+              card.imageSearchQueries[imageIndex] ??
+              card.imageSearchQueries[0];
+            return this.imageRetrievalService.retrieveForCard(
+              {
+                queries: query ? [query] : [],
+                topic: resolved.topic,
+                ageMin: selected.ageMin,
+                ageMax: selected.ageMax,
+                usedAssetIds,
+              },
+              telemetry,
+            );
+          },
+        );
 
         const components: EditableComponentPayload[] = editableComponents.map(
           (definition) =>
@@ -241,11 +255,12 @@ export class FlashcardOrchestratorService {
               definition,
               card.components,
               imageComponents,
-              assetReference,
+              imageRefs,
             ),
         );
 
         return {
+          cardId: `card-${card.cardIndex}`,
           cardIndex: card.cardIndex,
           components,
         };
@@ -254,18 +269,21 @@ export class FlashcardOrchestratorService {
 
     this.emitter.emitStageCompleted({
       ...telemetry,
-      stageName: PIPELINE_STAGES.IMAGE_SEARCH,
+      stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
       metadata: { cardCount: cards.length },
-    });
-    this.emitter.emitStageCompleted({
-      ...telemetry,
-      stageName: PIPELINE_STAGES.IMAGE_MAPPING,
     });
 
     this.emitter.emitStageStarted({
       ...telemetry,
       stageName: PIPELINE_STAGES.RESPONSE_ASSEMBLY,
     });
+
+    const metadata = {
+      generatedAt: new Date().toISOString(),
+      promptVersion: this.contentService.getPromptVersion(),
+      contentModel: this.contentService.getModelName(),
+      imageConcurrency: this.imageRetrievalService.getConcurrency(),
+    };
 
     const response: GenerateFlashcardsResponse = {
       request: {
@@ -274,7 +292,12 @@ export class FlashcardOrchestratorService {
         ageGroup: resolved.ageGroup,
         ageMin: selected.ageMin,
         ageMax: selected.ageMax,
+        grade: resolved.grade,
+        subject: resolved.subject,
+        difficulty: resolved.difficulty,
+        language: resolved.language,
         learningObjective: selected.learningObjective,
+        educationalIntent: resolved.educationalIntent,
         count,
       },
       selection: {
@@ -284,13 +307,11 @@ export class FlashcardOrchestratorService {
         priority: selected.selection.priority,
       },
       template: selected.template,
+      templateVersion: selected.template.templateVersion,
+      layoutDefinition: selected.template.layoutDefinition,
       cards,
-      renderingMetadata: {
-        generatedAt: new Date().toISOString(),
-        promptVersion: this.contentService.getPromptVersion(),
-        contentModel: this.contentService.getModelName(),
-        imageConcurrency: this.imageRetrievalService.getConcurrency(),
-      },
+      metadata,
+      renderingMetadata: metadata,
     };
 
     this.emitter.emitStageCompleted({
@@ -300,48 +321,149 @@ export class FlashcardOrchestratorService {
 
     this.emitter.emitStageStarted({
       ...telemetry,
-      stageName: PIPELINE_STAGES.RESPONSE_VALIDATION,
+      stageName: PIPELINE_STAGES.FINAL_VALIDATION,
     });
-    if (!Array.isArray(response.cards) || response.cards.length !== count) {
+    this.assertFinalResponse(response, count, editableComponents);
+    this.emitter.emitStageCompleted({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.FINAL_VALIDATION,
+    });
+
+    return response;
+  }
+
+  private async selectTemplateWithRetry(
+    resolved: ReturnType<typeof resolveUserRequest>,
+    telemetry: PipelineTelemetryContext,
+  ) {
+    this.emitter.emitStageStarted({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+    });
+
+    const selectOnce = () =>
+      this.templateSelectionService.select({
+        topic: resolved.topic,
+        ageMin: resolved.ageMin,
+        ageMax: resolved.ageMax,
+        learningObjective: resolved.learningObjective,
+        grade: resolved.grade,
+        subject: resolved.subject,
+        difficulty: resolved.difficulty,
+        query: resolved.query,
+      });
+
+    try {
+      const selected = await selectOnce();
+      this.emitter.emitStageCompleted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+        metadata: {
+          templateId: selected.template.id,
+          ruleId: selected.selection.ruleId,
+          templateVersion: selected.template.templateVersion,
+        },
+      });
+      return selected;
+    } catch (error) {
+      if (
+        error instanceof FlashcardException &&
+        error.code === 'TEMPLATE_VERSION_MISMATCH'
+      ) {
+        this.logger.warn(
+          `Template became inactive during selection; retrying selection: ${getErrorMessage(error)}`,
+        );
+        try {
+          const selected = await selectOnce();
+          this.emitter.emitStageCompleted({
+            ...telemetry,
+            stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+            metadata: {
+              templateId: selected.template.id,
+              ruleId: selected.selection.ruleId,
+              retriedAfterInactive: true,
+            },
+          });
+          return selected;
+        } catch (retryError) {
+          this.emitter.emitStageFailed({
+            ...telemetry,
+            stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+            errorMessage: getErrorMessage(retryError),
+          });
+          throw retryError;
+        }
+      }
+
       this.emitter.emitStageFailed({
         ...telemetry,
-        stageName: PIPELINE_STAGES.RESPONSE_VALIDATION,
-        errorMessage: 'assembled card count mismatch',
+        stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+        errorMessage: getErrorMessage(error),
       });
+      throw error;
+    }
+  }
+
+  private assertFinalResponse(
+    response: GenerateFlashcardsResponse,
+    count: number,
+    editableComponents: TemplateComponentDefinition[],
+  ): void {
+    if (!Array.isArray(response.cards) || response.cards.length !== count) {
       throw new FlashcardException(
         'INVALID_LLM_OUTPUT',
         'Assembled flashcard response failed validation',
       );
     }
-    this.emitter.emitStageCompleted({
-      ...telemetry,
-      stageName: PIPELINE_STAGES.RESPONSE_VALIDATION,
-    });
 
-    return response;
+    const allowedIds = new Set(
+      editableComponents.map((component) => component.componentId),
+    );
+
+    for (const card of response.cards) {
+      for (const component of card.components) {
+        if (!allowedIds.has(component.componentId)) {
+          throw new FlashcardException(
+            'INVALID_LLM_OUTPUT',
+            `Assembled card has unsupported component "${component.componentId}"`,
+          );
+        }
+      }
+      if (card.components.length !== editableComponents.length) {
+        throw new FlashcardException(
+          'INVALID_LLM_OUTPUT',
+          'Assembled card component count does not match template',
+        );
+      }
+    }
   }
 
   private mergeComponent(
     definition: TemplateComponentDefinition,
     contentById: Record<string, string>,
     imageComponents: TemplateComponentDefinition[],
-    assetReference: EditableComponentPayload['assetReference'],
+    imageRefs: Array<EditableComponentPayload['assetReference']>,
   ): EditableComponentPayload {
     if (definition.componentType === 'image') {
-      const isPrimaryImage =
-        imageComponents[0]?.componentId === definition.componentId;
+      const imageIndex = imageComponents.findIndex(
+        (component) => component.componentId === definition.componentId,
+      );
+      const assetReference =
+        imageIndex >= 0 ? (imageRefs[imageIndex] ?? null) : null;
       return {
         componentId: definition.componentId,
+        type: definition.componentType,
         componentType: definition.componentType,
         editable: definition.editable,
         content: null,
         validationRules: definition.validationRules,
-        assetReference: isPrimaryImage ? assetReference : null,
+        assetReference,
       };
     }
 
     return {
       componentId: definition.componentId,
+      type: definition.componentType,
       componentType: definition.componentType,
       editable: definition.editable,
       content: contentById[definition.componentId] ?? null,

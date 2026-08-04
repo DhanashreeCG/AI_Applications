@@ -17,9 +17,12 @@ function asString(value: unknown): string | null {
 }
 
 /**
- * Parse region-based layoutDefinition and return editable components.
- * Editable is marked on each component (`editable: true`); there is no
- * separate editableComponents array.
+ * Parse layoutDefinition and return editable components.
+ *
+ * Supports:
+ * 1. New region layout: `{ regions: [{ id, components: [{ id, type, editable }] }] }`
+ * 2. Legacy layout: `{ editableComponents: [{ componentId, componentType, ... }] }`
+ *    (still present on templates seeded/migrated before the regions redesign)
  */
 export function parseEditableComponentsFromLayout(
   layoutDefinition: unknown,
@@ -47,7 +50,7 @@ export function parseEditableComponentsFromLayout(
   if (!editable.length) {
     throw new FlashcardException(
       'MISSING_EDITABLE_COMPONENT',
-      'layoutDefinition.regions must include at least one editable component',
+      'layoutDefinition must include at least one editable component',
     );
   }
 
@@ -68,6 +71,9 @@ export function listComponentOrderFromLayout(
   }
 }
 
+/**
+ * Normalize any supported layout shape into the region-based contract.
+ */
 export function parseLayoutDefinition(
   layoutDefinition: unknown,
 ): TemplateLayoutDefinition {
@@ -78,14 +84,23 @@ export function parseLayoutDefinition(
     );
   }
 
-  if (!Array.isArray(layoutDefinition.regions) || !layoutDefinition.regions.length) {
-    throw new FlashcardException(
-      'INVALID_REQUEST',
-      'layoutDefinition.regions must be a non-empty array',
-    );
+  if (Array.isArray(layoutDefinition.regions) && layoutDefinition.regions.length) {
+    return parseRegionLayout(layoutDefinition.regions);
   }
 
-  const regions: TemplateLayoutRegion[] = layoutDefinition.regions.map(
+  const legacy = tryParseLegacyLayout(layoutDefinition);
+  if (legacy) {
+    return legacy;
+  }
+
+  throw new FlashcardException(
+    'INVALID_REQUEST',
+    'layoutDefinition.regions must be a non-empty array (or provide legacy editableComponents)',
+  );
+}
+
+function parseRegionLayout(rawRegions: unknown[]): TemplateLayoutDefinition {
+  const regions: TemplateLayoutRegion[] = rawRegions.map(
     (region, regionIndex) => {
       if (!isRecord(region)) {
         throw new FlashcardException(
@@ -147,6 +162,77 @@ export function parseLayoutDefinition(
   );
 
   return { regions };
+}
+
+/**
+ * Convert pre-regions templates (slots + editableComponents) into a single
+ * body region so generate/upload consumers share one code path.
+ */
+function tryParseLegacyLayout(
+  layoutDefinition: Record<string, unknown>,
+): TemplateLayoutDefinition | null {
+  const rawComponents = layoutDefinition.editableComponents;
+  if (!Array.isArray(rawComponents) || !rawComponents.length) {
+    return null;
+  }
+
+  const components: TemplateLayoutComponent[] = [];
+  for (const [index, item] of rawComponents.entries()) {
+    if (!isRecord(item)) {
+      throw new FlashcardException(
+        'TEMPLATE_VERSION_MISMATCH',
+        `editableComponents[${index}] is not an object`,
+      );
+    }
+
+    const id =
+      asString(item.id) ??
+      asString(item.componentId);
+    const type =
+      asString(item.type) ??
+      asString(item.componentType);
+
+    if (!id || !type) {
+      throw new FlashcardException(
+        'MISSING_EDITABLE_COMPONENT',
+        `editableComponents[${index}] missing id/type (or componentId/componentType)`,
+      );
+    }
+
+    components.push({
+      id,
+      type,
+      editable: item.editable !== false,
+      required:
+        typeof item.required === 'boolean' ? item.required : undefined,
+      validationRules: isRecord(item.validationRules)
+        ? item.validationRules
+        : undefined,
+    });
+  }
+
+  // Preserve hierarchy order when present.
+  const hierarchy = Array.isArray(layoutDefinition.componentHierarchy)
+    ? layoutDefinition.componentHierarchy
+        .map((value) => asString(value))
+        .filter((value): value is string => Boolean(value))
+    : [];
+
+  if (hierarchy.length) {
+    const byId = new Map(components.map((component) => [component.id, component]));
+    const ordered: TemplateLayoutComponent[] = [];
+    for (const id of hierarchy) {
+      const component = byId.get(id);
+      if (component) {
+        ordered.push(component);
+        byId.delete(id);
+      }
+    }
+    ordered.push(...byId.values());
+    return { regions: [{ id: 'body', components: ordered }] };
+  }
+
+  return { regions: [{ id: 'body', components }] };
 }
 
 export function parseAgeGroupBounds(

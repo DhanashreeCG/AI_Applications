@@ -107,4 +107,60 @@ describe('validateLlmFlashcardPayload', () => {
       validateLlmFlashcardPayload({ cards: [] }, 2, textComponents),
     ).toThrow(FlashcardException);
   });
+
+  it('accepts structured image search queries', () => {
+    const payload = validateLlmFlashcardPayload(
+      {
+        cards: [
+          {
+            cardIndex: 0,
+            components: {
+              title_word: 'Broccoli',
+              sentence_main: 'Broccoli is a green vegetable.',
+            },
+            imageSearchQueries: [
+              {
+                searchQuery: 'cartoon green broccoli',
+                expectedObjects: ['broccoli'],
+                preferredStyle: 'cartoon',
+                preferredBackground: 'white',
+                orientation: 'portrait',
+                educationalUse: 'flashcard',
+              },
+            ],
+          },
+        ],
+      },
+      1,
+      textComponents,
+    );
+
+    expect(payload.cards[0].imageSearchQueries[0]).toMatchObject({
+      searchQuery: 'cartoon green broccoli',
+      expectedObjects: ['broccoli'],
+      preferredStyle: 'cartoon',
+    });
+  });
+
+  it('rejects unsupported component ids and layout fields', () => {
+    expect(() =>
+      validateLlmFlashcardPayload(
+        {
+          layout: { x: 1 },
+          cards: [
+            {
+              components: {
+                title_word: 'Carrot',
+                sentence_main: 'Orange.',
+                extra_field: 'nope',
+              },
+              imageSearchQueries: ['carrot'],
+            },
+          ],
+        },
+        1,
+        textComponents,
+      ),
+    ).toThrow(FlashcardException);
+  });
 });

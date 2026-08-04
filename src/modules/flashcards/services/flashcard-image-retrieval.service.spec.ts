@@ -183,7 +183,7 @@ describe('FlashcardImageRetrievalService', () => {
     ).toBe(false);
   });
 
-  it('returns not_found only when embeddings yield no results', async () => {
+  it('returns IMAGE_NOT_FOUND only when embeddings yield no results', async () => {
     searchService.search.mockResolvedValue({
       query: 'missing object',
       total: 0,
@@ -197,12 +197,52 @@ describe('FlashcardImageRetrievalService', () => {
       ageMax: null,
     });
 
-    expect(searchService.search).toHaveBeenCalledTimes(1);
     expect(searchService.search).toHaveBeenCalledWith({
       query: 'missing object',
       limit: 5,
     });
-    expect(result.status).toBe('not_found');
+    expect(result.status).toBe('IMAGE_NOT_FOUND');
     expect(result.assetId).toBeNull();
+  });
+
+  it('cascades to expectedObjects when the primary semantic query misses', async () => {
+    searchService.search.mockImplementation(async (input: { query: string }) => {
+      if (input.query === 'broccoli') {
+        return {
+          query: 'broccoli',
+          total: 1,
+          results: [
+            {
+              assetId: 'asset-b',
+              s3ObjectKey: 'assets/asset-b/original.png',
+              caption: 'broccoli',
+              similarity: 0.88,
+              mimeType: 'image/png',
+              ageGroups: ['5-6'],
+            },
+          ],
+        };
+      }
+      return { query: input.query, total: 0, results: [] };
+    });
+
+    const result = await service.retrieveForCard({
+      queries: [
+        {
+          searchQuery: 'cartoon green broccoli',
+          expectedObjects: ['broccoli'],
+          preferredStyle: 'cartoon',
+        },
+      ],
+      topic: 'vegetables',
+      ageMin: 5,
+      ageMax: 6,
+    });
+
+    expect(result.status).toBe('found');
+    expect(result.assetId).toBe('asset-b');
+    expect(result.queryUsed).toBe('broccoli');
+    expect(result.attempts).toContain('semantic');
+    expect(result.attempts).toContain('expected_objects');
   });
 });

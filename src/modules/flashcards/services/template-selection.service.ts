@@ -8,6 +8,9 @@ export interface SelectTemplateInput {
   ageMax: number;
   topic: string;
   learningObjective: string;
+  grade?: string | null;
+  subject?: string | null;
+  difficulty?: string | null;
   query?: string;
 }
 
@@ -30,17 +33,19 @@ export class TemplateSelectionService {
     if (!rules.length) {
       throw new FlashcardException(
         'NO_TEMPLATE_FOUND',
-        'No active template selection rules configured',
+        'No active flashcard templates configured',
         HttpStatus.NOT_FOUND,
       );
     }
 
+    // Topic is intentionally omitted — content only, never template selection.
     const match = selectBestTemplate(rules, {
-      topic: input.topic,
       ageMin: input.ageMin,
       ageMax: input.ageMax,
       learningObjective: input.learningObjective,
-      intent: input.query,
+      grade: input.grade ?? undefined,
+      subject: input.subject ?? undefined,
+      difficulty: input.difficulty ?? undefined,
     });
 
     if (!match) {
@@ -52,7 +57,9 @@ export class TemplateSelectionService {
           learningObjective: input.learningObjective,
           ageMin: input.ageMin,
           ageMax: input.ageMax,
-          topic: input.topic,
+          grade: input.grade,
+          subject: input.subject,
+          difficulty: input.difficulty,
         },
       );
     }
@@ -65,6 +72,15 @@ export class TemplateSelectionService {
         'NO_TEMPLATE_FOUND',
         `Selected template ${match.templateId} no longer exists`,
         HttpStatus.NOT_FOUND,
+      );
+    }
+
+    if (!template.active) {
+      throw new FlashcardException(
+        'TEMPLATE_VERSION_MISMATCH',
+        `Selected template ${match.templateId} became inactive`,
+        HttpStatus.CONFLICT,
+        { templateId: match.templateId },
       );
     }
 

@@ -11,35 +11,102 @@ export class TemplateRepository {
 
   public async listActiveSelectionRules(): Promise<SelectableRule[]> {
     const rules = await this.prisma.templateSelectionRule.findMany({
-      where: { active: true },
+      where: { active: true, template: { active: true } },
       include: { template: true },
       orderBy: [{ priority: 'desc' }, { id: 'asc' }],
     });
 
-    return rules.map((rule) => {
-      const ageBounds = parseAgeGroupBounds(rule.template.supportedAgeGroups);
+    if (rules.length) {
+      return rules.map((rule) => this.ruleToSelectable(rule, rule.template));
+    }
+
+    // Fallback: templates exist but selection rules were never seeded.
+    return this.synthesizeRulesFromActiveTemplates();
+  }
+
+  /**
+   * Build age/objective wildcard rules from active templates so selection
+   * still works when TemplateSelectionRule rows are missing.
+   */
+  public async synthesizeRulesFromActiveTemplates(): Promise<SelectableRule[]> {
+    const templates = await this.prisma.flashcardTemplate.findMany({
+      where: { active: true },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+    });
+
+    return templates.map((template) => {
+      const ageBounds = parseAgeGroupBounds(template.supportedAgeGroups);
       return {
-        id: rule.id,
-        name: rule.name,
-        priority: rule.priority,
-        ageMin: rule.ageMin,
-        ageMax: rule.ageMax,
-        grades: rule.grades,
-        subjects: rule.subjects,
-        learningObjectives: rule.learningObjectives,
-        difficulties: rule.difficulties,
-        intents: rule.intents,
-        topics: rule.topics,
-        templateId: rule.templateId,
-        templateActive: rule.template.active,
+        id: `synthetic-${template.id}`,
+        name: `Synthetic rule for ${template.name}`,
+        priority: 50,
+        ageMin: ageBounds?.min ?? null,
+        ageMax: ageBounds?.max ?? null,
+        grades: template.supportedGrades,
+        subjects: [],
+        learningObjectives: [],
+        difficulties: [],
+        intents: [],
+        topics: [],
+        templateId: template.id,
+        templateActive: template.active,
         templateAgeMin: ageBounds?.min ?? 0,
         templateAgeMax: ageBounds?.max ?? 99,
-        templateSubjects: rule.template.subjectsSupported,
-        templateObjectives: rule.template.learningObjectives,
-        templateDifficulties: rule.template.difficultyLevels,
-        templateVersion: rule.template.templateVersion,
+        templateSubjects: template.subjectsSupported,
+        templateObjectives: template.learningObjectives,
+        templateDifficulties: template.difficultyLevels,
+        templateVersion: template.templateVersion,
       };
     });
+  }
+
+  private ruleToSelectable(
+    rule: {
+      id: string;
+      name: string;
+      priority: number;
+      ageMin: number | null;
+      ageMax: number | null;
+      grades: string[];
+      subjects: string[];
+      learningObjectives: string[];
+      difficulties: string[];
+      intents: string[];
+      topics: string[];
+      templateId: string;
+    },
+    template: {
+      active: boolean;
+      supportedAgeGroups: string[];
+      supportedGrades: string[];
+      subjectsSupported: string[];
+      learningObjectives: string[];
+      difficultyLevels: string[];
+      templateVersion: string;
+    },
+  ): SelectableRule {
+    const ageBounds = parseAgeGroupBounds(template.supportedAgeGroups);
+    return {
+      id: rule.id,
+      name: rule.name,
+      priority: rule.priority,
+      ageMin: rule.ageMin,
+      ageMax: rule.ageMax,
+      grades: rule.grades,
+      subjects: rule.subjects,
+      learningObjectives: rule.learningObjectives,
+      difficulties: rule.difficulties,
+      intents: rule.intents,
+      topics: rule.topics,
+      templateId: rule.templateId,
+      templateActive: template.active,
+      templateAgeMin: ageBounds?.min ?? 0,
+      templateAgeMax: ageBounds?.max ?? 99,
+      templateSubjects: template.subjectsSupported,
+      templateObjectives: template.learningObjectives,
+      templateDifficulties: template.difficultyLevels,
+      templateVersion: template.templateVersion,
+    };
   }
 
   public async getTemplateById(
@@ -147,6 +214,7 @@ export class TemplateRepository {
     orientation: string;
     thumbnail: string | null;
     layoutDefinition: unknown;
+    active: boolean;
   }): SelectedTemplatePayload {
     return {
       id: template.id,
@@ -165,6 +233,7 @@ export class TemplateRepository {
       orientation: template.orientation,
       thumbnail: template.thumbnail,
       layoutDefinition: template.layoutDefinition,
+      active: template.active,
     };
   }
 }
