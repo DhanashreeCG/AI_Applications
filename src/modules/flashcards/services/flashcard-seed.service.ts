@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { buildLayoutDefinition } from '../utils/template-layout.util';
+import { buildRegionLayout } from '../utils/template-layout.util';
 import { TemplateRepository } from './template.repository';
 
 const TEMPLATE_SEEDS: Array<{
@@ -24,7 +24,7 @@ const TEMPLATE_SEEDS: Array<{
     name: 'Large Image + Single Word',
     description: 'Toddler recognition card with one dominant image and a single word.',
     templateType: 'flashcard',
-    layoutType: 'large_image_word',
+    layoutType: 'VERTICAL',
     supportedAgeGroups: ['2-3'],
     learningObjectives: ['recognition', 'vocabulary', 'identification'],
     subjectsSupported: [],
@@ -32,37 +32,29 @@ const TEMPLATE_SEEDS: Array<{
     tags: ['toddler', 'recognition'],
     pageSize: 'A6',
     orientation: 'PORTRAIT',
-    layoutDefinition: buildLayoutDefinition({
-      root: 'card',
-      slots: [
-        { componentId: 'img_main', role: 'hero-image' },
-        { componentId: 'title_word', role: 'primary-text' },
-      ],
-      editableComponents: [
+    layoutDefinition: buildRegionLayout({
+      regions: [
         {
-          componentId: 'img_main',
-          componentType: 'image',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'title_word',
-          componentType: 'title',
-          editable: true,
-          required: true,
-          validationRules: { maxLength: 24 },
+          id: 'body',
+          components: [
+            { id: 'img_main', type: 'image', editable: true },
+            {
+              id: 'title_word',
+              type: 'title',
+              editable: true,
+              validationRules: { maxLength: 24 },
+            },
+          ],
         },
       ],
-      componentHierarchy: ['img_main', 'title_word'],
-      renderingHints: { imageDominance: 'high', textScale: 'xlarge' },
-    }) as Prisma.InputJsonValue,
+    }),
   },
   {
     id: 'tmpl_image_word_sentence',
     name: 'Large Image + Word + Simple Sentence',
     description: 'Early learner card with word and a simple supporting sentence.',
     templateType: 'flashcard',
-    layoutType: 'image_word_sentence',
+    layoutType: 'VERTICAL',
     supportedAgeGroups: ['3-4'],
     learningObjectives: ['vocabulary', 'recognition', 'reading', 'identification'],
     subjectsSupported: [],
@@ -70,45 +62,35 @@ const TEMPLATE_SEEDS: Array<{
     tags: ['early-learner', 'vocabulary'],
     pageSize: 'A6',
     orientation: 'PORTRAIT',
-    layoutDefinition: buildLayoutDefinition({
-      root: 'card',
-      slots: [
-        { componentId: 'img_main', role: 'hero-image' },
-        { componentId: 'title_word', role: 'primary-text' },
-        { componentId: 'sentence_main', role: 'supporting-text' },
-      ],
-      editableComponents: [
+    layoutDefinition: buildRegionLayout({
+      regions: [
         {
-          componentId: 'img_main',
-          componentType: 'image',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'title_word',
-          componentType: 'title',
-          editable: true,
-          required: true,
-          validationRules: { maxLength: 32 },
-        },
-        {
-          componentId: 'sentence_main',
-          componentType: 'sentence',
-          editable: true,
-          required: true,
-          validationRules: { maxLength: 80 },
+          id: 'body',
+          components: [
+            { id: 'img_main', type: 'image', editable: true },
+            {
+              id: 'title_word',
+              type: 'title',
+              editable: true,
+              validationRules: { maxLength: 32 },
+            },
+            {
+              id: 'sentence_main',
+              type: 'sentence',
+              editable: true,
+              validationRules: { maxLength: 80 },
+            },
+          ],
         },
       ],
-      componentHierarchy: ['img_main', 'title_word', 'sentence_main'],
-      renderingHints: { imageDominance: 'high', textScale: 'large' },
-    }) as Prisma.InputJsonValue,
+    }),
   },
   {
     id: 'tmpl_image_word_fact',
     name: 'Image + Word + Educational Fact',
     description: 'Adds a short educational fact for ages 5-6.',
     templateType: 'flashcard',
-    layoutType: 'image_word_fact',
+    layoutType: 'VERTICAL',
     supportedAgeGroups: ['5-6'],
     learningObjectives: ['science_facts', 'vocabulary', 'general_knowledge'],
     subjectsSupported: ['science', 'general'],
@@ -116,44 +98,30 @@ const TEMPLATE_SEEDS: Array<{
     tags: ['facts', 'science'],
     pageSize: 'A6',
     orientation: 'PORTRAIT',
-    layoutDefinition: buildLayoutDefinition({
-      root: 'card',
-      slots: [
-        { componentId: 'img_main', role: 'hero-image' },
-        { componentId: 'title_word', role: 'primary-text' },
-        { componentId: 'fact_main', role: 'fact' },
-      ],
-      editableComponents: [
+    layoutDefinition: buildRegionLayout({
+      regions: [
         {
-          componentId: 'img_main',
-          componentType: 'image',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'title_word',
-          componentType: 'title',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'fact_main',
-          componentType: 'fact',
-          editable: true,
-          required: true,
-          validationRules: { maxLength: 120 },
+          id: 'body',
+          components: [
+            { id: 'img_main', type: 'image', editable: true },
+            { id: 'title_word', type: 'title', editable: true },
+            {
+              id: 'fact_main',
+              type: 'fact',
+              editable: true,
+              validationRules: { maxLength: 120 },
+            },
+          ],
         },
       ],
-      componentHierarchy: ['img_main', 'title_word', 'fact_main'],
-      renderingHints: { imageDominance: 'medium', textScale: 'medium' },
-    }) as Prisma.InputJsonValue,
+    }),
   },
   {
     id: 'tmpl_image_description_question',
     name: 'Image + Description + Question',
     description: 'Comprehension-oriented card for ages 6-8.',
     templateType: 'flashcard',
-    layoutType: 'image_description_question',
+    layoutType: 'VERTICAL',
     supportedAgeGroups: ['6-8'],
     learningObjectives: ['question_answer', 'reading', 'identification'],
     subjectsSupported: [],
@@ -161,55 +129,26 @@ const TEMPLATE_SEEDS: Array<{
     tags: ['comprehension', 'qa'],
     pageSize: 'A6',
     orientation: 'PORTRAIT',
-    layoutDefinition: buildLayoutDefinition({
-      root: 'card',
-      slots: [
-        { componentId: 'img_main', role: 'hero-image' },
-        { componentId: 'sentence_main', role: 'description' },
-        { componentId: 'question_main', role: 'question' },
-        { componentId: 'answer_main', role: 'answer' },
-      ],
-      editableComponents: [
+    layoutDefinition: buildRegionLayout({
+      regions: [
         {
-          componentId: 'img_main',
-          componentType: 'image',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'sentence_main',
-          componentType: 'sentence',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'question_main',
-          componentType: 'question',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'answer_main',
-          componentType: 'answer',
-          editable: true,
-          required: true,
+          id: 'body',
+          components: [
+            { id: 'img_main', type: 'image', editable: true },
+            { id: 'sentence_main', type: 'sentence', editable: true },
+            { id: 'question_main', type: 'question', editable: true },
+            { id: 'answer_main', type: 'answer', editable: true },
+          ],
         },
       ],
-      componentHierarchy: [
-        'img_main',
-        'sentence_main',
-        'question_main',
-        'answer_main',
-      ],
-      renderingHints: { imageDominance: 'medium', textScale: 'medium' },
-    }) as Prisma.InputJsonValue,
+    }),
   },
   {
     id: 'tmpl_image_fact_quiz',
     name: 'Image + Fact + Quiz',
     description: 'Fact + quiz format for ages 8+.',
     templateType: 'flashcard',
-    layoutType: 'image_fact_quiz',
+    layoutType: 'VERTICAL',
     supportedAgeGroups: ['8-14'],
     learningObjectives: [
       'question_answer',
@@ -222,48 +161,19 @@ const TEMPLATE_SEEDS: Array<{
     tags: ['quiz', 'facts'],
     pageSize: 'A6',
     orientation: 'PORTRAIT',
-    layoutDefinition: buildLayoutDefinition({
-      root: 'card',
-      slots: [
-        { componentId: 'img_main', role: 'hero-image' },
-        { componentId: 'fact_main', role: 'fact' },
-        { componentId: 'question_main', role: 'quiz-question' },
-        { componentId: 'answer_main', role: 'quiz-answer' },
-      ],
-      editableComponents: [
+    layoutDefinition: buildRegionLayout({
+      regions: [
         {
-          componentId: 'img_main',
-          componentType: 'image',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'fact_main',
-          componentType: 'fact',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'question_main',
-          componentType: 'question',
-          editable: true,
-          required: true,
-        },
-        {
-          componentId: 'answer_main',
-          componentType: 'answer',
-          editable: true,
-          required: true,
+          id: 'body',
+          components: [
+            { id: 'img_main', type: 'image', editable: true },
+            { id: 'fact_main', type: 'fact', editable: true },
+            { id: 'question_main', type: 'question', editable: true },
+            { id: 'answer_main', type: 'answer', editable: true },
+          ],
         },
       ],
-      componentHierarchy: [
-        'img_main',
-        'fact_main',
-        'question_main',
-        'answer_main',
-      ],
-      renderingHints: { imageDominance: 'low', textScale: 'small' },
-    }) as Prisma.InputJsonValue,
+    }),
   },
 ];
 

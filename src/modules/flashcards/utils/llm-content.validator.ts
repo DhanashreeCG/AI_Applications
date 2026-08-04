@@ -1,4 +1,3 @@
-import { ComponentType } from '../constants/flashcard.constants';
 import { FlashcardException } from '../errors/flashcard.exception';
 import {
   LlmCardContent,
@@ -12,43 +11,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' ? value.trim() : null;
-}
-
-export function parseEditableComponents(
-  value: unknown,
-): TemplateComponentDefinition[] {
-  if (!Array.isArray(value)) {
-    throw new FlashcardException(
-      'TEMPLATE_VERSION_MISMATCH',
-      'Template editableComponents must be an array',
-    );
-  }
-
-  return value.map((item, index) => {
-    if (!isRecord(item)) {
-      throw new FlashcardException(
-        'TEMPLATE_VERSION_MISMATCH',
-        `editableComponents[${index}] is not an object`,
-      );
-    }
-    const componentId = asString(item.componentId);
-    const componentType = asString(item.componentType) as ComponentType | null;
-    if (!componentId || !componentType) {
-      throw new FlashcardException(
-        'MISSING_EDITABLE_COMPONENT',
-        `editableComponents[${index}] missing componentId/componentType`,
-      );
-    }
-    return {
-      componentId,
-      componentType,
-      editable: item.editable !== false,
-      required: item.required !== false,
-      validationRules: isRecord(item.validationRules)
-        ? item.validationRules
-        : undefined,
-    };
-  });
 }
 
 function normalizeKey(key: string): string {
@@ -113,7 +75,11 @@ function normalizeCardComponents(
       if (!isRecord(item)) {
         continue;
       }
-      const key = asString(item.componentId) ?? asString(item.componentType);
+      const key =
+        asString(item.componentId) ??
+        asString(item.id) ??
+        asString(item.componentType) ??
+        asString(item.type);
       if (key) {
         entries.push([key, item.content ?? item.text ?? item.value]);
       }

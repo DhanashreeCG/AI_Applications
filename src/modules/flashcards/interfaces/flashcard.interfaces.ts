@@ -6,14 +6,25 @@ export interface TemplateComponentDefinition {
   editable: boolean;
   required: boolean;
   validationRules?: Record<string, unknown>;
+  regionId?: string;
 }
 
+export interface TemplateLayoutComponent {
+  id: string;
+  type: string;
+  editable?: boolean;
+  required?: boolean;
+  validationRules?: Record<string, unknown>;
+}
+
+export interface TemplateLayoutRegion {
+  id: string;
+  components: TemplateLayoutComponent[];
+}
+
+/** Region-based layout. Editable flags live on each component. */
 export interface TemplateLayoutDefinition {
-  root: string;
-  slots: Array<{
-    componentId: string;
-    role: string;
-  }>;
+  regions: TemplateLayoutRegion[];
 }
 
 export interface TemplateSelectionCriteria {
@@ -97,13 +108,7 @@ export interface SelectedTemplatePayload {
   pageSize: string;
   orientation: string;
   thumbnail: string | null;
-  layoutDefinition: unknown;
-  /** Derived from layoutDefinition for rendering / LLM component keys. */
-  editableComponents: unknown;
-  componentHierarchy: unknown;
-  componentConstraints: unknown;
-  renderingHints: unknown;
-  defaultStyles: unknown;
+  layoutDefinition: TemplateLayoutDefinition | unknown;
 }
 
 export interface GenerateFlashcardsResponse {

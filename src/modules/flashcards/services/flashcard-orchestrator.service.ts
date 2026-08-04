@@ -15,7 +15,7 @@ import {
   GenerateFlashcardsResponse,
   TemplateComponentDefinition,
 } from '../interfaces/flashcard.interfaces';
-import { parseEditableComponents } from '../utils/llm-content.validator';
+import { parseEditableComponentsFromLayout } from '../utils/template-layout.util';
 import { resolveUserRequest } from '../utils/user-request.resolver';
 import {
   FlashcardPipelineEmitter,
@@ -188,8 +188,8 @@ export class FlashcardOrchestratorService {
       },
     });
 
-    const editableComponents = parseEditableComponents(
-      selected.template.editableComponents,
+    const editableComponents = parseEditableComponentsFromLayout(
+      selected.template.layoutDefinition,
     );
     const textComponents = editableComponents.filter(
       (component) => component.componentType !== 'image',

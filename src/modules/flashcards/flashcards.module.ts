@@ -8,6 +8,7 @@ import { FlashcardContentService } from './services/flashcard-content.service';
 import { FlashcardImageRetrievalService } from './services/flashcard-image-retrieval.service';
 import { FlashcardOrchestratorService } from './services/flashcard-orchestrator.service';
 import { FlashcardSeedService } from './services/flashcard-seed.service';
+import { FlashcardTemplateService } from './services/flashcard-template.service';
 import { TemplateRepository } from './services/template.repository';
 import { TemplateSelectionService } from './services/template-selection.service';
 
@@ -18,6 +19,7 @@ import { TemplateSelectionService } from './services/template-selection.service'
     AssetImageService,
     TemplateRepository,
     TemplateSelectionService,
+    FlashcardTemplateService,
     FlashcardContentService,
     FlashcardImageRetrievalService,
     FlashcardOrchestratorService,

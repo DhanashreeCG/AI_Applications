@@ -29,6 +29,7 @@ export const COMPONENT_TYPES = [
   'badge',
   'pronunciation',
   'phonics',
+  'chips',
 ] as const;
 
 export type ComponentType = (typeof COMPONENT_TYPES)[number];

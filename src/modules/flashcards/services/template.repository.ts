@@ -1,11 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@generated/prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { SelectableRule } from '../utils/template-selection.engine';
 import { SelectedTemplatePayload } from '../interfaces/flashcard.interfaces';
-import {
-  extractLayoutExtras,
-  parseAgeGroupBounds,
-} from '../utils/template-layout.util';
+import { parseAgeGroupBounds } from '../utils/template-layout.util';
 
 @Injectable()
 export class TemplateRepository {
@@ -54,8 +52,102 @@ export class TemplateRepository {
       return null;
     }
 
-    const extras = extractLayoutExtras(template.layoutDefinition);
+    return this.toPayload(template);
+  }
 
+  public async createTemplate(input: {
+    name: string;
+    description: string | null;
+    templateType: string;
+    layoutType: string;
+    supportedAgeGroups: string[];
+    supportedGrades: string[];
+    learningObjectives: string[];
+    subjectsSupported: string[];
+    difficultyLevels: string[];
+    tags: string[];
+    pageSize: string;
+    orientation: string;
+    layoutDefinition: Prisma.InputJsonValue;
+    thumbnail: string | null;
+    templateVersion: string;
+    active: boolean;
+  }): Promise<SelectedTemplatePayload> {
+    const created = await this.createTemplates([input]);
+    return created[0];
+  }
+
+  public async createTemplates(
+    inputs: Array<{
+      name: string;
+      description: string | null;
+      templateType: string;
+      layoutType: string;
+      supportedAgeGroups: string[];
+      supportedGrades: string[];
+      learningObjectives: string[];
+      subjectsSupported: string[];
+      difficultyLevels: string[];
+      tags: string[];
+      pageSize: string;
+      orientation: string;
+      layoutDefinition: Prisma.InputJsonValue;
+      thumbnail: string | null;
+      templateVersion: string;
+      active: boolean;
+    }>,
+  ): Promise<SelectedTemplatePayload[]> {
+    const templates = await this.prisma.$transaction(
+      inputs.map((input) =>
+        this.prisma.flashcardTemplate.create({
+          data: {
+            // id omitted — Prisma @default(cuid())
+            name: input.name,
+            description: input.description,
+            templateType: input.templateType,
+            layoutType: input.layoutType,
+            supportedAgeGroups: input.supportedAgeGroups,
+            supportedGrades: input.supportedGrades,
+            learningObjectives: input.learningObjectives,
+            subjectsSupported: input.subjectsSupported,
+            difficultyLevels: input.difficultyLevels,
+            tags: input.tags,
+            pageSize: input.pageSize,
+            orientation: input.orientation,
+            layoutDefinition: input.layoutDefinition,
+            thumbnail: input.thumbnail,
+            templateVersion: input.templateVersion,
+            active: input.active,
+          },
+        }),
+      ),
+    );
+
+    return templates.map((template) => this.toPayload(template));
+  }
+
+  public async countTemplates(): Promise<number> {
+    return this.prisma.flashcardTemplate.count();
+  }
+
+  private toPayload(template: {
+    id: string;
+    name: string;
+    description: string | null;
+    templateType: string;
+    layoutType: string;
+    templateVersion: string;
+    supportedAgeGroups: string[];
+    supportedGrades: string[];
+    learningObjectives: string[];
+    subjectsSupported: string[];
+    difficultyLevels: string[];
+    tags: string[];
+    pageSize: string;
+    orientation: string;
+    thumbnail: string | null;
+    layoutDefinition: unknown;
+  }): SelectedTemplatePayload {
     return {
       id: template.id,
       name: template.name,
@@ -73,15 +165,6 @@ export class TemplateRepository {
       orientation: template.orientation,
       thumbnail: template.thumbnail,
       layoutDefinition: template.layoutDefinition,
-      editableComponents: extras.editableComponents,
-      componentHierarchy: extras.componentHierarchy,
-      componentConstraints: extras.componentConstraints,
-      renderingHints: extras.renderingHints,
-      defaultStyles: extras.defaultStyles,
     };
-  }
-
-  public async countTemplates(): Promise<number> {
-    return this.prisma.flashcardTemplate.count();
   }
 }

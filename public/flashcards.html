@@ -995,6 +995,7 @@
         phonics: { cls: 'c-pron' },
         badge: { cls: 'c-badge' },
         footer: { cls: 'c-footer' },
+        chips: { cls: 'c-badge' },
       };
 
       /* ---------------- helpers ---------------- */
@@ -1236,11 +1237,18 @@
       }
 
       function orderedComponents(card, template) {
-        const hierarchy = Array.isArray(template && template.componentHierarchy)
-          ? template.componentHierarchy
-          : null;
+        const layout = template && template.layoutDefinition;
+        const hierarchy = Array.isArray(layout && layout.regions)
+          ? layout.regions.flatMap((region) =>
+              Array.isArray(region.components)
+                ? region.components.map((component) => component.id)
+                : [],
+            )
+          : Array.isArray(template && template.componentHierarchy)
+            ? template.componentHierarchy
+            : null;
         const components = card.components || [];
-        if (!hierarchy) return components;
+        if (!hierarchy || !hierarchy.length) return components;
 
         const byId = new Map(components.map((c) => [c.componentId, c]));
         const ordered = [];
@@ -1256,7 +1264,10 @@
       function buildCardElement(card, index) {
         const payload = state.payload;
         const template = payload.template || {};
-        const hints = template.renderingHints || {};
+        const hints =
+          (template.layoutDefinition && template.layoutDefinition.renderingHints) ||
+          template.renderingHints ||
+          {};
         const components = orderedComponents(card, template);
 
         const root = document.createElement('div');

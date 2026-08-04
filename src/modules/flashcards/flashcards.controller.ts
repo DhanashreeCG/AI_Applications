@@ -14,8 +14,10 @@ import {
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { GenerateFlashcardsDto } from './dto/generate-flashcards.dto';
+import { UploadFlashcardTemplatesDto } from './dto/upload-flashcard-template.dto';
 import { AssetImageService } from './services/asset-image.service';
 import { FlashcardOrchestratorService } from './services/flashcard-orchestrator.service';
+import { FlashcardTemplateService } from './services/flashcard-template.service';
 
 @ApiTags('flashcards')
 @Controller('flashcards')
@@ -23,6 +25,7 @@ export class FlashcardsController {
   constructor(
     private readonly orchestrator: FlashcardOrchestratorService,
     private readonly assetImageService: AssetImageService,
+    private readonly templateService: FlashcardTemplateService,
   ) {}
 
   @Post('generate')
@@ -39,6 +42,16 @@ export class FlashcardsController {
     return this.orchestrator.generate(dto, {
       correlationId: correlationId || traceId,
     });
+  }
+
+  @Post('templates')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      'Upload one or more flashcard templates (ids auto-generated; layout-only)',
+  })
+  async uploadTemplates(@Body() dto: UploadFlashcardTemplatesDto) {
+    return this.templateService.upload(dto);
   }
 
   @Get('assets/:assetId/image')
