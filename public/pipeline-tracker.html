@@ -434,6 +434,65 @@
         border-radius: 12px;
         background: rgba(10, 12, 32, 0.45);
         border: 1px solid var(--border);
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+
+      .stage:hover {
+        border-color: rgba(122, 184, 255, 0.45);
+      }
+
+      .stage.open {
+        border-color: rgba(122, 184, 255, 0.55);
+        background: rgba(122, 184, 255, 0.08);
+      }
+
+      .stage-panel {
+        grid-column: 1 / -1;
+        margin-top: 8px;
+        padding-top: 10px;
+        border-top: 1px dashed var(--border);
+        display: none;
+      }
+
+      .stage.open .stage-panel {
+        display: block;
+      }
+
+      .stage-panel pre,
+      .list-card pre {
+        margin: 8px 0 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid var(--border);
+        overflow: auto;
+        max-height: 320px;
+        font-size: 11.5px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .totals {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: -6px 0 16px;
+      }
+
+      .totals .chip {
+        font-size: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(10, 12, 32, 0.55);
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+
+      .totals .chip strong {
+        color: var(--text);
+        font-weight: 700;
       }
 
       .seq {
@@ -855,6 +914,52 @@
         const ais = execution.aiInvocations || [];
         const searches = execution.imageSearches || [];
 
+        const totals = [];
+        if (meta.totalTokens != null) {
+          totals.push(
+            '<span class="chip">Tokens <strong>' +
+              escapeHtml(String(meta.totalTokens)) +
+              '</strong>' +
+              (meta.totalInputTokens != null || meta.totalOutputTokens != null
+                ? ' <span class="muted">(' +
+                  escapeHtml(String(meta.totalInputTokens ?? 0)) +
+                  ' in / ' +
+                  escapeHtml(String(meta.totalOutputTokens ?? 0)) +
+                  ' out)</span>'
+                : '') +
+              '</span>',
+          );
+        }
+        if (meta.llmDurationMs != null) {
+          totals.push(
+            '<span class="chip">LLM <strong>' +
+              escapeHtml(formatDuration(meta.llmDurationMs)) +
+              '</strong></span>',
+          );
+        }
+        if (meta.imageSearchDurationMs != null || meta.imageSearchCount != null) {
+          totals.push(
+            '<span class="chip">Image search <strong>' +
+              escapeHtml(formatDuration(meta.imageSearchDurationMs)) +
+              '</strong>' +
+              (meta.imageSearchCount != null
+                ? ' · ' + escapeHtml(String(meta.imageSearchCount)) + ' calls'
+                : '') +
+              '</span>',
+          );
+        }
+        if (meta.embeddingTokens != null || meta.embeddingCalls != null) {
+          totals.push(
+            '<span class="chip">Embeddings <strong>' +
+              escapeHtml(String(meta.embeddingTokens ?? 0)) +
+              '</strong> tokens' +
+              (meta.embeddingCalls != null
+                ? ' · ' + escapeHtml(String(meta.embeddingCalls)) + ' calls'
+                : '') +
+              '</span>',
+          );
+        }
+
         el('detail').innerHTML =
           '<dl class="kv">' +
           [
@@ -875,25 +980,14 @@
             .map(([k, v]) => '<dt>' + k + '</dt><dd>' + v + '</dd>')
             .join('') +
           '</dl>' +
+          (totals.length
+            ? '<div class="totals">' + totals.join('') + '</div>'
+            : '') +
           '<h3 class="section-title">Stages</h3>' +
-          '<div class="timeline">' +
+          '<div class="timeline" id="stageTimeline">' +
           (stages.length
             ? stages
-                .map(
-                  (stage) =>
-                    '<div class="stage"><div class="seq">' +
-                    escapeHtml(stage.sequence) +
-                    '</div><div><div class="stage-name">' +
-                    escapeHtml(stage.stageName) +
-                    '</div><div class="stage-meta">' +
-                    escapeHtml(formatDuration(stage.durationMs)) +
-                    (stage.retryCount ? ' · retries ' + stage.retryCount : '') +
-                    '</div></div><span class="' +
-                    statusClass(stage.status) +
-                    '">' +
-                    escapeHtml(stage.status) +
-                    '</span></div>',
-                )
+                .map((stage, index) => renderStageRow(stage, index, ais, searches))
                 .join('')
             : '<div class="muted">No stages recorded yet.</div>') +
           '</div>' +
@@ -913,11 +1007,23 @@
                     ' · ' +
                     escapeHtml(formatDuration(ai.durationMs)) +
                     (ai.totalTokens != null ? ' · ' + ai.totalTokens + ' tokens' : '') +
+                    (ai.inputTokens != null || ai.outputTokens != null
+                      ? ' · ' +
+                        (ai.inputTokens ?? 0) +
+                        ' in / ' +
+                        (ai.outputTokens ?? 0) +
+                        ' out'
+                      : '') +
                     '</div>' +
                     (ai.promptHash
                       ? '<div class="mono muted">prompt ' +
                         escapeHtml(ai.promptHash.slice(0, 12)) +
                         '…</div>'
+                      : '') +
+                    (ai.responsePayload
+                      ? '<pre>' +
+                        escapeHtml(prettyJson(ai.responsePayload)) +
+                        '</pre>'
                       : '') +
                     '</div>',
                 )
@@ -952,6 +1058,140 @@
                 )
                 .join('')
             : '<div class="muted">No image searches.</div>');
+
+        const timeline = el('stageTimeline');
+        if (timeline) {
+          timeline.querySelectorAll('.stage[data-stage-index]').forEach((node) => {
+            node.addEventListener('click', () => {
+              node.classList.toggle('open');
+            });
+          });
+        }
+      }
+
+      function renderStageRow(stage, index, ais, searches) {
+        const linkedAi = ais.filter(
+          (ai) =>
+            (ai.stageExecutionId && ai.stageExecutionId === stage.id) ||
+            (!ai.stageExecutionId &&
+              stage.stageName &&
+              (ai.purpose === 'flashcard_content'
+                ? stage.stageName === 'llm_request'
+                : ai.purpose === 'flashcard_image_search_embedding'
+                  ? stage.stageName === 'image_search'
+                  : false)),
+        );
+        const linkedSearches = searches.filter(
+          (search) =>
+            (search.stageExecutionId && search.stageExecutionId === stage.id) ||
+            (!search.stageExecutionId && stage.stageName === 'image_search'),
+        );
+
+        let panel =
+          '<div class="stage-meta">Status: ' +
+          escapeHtml(stage.status) +
+          ' · Duration: ' +
+          escapeHtml(formatDuration(stage.durationMs)) +
+          (stage.retryCount ? ' · Retries: ' + stage.retryCount : '') +
+          '</div>';
+
+        if (stage.metadata && Object.keys(stage.metadata).length) {
+          panel +=
+            '<div class="muted" style="margin-top:8px">Stage metadata</div><pre>' +
+            escapeHtml(prettyJson(stage.metadata)) +
+            '</pre>';
+        }
+
+        if (linkedAi.length) {
+          panel +=
+            '<div class="muted" style="margin-top:10px">AI invocations</div>' +
+            linkedAi
+              .map(
+                (ai) =>
+                  '<div class="list-card" style="margin-top:6px"><div class="row"><strong>' +
+                  escapeHtml(ai.provider + ' / ' + ai.model) +
+                  '</strong><span class="' +
+                  statusClass(ai.status) +
+                  '">' +
+                  escapeHtml(ai.status) +
+                  '</span></div><div class="muted">' +
+                  escapeHtml(ai.purpose) +
+                  ' · ' +
+                  escapeHtml(formatDuration(ai.durationMs)) +
+                  (ai.totalTokens != null
+                    ? ' · ' + ai.totalTokens + ' tokens'
+                    : '') +
+                  '</div>' +
+                  (ai.responsePayload
+                    ? '<pre>' +
+                      escapeHtml(prettyJson(ai.responsePayload)) +
+                      '</pre>'
+                    : '<div class="muted">No response payload stored.</div>') +
+                  '</div>',
+              )
+              .join('');
+        }
+
+        if (linkedSearches.length) {
+          panel +=
+            '<div class="muted" style="margin-top:10px">Image searches</div>' +
+            linkedSearches
+              .map(
+                (search) =>
+                  '<div class="list-card" style="margin-top:6px"><div class="row"><strong>' +
+                  escapeHtml(search.query) +
+                  '</strong><span class="' +
+                  statusClass(search.failed ? 'failed' : 'completed') +
+                  '">' +
+                  escapeHtml(search.failed ? 'failed' : 'ok') +
+                  '</span></div><div class="muted">' +
+                  escapeHtml(String(search.resultCount)) +
+                  ' results · ' +
+                  escapeHtml(formatDuration(search.durationMs)) +
+                  (search.selectedAssetId
+                    ? ' · asset ' + search.selectedAssetId.slice(0, 8) + '…'
+                    : '') +
+                  (search.cacheHit ? ' · cache hit' : '') +
+                  '</div></div>',
+              )
+              .join('');
+        }
+
+        if (
+          !stage.metadata &&
+          !linkedAi.length &&
+          !linkedSearches.length
+        ) {
+          panel +=
+            '<div class="muted" style="margin-top:8px">No additional stage details.</div>';
+        }
+
+        return (
+          '<div class="stage" data-stage-index="' +
+          index +
+          '" title="Click to expand"><div class="seq">' +
+          escapeHtml(stage.sequence) +
+          '</div><div><div class="stage-name">' +
+          escapeHtml(stage.stageName) +
+          '</div><div class="stage-meta">' +
+          escapeHtml(formatDuration(stage.durationMs)) +
+          (stage.retryCount ? ' · retries ' + stage.retryCount : '') +
+          ' · click for details</div><div class="stage-panel">' +
+          panel +
+          '</div></div><span class="' +
+          statusClass(stage.status) +
+          '">' +
+          escapeHtml(stage.status) +
+          '</span></div>'
+        );
+      }
+
+      function prettyJson(value) {
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch {
+          return String(value);
+        }
       }
 
       async function lookup() {

@@ -177,20 +177,25 @@ export class PipelineTrackerRepository {
     outputTokens?: number;
     totalTokens?: number;
     estimatedCost?: number;
+    durationMs?: number;
   }) {
     const existing = await this.prisma.pipelineAiInvocation.findUnique({
       where: { id: input.id },
-      select: { startedAt: true },
+      select: { startedAt: true, purpose: true },
     });
     const completedAt = new Date();
+    const durationMs =
+      typeof input.durationMs === 'number'
+        ? input.durationMs
+        : existing
+          ? completedAt.getTime() - existing.startedAt.getTime()
+          : undefined;
     return this.prisma.pipelineAiInvocation.update({
       where: { id: input.id },
       data: {
         status: input.status,
         completedAt,
-        durationMs: existing
-          ? completedAt.getTime() - existing.startedAt.getTime()
-          : undefined,
+        durationMs,
         responseHash: input.responseHash,
         responsePayload: input.responsePayload,
         inputTokens: input.inputTokens,
@@ -199,6 +204,78 @@ export class PipelineTrackerRepository {
         estimatedCost: input.estimatedCost,
       },
     });
+  }
+
+  public async getExecutionUsageRollups(executionId: string): Promise<{
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalTokens: number;
+    llmDurationMs: number;
+    imageSearchDurationMs: number;
+    imageSearchCount: number;
+    embeddingTokens: number;
+    embeddingDurationMs: number;
+    embeddingCalls: number;
+  }> {
+    const [ais, searches] = await Promise.all([
+      this.prisma.pipelineAiInvocation.findMany({
+        where: { executionId },
+        select: {
+          purpose: true,
+          status: true,
+          inputTokens: true,
+          outputTokens: true,
+          totalTokens: true,
+          durationMs: true,
+        },
+      }),
+      this.prisma.pipelineImageSearchExecution.findMany({
+        where: { executionId },
+        select: { durationMs: true },
+      }),
+    ]);
+
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalTokens = 0;
+    let llmDurationMs = 0;
+    let embeddingTokens = 0;
+    let embeddingDurationMs = 0;
+    let embeddingCalls = 0;
+
+    for (const ai of ais) {
+      if (ai.status !== 'success') {
+        continue;
+      }
+      const isEmbedding = ai.purpose === 'flashcard_image_search_embedding';
+      if (isEmbedding) {
+        embeddingCalls += 1;
+        embeddingTokens += ai.totalTokens ?? ai.inputTokens ?? 0;
+        embeddingDurationMs += ai.durationMs ?? 0;
+        continue;
+      }
+      totalInputTokens += ai.inputTokens ?? 0;
+      totalOutputTokens += ai.outputTokens ?? 0;
+      totalTokens += ai.totalTokens ?? 0;
+      llmDurationMs += ai.durationMs ?? 0;
+    }
+
+    const imageSearchDurationMs = searches.reduce(
+      (sum, row) => sum + (row.durationMs ?? 0),
+      0,
+    );
+
+    return {
+      totalInputTokens,
+      totalOutputTokens,
+      totalTokens,
+      llmDurationMs,
+      imageSearchDurationMs,
+      imageSearchCount: searches.length,
+      embeddingTokens,
+      embeddingDurationMs,
+      embeddingCalls,
+    };
   }
 
   public createImageSearch(input: {

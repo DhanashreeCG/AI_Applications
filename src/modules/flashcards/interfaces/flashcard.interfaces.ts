@@ -49,7 +49,6 @@ export interface LlmFlashcardPayload {
 
 export type ImageRetrievalStatus =
   | 'found'
-  | 'found_after_retry'
   | 'not_found'
   | 'timeout'
   | 'error';

@@ -14,11 +14,13 @@ export interface PipelineTrackerMetricsSnapshot {
   pipelineFailed: number;
   concurrentExecutions: number;
   aiCalls: number;
+  embeddingCalls: number;
   imageSearches: number;
   failureCount: number;
   retryCount: number;
   pipelineDuration: LatencyStats;
   llmDuration: LatencyStats;
+  embeddingDuration: LatencyStats;
   imageSearchDuration: LatencyStats;
   stageDurations: Record<string, LatencyStats>;
   templateUsage: Record<string, number>;
@@ -40,11 +42,13 @@ export class PipelineTrackerMetricsService {
   private pipelineFailed = 0;
   private concurrentExecutions = 0;
   private aiCalls = 0;
+  private embeddingCalls = 0;
   private imageSearches = 0;
   private failureCount = 0;
   private retryCount = 0;
   private readonly pipelineDuration = this.createLatencyTracker();
   private readonly llmDuration = this.createLatencyTracker();
+  private readonly embeddingDuration = this.createLatencyTracker();
   private readonly imageSearchDuration = this.createLatencyTracker();
   private readonly stageDurations = new Map<
     string,
@@ -86,6 +90,13 @@ export class PipelineTrackerMetricsService {
     }
   }
 
+  public onEmbeddingCall(durationMs?: number): void {
+    this.embeddingCalls += 1;
+    if (typeof durationMs === 'number') {
+      this.embeddingDuration.record(durationMs);
+    }
+  }
+
   public onImageSearch(durationMs?: number): void {
     this.imageSearches += 1;
     if (typeof durationMs === 'number') {
@@ -120,11 +131,13 @@ export class PipelineTrackerMetricsService {
       pipelineFailed: this.pipelineFailed,
       concurrentExecutions: this.concurrentExecutions,
       aiCalls: this.aiCalls,
+      embeddingCalls: this.embeddingCalls,
       imageSearches: this.imageSearches,
       failureCount: this.failureCount,
       retryCount: this.retryCount,
       pipelineDuration: this.pipelineDuration.snapshot(),
       llmDuration: this.llmDuration.snapshot(),
+      embeddingDuration: this.embeddingDuration.snapshot(),
       imageSearchDuration: this.imageSearchDuration.snapshot(),
       stageDurations,
       templateUsage,
@@ -138,11 +151,13 @@ export class PipelineTrackerMetricsService {
     this.pipelineFailed = 0;
     this.concurrentExecutions = 0;
     this.aiCalls = 0;
+    this.embeddingCalls = 0;
     this.imageSearches = 0;
     this.failureCount = 0;
     this.retryCount = 0;
     this.pipelineDuration.reset();
     this.llmDuration.reset();
+    this.embeddingDuration.reset();
     this.imageSearchDuration.reset();
     this.stageDurations.clear();
     this.templateUsage.clear();

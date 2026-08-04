@@ -23,6 +23,12 @@ describe('SearchService', () => {
 
   const mockEmbeddingProvider = {
     generateEmbedding: jest.fn(),
+    getLastUsage: jest.fn().mockReturnValue({
+      inputTokens: 3,
+      totalTokens: 3,
+      latencyMs: 12,
+    }),
+    modelName: 'text-embedding-3-small',
   };
 
   const mockVectorStorage = {
@@ -104,6 +110,15 @@ describe('SearchService', () => {
     );
     expect(mockRedisCache.set).toHaveBeenCalled();
     expect(response.total).toBe(1);
+    expect(response.usage).toEqual(
+      expect.objectContaining({
+        inputTokens: 3,
+        totalTokens: 3,
+        latencyMs: 12,
+        model: 'text-embedding-3-small',
+        fromCache: false,
+      }),
+    );
     expect(response.results[0]).toEqual(
       expect.objectContaining({
         assetId: 'asset-001',
@@ -143,6 +158,13 @@ describe('SearchService', () => {
 
     expect(mockEmbeddingProvider.generateEmbedding).not.toHaveBeenCalled();
     expect(response.fromCache).toBe(true);
+    expect(response.usage).toEqual(
+      expect.objectContaining({
+        fromCache: true,
+        inputTokens: 0,
+        totalTokens: 0,
+      }),
+    );
     expect(response.total).toBe(1);
   });
 

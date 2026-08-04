@@ -206,10 +206,23 @@ export class FlashcardContentService {
         );
       }
 
+      const inputTokens =
+        usage?.promptTokenCount ?? usage?.inputTokenCount ?? undefined;
+      const outputTokens =
+        usage?.candidatesTokenCount ?? usage?.outputTokenCount ?? undefined;
+      const totalTokens = usage?.totalTokenCount ?? undefined;
+
       if (telemetry) {
         this.emitter.emitStageCompleted({
           ...telemetry,
           stageName: PIPELINE_STAGES.LLM_REQUEST,
+          metadata: {
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            durationMs: latencyMs,
+            model: this.modelName,
+          },
         });
         this.emitter.emitStageStarted({
           ...telemetry,
@@ -227,6 +240,13 @@ export class FlashcardContentService {
         this.emitter.emitStageCompleted({
           ...telemetry,
           stageName: PIPELINE_STAGES.LLM_RESPONSE_VALIDATION,
+          metadata: {
+            cardCount: payload.cards.length,
+            responsePreview: {
+              cardCount: payload.cards.length,
+              cardIndexes: payload.cards.map((card) => card.cardIndex),
+            },
+          },
         });
         this.emitter.emitAiCompleted({
           ...telemetry,
@@ -235,13 +255,10 @@ export class FlashcardContentService {
           status: 'success',
           responseHash: hashPayload(responseText),
           responsePayload: parsed,
-          inputTokens:
-            usage?.promptTokenCount ?? usage?.inputTokenCount ?? undefined,
-          outputTokens:
-            usage?.candidatesTokenCount ??
-            usage?.outputTokenCount ??
-            undefined,
-          totalTokens: usage?.totalTokenCount ?? undefined,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          durationMs: latencyMs,
         });
       }
 
@@ -285,6 +302,7 @@ export class FlashcardContentService {
           stageName: PIPELINE_STAGES.LLM_REQUEST,
           status: 'failed',
           errorMessage: getErrorMessage(error),
+          durationMs: latencyMs || Date.now() - startedAt.getTime(),
         });
         this.emitter.emitStageFailed({
           ...telemetry,

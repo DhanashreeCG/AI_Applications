@@ -27,9 +27,19 @@ export interface SearchResultItem {
   mimeType: string;
 }
 
+export interface SearchEmbeddingUsage {
+  inputTokens?: number;
+  totalTokens?: number;
+  latencyMs?: number;
+  model?: string;
+  fromCache?: boolean;
+}
+
 export interface SearchAssetsResponse {
   query: string;
   total: number;
   results: SearchResultItem[];
   fromCache?: boolean;
+  /** Query-embedding usage for the search call (additive; optional for callers). */
+  usage?: SearchEmbeddingUsage;
 }

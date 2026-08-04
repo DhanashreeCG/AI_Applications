@@ -91,11 +91,17 @@ export class PipelineTrackerService implements PipelineTrackerPort {
   ): Promise<void> {
     if (!this.enabled) return;
     await this.safe(payload.executionId, async () => {
+      const rollups = await this.repository.getExecutionUsageRollups(
+        payload.executionId,
+      );
       const updated = await this.repository.finishExecution({
         id: payload.executionId,
         status: PipelineExecutionStatus.completed,
         currentStage: 'completed',
-        metadata: payload.metadata as Prisma.InputJsonValue | undefined,
+        metadata: {
+          ...(payload.metadata ?? {}),
+          ...rollups,
+        } as Prisma.InputJsonValue,
       });
       this.metrics.onPipelineCompleted(updated.totalDurationMs ?? 0);
       if (payload.metadata?.templateId) {
@@ -306,15 +312,21 @@ export class PipelineTrackerService implements PipelineTrackerPort {
         id: payload.invocationId,
         status: payload.status,
         responseHash: payload.responseHash,
-        responsePayload: this.storeAiPayload
-          ? (payload.responsePayload as Prisma.InputJsonValue | undefined)
-          : undefined,
+        // Always persist response payloads (e.g. flashcard JSON); prompts stay gated.
+        responsePayload: payload.responsePayload as
+          | Prisma.InputJsonValue
+          | undefined,
         inputTokens: payload.inputTokens,
         outputTokens: payload.outputTokens,
         totalTokens: payload.totalTokens,
         estimatedCost: payload.estimatedCost,
+        durationMs: payload.durationMs,
       });
-      this.metrics.onAiCall(updated.durationMs ?? undefined);
+      if (updated.purpose === 'flashcard_image_search_embedding') {
+        this.metrics.onEmbeddingCall(updated.durationMs ?? undefined);
+      } else {
+        this.metrics.onAiCall(updated.durationMs ?? undefined);
+      }
       this.logger.log('AI invocation completed', {
         ...this.baseFields(payload),
         stage: payload.stageName,

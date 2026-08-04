@@ -86,6 +86,8 @@ export interface AiInvocationCompletedPayload extends PipelineTelemetryContext {
   outputTokens?: number;
   totalTokens?: number;
   estimatedCost?: number;
+  /** Wall-clock duration around the provider call; preferred over DB timestamp skew. */
+  durationMs?: number;
   errorMessage?: string;
 }
 

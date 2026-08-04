@@ -44,7 +44,17 @@ export class SearchService {
       const cached = await this.redisCache.get<SearchAssetsResponse>(cacheKey);
       if (cached) {
         this.logger.debug(`Search cache hit for query "${query}"`);
-        return { ...cached, fromCache: true };
+        return {
+          ...cached,
+          fromCache: true,
+          usage: {
+            inputTokens: 0,
+            totalTokens: 0,
+            latencyMs: 0,
+            model: cached.usage?.model,
+            fromCache: true,
+          },
+        };
       }
     }
 
@@ -89,6 +99,15 @@ export class SearchService {
     this.logger.log(`Searching assets for query: "${query}"`);
 
     const embedding = await this.embeddingProvider.generateEmbedding(query);
+    const embeddingUsage = this.embeddingProvider.getLastUsage();
+    const usage = {
+      inputTokens: embeddingUsage?.inputTokens,
+      totalTokens: embeddingUsage?.totalTokens,
+      latencyMs: embeddingUsage?.latencyMs,
+      model: this.embeddingProvider.modelName,
+      fromCache: false as const,
+    };
+
     const vectorResults = await this.vectorStorage.searchSimilar(
       embedding.embedding,
       candidateLimit,
@@ -99,6 +118,7 @@ export class SearchService {
         query,
         total: 0,
         results: [],
+        usage,
       };
     }
 
@@ -143,6 +163,7 @@ export class SearchService {
       query,
       total: filteredResults.length,
       results: filteredResults,
+      usage,
     };
   }
 
