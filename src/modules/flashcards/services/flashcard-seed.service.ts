@@ -253,31 +253,31 @@ export class FlashcardSeedService implements OnModuleInit {
       return;
     }
 
-    this.logger.log('Seeding default flashcard templates and selection rules');
-    await this.prisma.$transaction(async (tx) => {
-      for (const template of TEMPLATE_SEEDS) {
-        await tx.flashcardTemplate.create({
-          data: {
-            ...template,
-            templateVersion: '1.0',
-            active: true,
-            supportedGrades: [],
-          },
-        });
-      }
-      for (const rule of RULE_SEEDS) {
-        await tx.templateSelectionRule.create({
-          data: {
-            ...rule,
-            active: true,
-            grades: [],
-            subjects: [],
-            difficulties: [],
-            intents: [],
-            topics: [],
-          },
-        });
-      }
-    });
+    this.logger.log('No seeding needed here, and not doing it');
+    // await this.prisma.$transaction(async (tx) => {
+    //   for (const template of TEMPLATE_SEEDS) {
+    //     await tx.flashcardTemplate.create({
+    //       data: {
+    //         ...template,
+    //         templateVersion: '1.0',
+    //         active: true,
+    //         supportedGrades: [],
+    //       },
+    //     });
+    //   }
+    //   for (const rule of RULE_SEEDS) {
+    //     await tx.templateSelectionRule.create({
+    //       data: {
+    //         ...rule,
+    //         active: true,
+    //         grades: [],
+    //         subjects: [],
+    //         difficulties: [],
+    //         intents: [],
+    //         topics: [],
+    //       },
+    //     });
+    //   }
+    // });
   }
 }
