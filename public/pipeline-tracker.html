@@ -1,0 +1,1019 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pipeline Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0f1226;
+        --panel: rgba(255, 255, 255, 0.06);
+        --panel-strong: rgba(255, 255, 255, 0.12);
+        --border: rgba(255, 255, 255, 0.14);
+        --text: #f4f6ff;
+        --muted: #a8b0d8;
+        --accent: #6c7bff;
+        --accent-2: #ff7ac4;
+        --ok: #46d39a;
+        --warn: #ffc861;
+        --err: #ff7a7a;
+        --running: #7ab8ff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        min-height: 100vh;
+        font-family: 'Nunito', system-ui, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(1100px 560px at 8% -12%, #24306e 0%, transparent 58%),
+          radial-gradient(900px 480px at 96% 0%, #5a2d66 0%, transparent 52%),
+          var(--bg);
+        background-attachment: fixed;
+      }
+
+      .wrap {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 28px 22px 72px;
+      }
+
+      header.masthead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        flex-wrap: wrap;
+        margin-bottom: 22px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand-mark {
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        display: grid;
+        place-items: center;
+        font-size: 22px;
+        box-shadow: 0 10px 30px rgba(108, 123, 255, 0.4);
+      }
+
+      .brand h1 {
+        font-family: 'Baloo 2', cursive;
+        font-size: 26px;
+        margin: 0;
+      }
+
+      .brand p {
+        margin: 2px 0 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .api-field,
+      .pill-input {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 8px 8px 8px 16px;
+        font-size: 13px;
+      }
+
+      .api-field label,
+      .pill-input label {
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .api-field input,
+      .pill-input input,
+      .pill-input select {
+        background: transparent;
+        border: none;
+        color: var(--text);
+        font: inherit;
+        outline: none;
+      }
+
+      .api-field input {
+        width: 180px;
+      }
+
+      .pill-input input {
+        width: 220px;
+      }
+
+      button,
+      a.btn {
+        font: inherit;
+        cursor: pointer;
+        border: none;
+        border-radius: 14px;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: transform 0.15s, background 0.2s, opacity 0.2s;
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        padding: 10px 16px;
+        font-weight: 800;
+        color: #fff;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      }
+
+      .btn-ghost {
+        padding: 10px 14px;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        font-weight: 700;
+        font-size: 13px;
+      }
+
+      .btn-ghost:hover:not(:disabled),
+      .btn-primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+      }
+
+      .banner {
+        display: none;
+        margin-bottom: 16px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        font-size: 14px;
+      }
+
+      .banner.show {
+        display: block;
+      }
+
+      .banner.error {
+        background: rgba(255, 122, 122, 0.12);
+        border: 1px solid rgba(255, 122, 122, 0.4);
+        color: #ffd9d9;
+      }
+
+      .banner.warn {
+        background: rgba(255, 200, 97, 0.12);
+        border: 1px solid rgba(255, 200, 97, 0.4);
+        color: #ffeec4;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .metric {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.09),
+          rgba(255, 255, 255, 0.04)
+        );
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 14px 16px;
+      }
+
+      .metric .label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .metric .value {
+        margin-top: 6px;
+        font-family: 'Baloo 2', cursive;
+        font-size: 28px;
+        line-height: 1;
+      }
+
+      .metric .sub {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+        gap: 16px;
+      }
+
+      @media (max-width: 980px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .panel {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.08),
+          rgba(255, 255, 255, 0.03)
+        );
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        overflow: hidden;
+        min-height: 420px;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .panel-head h2 {
+        margin: 0;
+        font-family: 'Baloo 2', cursive;
+        font-size: 20px;
+      }
+
+      .filters {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      .filters select {
+        background: rgba(10, 12, 32, 0.55);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 8px 12px;
+        font: inherit;
+      }
+
+      .table-wrap {
+        overflow: auto;
+        max-height: 640px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 11px 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: rgba(15, 18, 38, 0.96);
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        z-index: 1;
+      }
+
+      tbody tr {
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+
+      tbody tr:hover,
+      tbody tr.active {
+        background: rgba(108, 123, 255, 0.12);
+      }
+
+      .mono {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11.5px;
+        color: #c9d2ff;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 11.5px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .status::before {
+        content: '';
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      .status.running {
+        color: var(--running);
+        background: rgba(122, 184, 255, 0.12);
+      }
+
+      .status.completed {
+        color: var(--ok);
+        background: rgba(70, 211, 154, 0.12);
+      }
+
+      .status.failed {
+        color: var(--err);
+        background: rgba(255, 122, 122, 0.12);
+      }
+
+      .status.cancelled,
+      .status.skipped,
+      .status.pending {
+        color: var(--warn);
+        background: rgba(255, 200, 97, 0.12);
+      }
+
+      .detail {
+        padding: 16px;
+      }
+
+      .detail-empty {
+        color: var(--muted);
+        padding: 48px 20px;
+        text-align: center;
+      }
+
+      .detail-empty .big {
+        font-size: 42px;
+        margin-bottom: 8px;
+      }
+
+      .kv {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 8px 12px;
+        font-size: 13px;
+        margin-bottom: 18px;
+      }
+
+      .kv dt {
+        color: var(--muted);
+      }
+
+      .kv dd {
+        margin: 0;
+        word-break: break-word;
+      }
+
+      .section-title {
+        font-family: 'Baloo 2', cursive;
+        font-size: 17px;
+        margin: 0 0 10px;
+      }
+
+      .timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+
+      .stage {
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 10px;
+        align-items: start;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(10, 12, 32, 0.45);
+        border: 1px solid var(--border);
+      }
+
+      .seq {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        font-weight: 800;
+        background: var(--panel-strong);
+      }
+
+      .stage-name {
+        font-weight: 700;
+        font-size: 13.5px;
+      }
+
+      .stage-meta {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+
+      .list-card {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(10, 12, 32, 0.45);
+        border: 1px solid var(--border);
+        margin-bottom: 8px;
+        font-size: 12.5px;
+      }
+
+      .list-card .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .auto {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .spinner {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-top-color: #fff;
+        display: inline-block;
+        animation: spin 0.7s linear infinite;
+        vertical-align: -2px;
+        margin-right: 6px;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <div class="brand">
+          <div class="brand-mark">📡</div>
+          <div>
+            <h1>Pipeline Tracker</h1>
+            <p>Flashcard generation executions, stages, AI &amp; image search</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <div class="api-field">
+            <label for="apiBase">API</label>
+            <input id="apiBase" placeholder="http://localhost:3000" />
+          </div>
+          <a class="btn btn-ghost" href="/flashcards.html">🎴 Studio</a>
+          <button class="btn-ghost" id="refreshBtn">Refresh</button>
+          <label class="auto">
+            <input type="checkbox" id="autoRefresh" checked />
+            Auto 5s
+          </label>
+        </div>
+      </header>
+
+      <div class="banner error" id="errorBanner"></div>
+      <div class="banner warn" id="warnBanner"></div>
+
+      <section class="metrics" id="metrics"></section>
+
+      <div class="layout">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Recent executions</h2>
+            <div class="filters">
+              <select id="statusFilter">
+                <option value="">All statuses</option>
+                <option value="running">running</option>
+                <option value="completed">completed</option>
+                <option value="failed">failed</option>
+                <option value="cancelled">cancelled</option>
+              </select>
+              <select id="workflowFilter">
+                <option value="">All workflows</option>
+                <option value="flashcards">flashcards</option>
+              </select>
+              <div class="pill-input">
+                <label for="lookup">Lookup</label>
+                <input
+                  id="lookup"
+                  placeholder="executionId or requestId"
+                />
+              </div>
+              <button class="btn-primary" id="lookupBtn">Go</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Workflow</th>
+                  <th>Topic / Age</th>
+                  <th>Stage</th>
+                  <th>Duration</th>
+                  <th>Started</th>
+                  <th>Counts</th>
+                </tr>
+              </thead>
+              <tbody id="execBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="panel">
+          <div class="panel-head">
+            <h2>Execution detail</h2>
+            <button class="btn-ghost" id="copyIdBtn" disabled>Copy ID</button>
+          </div>
+          <div class="detail" id="detail">
+            <div class="detail-empty">
+              <div class="big">🧭</div>
+              <div>Select a run or paste an execution / request id.</div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <script>
+      const el = (id) => document.getElementById(id);
+      const state = {
+        selectedId: null,
+        pollTimer: null,
+        busy: false,
+      };
+
+      function defaultApiBase() {
+        return location.protocol.startsWith('http')
+          ? location.origin
+          : 'http://localhost:3000';
+      }
+
+      function apiBase() {
+        return (el('apiBase').value || defaultApiBase()).replace(/\/+$/, '');
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value).replace(
+          /[&<>"']/g,
+          (ch) =>
+            ({
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+            })[ch],
+        );
+      }
+
+      function showBanner(kind, html) {
+        const node = el(kind === 'error' ? 'errorBanner' : 'warnBanner');
+        node.innerHTML = html;
+        node.classList.add('show');
+      }
+
+      function clearBanners() {
+        el('errorBanner').classList.remove('show');
+        el('warnBanner').classList.remove('show');
+      }
+
+      function formatDuration(ms) {
+        if (ms == null) return '—';
+        if (ms < 1000) return ms + ' ms';
+        return (ms / 1000).toFixed(2) + ' s';
+      }
+
+      function formatTime(value) {
+        if (!value) return '—';
+        try {
+          return new Date(value).toLocaleString();
+        } catch {
+          return String(value);
+        }
+      }
+
+      function metaField(metadata, key) {
+        if (!metadata || typeof metadata !== 'object') return null;
+        return metadata[key] ?? null;
+      }
+
+      function statusClass(status) {
+        return 'status ' + (status || 'pending');
+      }
+
+      async function apiGet(path) {
+        const response = await fetch(apiBase() + path, {
+          headers: { Accept: 'application/json' },
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          const message =
+            (body && (body.message || (body.error && body.error.message))) ||
+            response.statusText;
+          const err = new Error(
+            Array.isArray(message) ? message.join(', ') : String(message),
+          );
+          err.status = response.status;
+          err.body = body;
+          throw err;
+        }
+        return body;
+      }
+
+      async function refreshAll() {
+        if (state.busy) return;
+        state.busy = true;
+        el('refreshBtn').disabled = true;
+        clearBanners();
+        try {
+          await Promise.all([loadMetrics(), loadRecent()]);
+          if (state.selectedId) {
+            await loadDetail(state.selectedId, true);
+          }
+        } catch (error) {
+          if (error.status === 404) {
+            showBanner(
+              'warn',
+              '<b>Pipeline tracking is disabled or unavailable.</b> Set <code>PIPELINE_TRACKING_ENABLED=true</code> and ensure migrations are applied.',
+            );
+          } else {
+            showBanner(
+              'error',
+              '<b>Failed to load tracker data</b><br>' +
+                escapeHtml(error.message),
+            );
+          }
+        } finally {
+          state.busy = false;
+          el('refreshBtn').disabled = false;
+        }
+      }
+
+      async function loadMetrics() {
+        const metrics = await apiGet('/observability/pipeline-tracker/metrics');
+        const cards = [
+          ['Pipelines', metrics.pipelineCount, metrics.concurrentExecutions + ' concurrent'],
+          ['Completed', metrics.pipelineCompleted, 'failed ' + metrics.pipelineFailed],
+          [
+            'LLM avg',
+            formatDuration(Math.round(metrics.llmDuration?.avgMs || 0)),
+            metrics.aiCalls + ' calls',
+          ],
+          [
+            'Image search avg',
+            formatDuration(Math.round(metrics.imageSearchDuration?.avgMs || 0)),
+            metrics.imageSearches + ' searches',
+          ],
+          ['Failures', metrics.failureCount, 'retries ' + metrics.retryCount],
+          [
+            'Pipeline avg',
+            formatDuration(Math.round(metrics.pipelineDuration?.avgMs || 0)),
+            'updated ' + formatTime(metrics.capturedAt),
+          ],
+        ];
+        el('metrics').innerHTML = cards
+          .map(
+            ([label, value, sub]) =>
+              '<div class="metric"><div class="label">' +
+              escapeHtml(label) +
+              '</div><div class="value">' +
+              escapeHtml(value) +
+              '</div><div class="sub">' +
+              escapeHtml(sub) +
+              '</div></div>',
+          )
+          .join('');
+      }
+
+      async function loadRecent() {
+        const status = el('statusFilter').value;
+        const workflowType = el('workflowFilter').value;
+        const params = new URLSearchParams({ limit: '50' });
+        if (status) params.set('status', status);
+        if (workflowType) params.set('workflowType', workflowType);
+
+        const rows = await apiGet(
+          '/pipeline-tracker/executions/recent?' + params.toString(),
+        );
+        const body = el('execBody');
+        if (!rows.length) {
+          body.innerHTML =
+            '<tr><td colspan="7" class="muted">No executions yet. Generate flashcards to see runs appear here.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = rows
+          .map((row) => {
+            const topic = metaField(row.metadata, 'topic') || '—';
+            const age =
+              metaField(row.metadata, 'ageGroup') ||
+              metaField(row.metadata, 'age') ||
+              '—';
+            const counts = row._count
+              ? row._count.stages +
+                ' stages · ' +
+                row._count.aiInvocations +
+                ' AI · ' +
+                row._count.imageSearches +
+                ' img'
+              : '—';
+            return (
+              '<tr data-id="' +
+              escapeHtml(row.id) +
+              '" class="' +
+              (row.id === state.selectedId ? 'active' : '') +
+              '">' +
+              '<td><span class="' +
+              statusClass(row.status) +
+              '">' +
+              escapeHtml(row.status) +
+              '</span></td>' +
+              '<td>' +
+              escapeHtml(row.workflowType) +
+              '</td>' +
+              '<td><div>' +
+              escapeHtml(topic) +
+              '</div><div class="muted">' +
+              escapeHtml(age) +
+              '</div></td>' +
+              '<td class="mono">' +
+              escapeHtml(row.currentStage || '—') +
+              '</td>' +
+              '<td>' +
+              escapeHtml(formatDuration(row.totalDurationMs)) +
+              '</td>' +
+              '<td>' +
+              escapeHtml(formatTime(row.startedAt)) +
+              '</td>' +
+              '<td class="muted">' +
+              escapeHtml(counts) +
+              '</td>' +
+              '</tr>'
+            );
+          })
+          .join('');
+
+        body.querySelectorAll('tr[data-id]').forEach((row) => {
+          row.addEventListener('click', () => {
+            loadDetail(row.getAttribute('data-id'));
+          });
+        });
+      }
+
+      async function loadDetail(id, quiet) {
+        state.selectedId = id;
+        el('copyIdBtn').disabled = false;
+        el('execBody')
+          .querySelectorAll('tr[data-id]')
+          .forEach((row) => {
+            row.classList.toggle('active', row.getAttribute('data-id') === id);
+          });
+
+        if (!quiet) {
+          el('detail').innerHTML =
+            '<div class="detail-empty"><span class="spinner"></span>Loading execution…</div>';
+        }
+
+        try {
+          const execution = await apiGet(
+            '/pipeline-tracker/executions/' + encodeURIComponent(id),
+          );
+          renderDetail(execution);
+          const url = new URL(location.href);
+          url.searchParams.set('executionId', id);
+          history.replaceState({}, '', url);
+        } catch (error) {
+          el('detail').innerHTML =
+            '<div class="detail-empty"><div class="big">⚠️</div>' +
+            escapeHtml(error.message) +
+            '</div>';
+        }
+      }
+
+      function renderDetail(execution) {
+        const meta = execution.metadata || {};
+        const stages = execution.stages || [];
+        const ais = execution.aiInvocations || [];
+        const searches = execution.imageSearches || [];
+
+        el('detail').innerHTML =
+          '<dl class="kv">' +
+          [
+            ['Status', '<span class="' + statusClass(execution.status) + '">' + escapeHtml(execution.status) + '</span>'],
+            ['Execution', '<span class="mono">' + escapeHtml(execution.id) + '</span>'],
+            ['Request', '<span class="mono">' + escapeHtml(execution.requestId) + '</span>'],
+            ['Correlation', '<span class="mono">' + escapeHtml(execution.correlationId) + '</span>'],
+            ['Workflow', escapeHtml(execution.workflowType)],
+            ['Current stage', '<span class="mono">' + escapeHtml(execution.currentStage || '—') + '</span>'],
+            ['Duration', escapeHtml(formatDuration(execution.totalDurationMs))],
+            ['Started', escapeHtml(formatTime(execution.startedAt))],
+            ['Completed', escapeHtml(formatTime(execution.completedAt))],
+            ['Topic', escapeHtml(meta.topic || '—')],
+            ['Age group', escapeHtml(meta.ageGroup || '—')],
+            ['Template', escapeHtml(meta.templateId || '—')],
+            ['Objective', escapeHtml((meta.learningObjective || '—').toString().replace(/_/g, ' '))],
+          ]
+            .map(([k, v]) => '<dt>' + k + '</dt><dd>' + v + '</dd>')
+            .join('') +
+          '</dl>' +
+          '<h3 class="section-title">Stages</h3>' +
+          '<div class="timeline">' +
+          (stages.length
+            ? stages
+                .map(
+                  (stage) =>
+                    '<div class="stage"><div class="seq">' +
+                    escapeHtml(stage.sequence) +
+                    '</div><div><div class="stage-name">' +
+                    escapeHtml(stage.stageName) +
+                    '</div><div class="stage-meta">' +
+                    escapeHtml(formatDuration(stage.durationMs)) +
+                    (stage.retryCount ? ' · retries ' + stage.retryCount : '') +
+                    '</div></div><span class="' +
+                    statusClass(stage.status) +
+                    '">' +
+                    escapeHtml(stage.status) +
+                    '</span></div>',
+                )
+                .join('')
+            : '<div class="muted">No stages recorded yet.</div>') +
+          '</div>' +
+          '<h3 class="section-title">AI invocations</h3>' +
+          (ais.length
+            ? ais
+                .map(
+                  (ai) =>
+                    '<div class="list-card"><div class="row"><strong>' +
+                    escapeHtml(ai.provider + ' / ' + ai.model) +
+                    '</strong><span class="' +
+                    statusClass(ai.status) +
+                    '">' +
+                    escapeHtml(ai.status) +
+                    '</span></div><div class="muted">' +
+                    escapeHtml(ai.purpose) +
+                    ' · ' +
+                    escapeHtml(formatDuration(ai.durationMs)) +
+                    (ai.totalTokens != null ? ' · ' + ai.totalTokens + ' tokens' : '') +
+                    '</div>' +
+                    (ai.promptHash
+                      ? '<div class="mono muted">prompt ' +
+                        escapeHtml(ai.promptHash.slice(0, 12)) +
+                        '…</div>'
+                      : '') +
+                    '</div>',
+                )
+                .join('')
+            : '<div class="muted" style="margin-bottom:16px">No AI invocations.</div>') +
+          '<h3 class="section-title">Image searches</h3>' +
+          (searches.length
+            ? searches
+                .map(
+                  (search) =>
+                    '<div class="list-card"><div class="row"><strong>' +
+                    escapeHtml(search.query) +
+                    '</strong><span class="' +
+                    statusClass(search.failed ? 'failed' : 'completed') +
+                    '">' +
+                    escapeHtml(search.failed ? 'failed' : 'ok') +
+                    '</span></div><div class="muted">' +
+                    escapeHtml(search.resultCount + ' results') +
+                    (search.selectedAssetId
+                      ? ' · asset ' + search.selectedAssetId.slice(0, 8) + '…'
+                      : '') +
+                    (search.cacheHit ? ' · cache hit' : '') +
+                    ' · ' +
+                    escapeHtml(formatDuration(search.durationMs)) +
+                    '</div>' +
+                    (search.errorMessage
+                      ? '<div class="muted">' +
+                        escapeHtml(search.errorMessage) +
+                        '</div>'
+                      : '') +
+                    '</div>',
+                )
+                .join('')
+            : '<div class="muted">No image searches.</div>');
+      }
+
+      async function lookup() {
+        const value = el('lookup').value.trim();
+        if (!value) return;
+        clearBanners();
+        try {
+          // Prefer exact execution id
+          try {
+            await loadDetail(value);
+            return;
+          } catch {
+            // fall through to requestId lookup
+          }
+          const rows = await apiGet(
+            '/pipeline-tracker/executions?requestId=' +
+              encodeURIComponent(value),
+          );
+          if (!rows.length) {
+            showBanner('error', 'No execution found for that id.');
+            return;
+          }
+          await loadDetail(rows[0].id);
+        } catch (error) {
+          showBanner('error', escapeHtml(error.message));
+        }
+      }
+
+      function setupPolling() {
+        if (state.pollTimer) {
+          clearInterval(state.pollTimer);
+          state.pollTimer = null;
+        }
+        if (el('autoRefresh').checked) {
+          state.pollTimer = setInterval(refreshAll, 5000);
+        }
+      }
+
+      el('apiBase').value = defaultApiBase();
+      el('refreshBtn').addEventListener('click', refreshAll);
+      el('statusFilter').addEventListener('change', loadRecent);
+      el('workflowFilter').addEventListener('change', loadRecent);
+      el('lookupBtn').addEventListener('click', lookup);
+      el('lookup').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') lookup();
+      });
+      el('autoRefresh').addEventListener('change', setupPolling);
+      el('copyIdBtn').addEventListener('click', async () => {
+        if (!state.selectedId) return;
+        try {
+          await navigator.clipboard.writeText(state.selectedId);
+        } catch {
+          // ignore
+        }
+      });
+
+      const params = new URLSearchParams(location.search);
+      const initialId = params.get('executionId');
+      refreshAll().then(() => {
+        if (initialId) loadDetail(initialId);
+      });
+      setupPolling();
+    </script>
+  </body>
+</html>

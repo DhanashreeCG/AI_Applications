@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import configuration from './config/configuration';
@@ -15,6 +16,7 @@ import { SearchModule } from './modules/search/search.module';
 import { PipelineModule } from './modules/pipeline/pipeline.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
 import { FlashcardsModule } from './modules/flashcards/flashcards.module';
+import { PipelineTrackerModule } from './modules/pipeline-tracker/pipeline-tracker.module';
 
 @Module({
   imports: [
@@ -22,6 +24,10 @@ import { FlashcardsModule } from './modules/flashcards/flashcards.module';
       isGlobal: true,
       load: [configuration],
       envFilePath: ['.env'],
+    }),
+    EventEmitterModule.forRoot({
+      wildcard: false,
+      ignoreErrors: true,
     }),
     ObservabilityModule,
     DatabaseModule,
@@ -34,6 +40,7 @@ import { FlashcardsModule } from './modules/flashcards/flashcards.module';
     SearchModule,
     PipelineModule,
     IngestionModule,
+    PipelineTrackerModule,
     FlashcardsModule,
   ],
   controllers: [AppController],

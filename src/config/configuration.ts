@@ -54,6 +54,11 @@ export interface AppConfig {
     imageConcurrency: number;
     signedUrlTtlSeconds: number;
   };
+  pipelineTracking: {
+    enabled: boolean;
+    storeAiPayload: boolean;
+    workflowDefault: string;
+  };
 }
 
 function envFlagEnabled(primary: string, fallback: string): boolean {
@@ -167,5 +172,11 @@ export default (): AppConfig => ({
       process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS || '3600',
       10,
     ),
+  },
+  pipelineTracking: {
+    enabled: process.env.PIPELINE_TRACKING_ENABLED !== 'false',
+    storeAiPayload: process.env.PIPELINE_STORE_AI_PAYLOAD === 'true',
+    workflowDefault:
+      process.env.PIPELINE_TRACKING_WORKFLOW_DEFAULT || 'flashcards',
   },
 });

@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { randomUUID } from 'node:crypto';
 import { getErrorMessage } from '../../../common/utils/error-message';
+import {
+  PIPELINE_STAGES,
+  PipelineTelemetryContext,
+} from '../../../common/events/pipeline-tracker.events';
 import { SearchService } from '../../search/search.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
 import {
@@ -12,6 +18,7 @@ import {
   AssetReference,
   ImageRetrievalStatus,
 } from '../interfaces/flashcard.interfaces';
+import { FlashcardPipelineEmitter } from '../telemetry/flashcard-pipeline.events';
 
 interface RetrieveImagesInput {
   queries: string[];
@@ -25,11 +32,13 @@ export class FlashcardImageRetrievalService {
   private readonly logger = new Logger(FlashcardImageRetrievalService.name);
   private readonly concurrency: number;
   private readonly signedUrlTtlSeconds: number;
+  private readonly emitter: FlashcardPipelineEmitter;
 
   constructor(
     private readonly searchService: SearchService,
     private readonly s3StorageService: S3StorageService,
     private readonly configService: ConfigService,
+    eventEmitter: EventEmitter2,
   ) {
     this.concurrency =
       this.configService.get<number>('flashcards.imageConcurrency') ??
@@ -37,6 +46,7 @@ export class FlashcardImageRetrievalService {
     this.signedUrlTtlSeconds =
       this.configService.get<number>('flashcards.signedUrlTtlSeconds') ??
       DEFAULT_SIGNED_URL_TTL_SECONDS;
+    this.emitter = new FlashcardPipelineEmitter(eventEmitter);
   }
 
   public getConcurrency(): number {
@@ -45,6 +55,7 @@ export class FlashcardImageRetrievalService {
 
   public async retrieveForCard(
     input: RetrieveImagesInput,
+    telemetry?: PipelineTelemetryContext,
   ): Promise<AssetReference> {
     const primary = input.queries[0] ?? '';
     const objectOnly = this.simplifyToObjectName(primary);
@@ -85,6 +96,19 @@ export class FlashcardImageRetrievalService {
         continue;
       }
       attemptLabels.push(attempt.label);
+      const searchId = randomUUID();
+      const startedAt = Date.now();
+
+      if (telemetry) {
+        this.emitter.emitImageSearchStarted({
+          ...telemetry,
+          searchId,
+          stageName: PIPELINE_STAGES.IMAGE_SEARCH,
+          query: attempt.query,
+          filters: attempt.filters as Record<string, unknown> | undefined,
+        });
+      }
+
       try {
         const response = await this.searchService.search({
           query: attempt.query,
@@ -97,6 +121,20 @@ export class FlashcardImageRetrievalService {
         );
         if (!candidate) {
           lastStatus = 'not_found';
+          if (telemetry) {
+            this.emitter.emitImageSearchCompleted({
+              ...telemetry,
+              searchId,
+              stageName: PIPELINE_STAGES.IMAGE_SEARCH,
+              query: attempt.query,
+              filters: attempt.filters as Record<string, unknown> | undefined,
+              resultCount: response.results.length,
+              selectedAssetId: null,
+              cacheHit: response.fromCache === true,
+              failed: false,
+              durationMs: Date.now() - startedAt,
+            });
+          }
           continue;
         }
 
@@ -113,6 +151,22 @@ export class FlashcardImageRetrievalService {
         }
 
         input.usedAssetIds?.add(candidate.assetId);
+
+        if (telemetry) {
+          this.emitter.emitImageSearchCompleted({
+            ...telemetry,
+            searchId,
+            stageName: PIPELINE_STAGES.IMAGE_SEARCH,
+            query: attempt.query,
+            filters: attempt.filters as Record<string, unknown> | undefined,
+            resultCount: response.results.length,
+            selectedAssetId: candidate.assetId,
+            cacheHit: response.fromCache === true,
+            failed: false,
+            durationMs: Date.now() - startedAt,
+          });
+        }
+
         return {
           assetId: candidate.assetId,
           s3ObjectKey: candidate.s3ObjectKey,
@@ -132,6 +186,20 @@ export class FlashcardImageRetrievalService {
         this.logger.warn(
           `Image search attempt "${attempt.label}" failed: ${message}`,
         );
+        if (telemetry) {
+          this.emitter.emitImageSearchCompleted({
+            ...telemetry,
+            searchId,
+            stageName: PIPELINE_STAGES.IMAGE_SEARCH,
+            query: attempt.query,
+            filters: attempt.filters as Record<string, unknown> | undefined,
+            resultCount: 0,
+            selectedAssetId: null,
+            failed: true,
+            errorMessage: message,
+            durationMs: Date.now() - startedAt,
+          });
+        }
       }
     }
 

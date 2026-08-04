@@ -121,6 +121,9 @@ export interface GenerateFlashcardsResponse {
     promptVersion: string;
     contentModel: string;
     imageConcurrency: number;
+    requestId?: string;
+    executionId?: string;
+    correlationId?: string;
   };
 }
 

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -30,8 +31,14 @@ export class FlashcardsController {
     summary:
       'Generate rendering-ready flashcards from a user query + age group',
   })
-  async generate(@Body() dto: GenerateFlashcardsDto) {
-    return this.orchestrator.generate(dto);
+  async generate(
+    @Body() dto: GenerateFlashcardsDto,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    return this.orchestrator.generate(dto, {
+      correlationId: correlationId || traceId,
+    });
   }
 
   @Get('assets/:assetId/image')
@@ -44,7 +51,8 @@ export class FlashcardsController {
     @Param('assetId') assetId: string,
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
-    const { buffer, mimeType } = await this.assetImageService.loadImage(assetId);
+    const { buffer, mimeType } =
+      await this.assetImageService.loadImage(assetId);
     response.setHeader('Content-Type', mimeType);
     return new StreamableFile(buffer);
   }

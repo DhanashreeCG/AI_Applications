@@ -1,7 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GoogleGenAI } from '@google/genai';
+import { randomUUID } from 'node:crypto';
 import { getErrorMessage } from '../../../common/utils/error-message';
+import {
+  PIPELINE_STAGES,
+  PipelineTelemetryContext,
+} from '../../../common/events/pipeline-tracker.events';
 import { AiUsageService } from '../../ai/services/ai-usage.service';
 import { CircuitBreaker } from '../../ai/utils/circuit-breaker.util';
 import { RateLimiter } from '../../ai/utils/rate-limiter.util';
@@ -16,8 +22,11 @@ import {
   LlmFlashcardPayload,
   TemplateComponentDefinition,
 } from '../interfaces/flashcard.interfaces';
+import {
+  FlashcardPipelineEmitter,
+  hashPayload,
+} from '../telemetry/flashcard-pipeline.events';
 import { validateLlmFlashcardPayload } from '../utils/llm-content.validator';
-import { HttpStatus } from '@nestjs/common';
 
 export interface GenerateContentInput {
   query: string;
@@ -37,10 +46,12 @@ export class FlashcardContentService {
   private readonly promptVersion: string;
   private readonly rateLimiter: RateLimiter;
   private readonly circuitBreaker: CircuitBreaker;
+  private readonly emitter: FlashcardPipelineEmitter;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly aiUsageService: AiUsageService,
+    eventEmitter: EventEmitter2,
   ) {
     const apiKey = this.configService.get<string>('ai.geminiApiKey');
     this.modelName =
@@ -61,6 +72,7 @@ export class FlashcardContentService {
       failureThreshold,
       cooldownMs,
     );
+    this.emitter = new FlashcardPipelineEmitter(eventEmitter);
 
     this.client = apiKey ? new GoogleGenAI({ apiKey }) : null;
     if (!apiKey) {
@@ -84,9 +96,10 @@ export class FlashcardContentService {
 
   public async generateContent(
     input: GenerateContentInput,
+    telemetry?: PipelineTelemetryContext,
   ): Promise<LlmFlashcardPayload> {
     try {
-      return await this.requestContent(input);
+      return await this.requestContent(input, undefined, telemetry);
     } catch (error) {
       if (
         !(error instanceof FlashcardException) ||
@@ -98,13 +111,15 @@ export class FlashcardContentService {
       this.logger.warn(
         `Retrying flashcard content generation after invalid output: ${getErrorMessage(error)}`,
       );
-      return this.requestContent(input, getErrorMessage(error));
+      return this.requestContent(input, getErrorMessage(error), telemetry, 1);
     }
   }
 
   private async requestContent(
     input: GenerateContentInput,
     correction?: string,
+    telemetry?: PipelineTelemetryContext,
+    retryCount = 0,
   ): Promise<LlmFlashcardPayload> {
     if (!this.client) {
       throw new FlashcardException(
@@ -114,12 +129,46 @@ export class FlashcardContentService {
       );
     }
 
+    if (telemetry) {
+      this.emitter.emitStageStarted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.PROMPT_GENERATION,
+      });
+    }
+
     const basePrompt = buildFlashcardContentPrompt(input);
     const prompt = correction
       ? `${basePrompt}\n\nYour previous response was rejected: ${correction}\nReturn corrected JSON using the exact component keys listed above.`
       : basePrompt;
+
+    if (telemetry) {
+      this.emitter.emitStageCompleted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.PROMPT_GENERATION,
+      });
+      this.emitter.emitStageStarted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.LLM_REQUEST,
+      });
+    }
+
+    const invocationId = randomUUID();
     const startedAt = new Date();
     let latencyMs = 0;
+
+    if (telemetry) {
+      this.emitter.emitAiStarted({
+        ...telemetry,
+        invocationId,
+        stageName: PIPELINE_STAGES.LLM_REQUEST,
+        provider: 'google-gemini',
+        model: this.modelName,
+        purpose: FLASHCARD_CONTENT_STAGE,
+        promptHash: hashPayload(prompt),
+        promptPayload: prompt,
+        retryCount,
+      });
+    }
 
     try {
       this.circuitBreaker.beforeRequest();
@@ -157,11 +206,44 @@ export class FlashcardContentService {
         );
       }
 
+      if (telemetry) {
+        this.emitter.emitStageCompleted({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+        });
+        this.emitter.emitStageStarted({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.LLM_RESPONSE_VALIDATION,
+        });
+      }
+
       const payload = validateLlmFlashcardPayload(
         parsed,
         input.count,
         input.textComponents,
       );
+
+      if (telemetry) {
+        this.emitter.emitStageCompleted({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.LLM_RESPONSE_VALIDATION,
+        });
+        this.emitter.emitAiCompleted({
+          ...telemetry,
+          invocationId,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+          status: 'success',
+          responseHash: hashPayload(responseText),
+          responsePayload: parsed,
+          inputTokens:
+            usage?.promptTokenCount ?? usage?.inputTokenCount ?? undefined,
+          outputTokens:
+            usage?.candidatesTokenCount ??
+            usage?.outputTokenCount ??
+            undefined,
+          totalTokens: usage?.totalTokenCount ?? undefined,
+        });
+      }
 
       this.circuitBreaker.recordSuccess();
       await this.aiUsageService.record({
@@ -178,6 +260,7 @@ export class FlashcardContentService {
           usage?.candidatesTokenCount ?? usage?.outputTokenCount ?? undefined,
         totalTokens: usage?.totalTokenCount ?? undefined,
         status: 'success',
+        retryCount,
       });
 
       return payload;
@@ -191,8 +274,25 @@ export class FlashcardContentService {
         completedAt: new Date(),
         latencyMs: latencyMs || Date.now() - startedAt.getTime(),
         status: 'failed',
+        retryCount,
         errorType: getErrorMessage(error),
       });
+
+      if (telemetry) {
+        this.emitter.emitAiCompleted({
+          ...telemetry,
+          invocationId,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+          status: 'failed',
+          errorMessage: getErrorMessage(error),
+        });
+        this.emitter.emitStageFailed({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+          errorMessage: getErrorMessage(error),
+          retryCount,
+        });
+      }
 
       if (error instanceof FlashcardException) {
         throw error;

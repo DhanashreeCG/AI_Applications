@@ -885,9 +885,12 @@
             <p>Rendering engine for the flashcard generation API</p>
           </div>
         </div>
-        <div class="api-field">
-          <label for="apiBase">API</label>
-          <input id="apiBase" value="" placeholder="http://localhost:3000" />
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <a class="btn-ghost" href="/pipeline-tracker.html" style="text-decoration:none">📡 Pipeline Tracker</a>
+          <div class="api-field">
+            <label for="apiBase">API</label>
+            <input id="apiBase" value="" placeholder="http://localhost:3000" />
+          </div>
         </div>
       </header>
 
@@ -935,6 +938,7 @@
       <section class="summary" id="summary">
         <div class="meta-pills" id="metaPills"></div>
         <div class="bulk-actions">
+          <a class="btn-ghost" id="viewPipelineLink" href="/pipeline-tracker.html" style="display:none;text-decoration:none">📡 View pipeline</a>
           <button class="btn-ghost" id="downloadAllPdf">⬇ All as PDF</button>
           <button class="btn-ghost" id="downloadAllPng">⬇ All as PNG</button>
         </div>
@@ -1203,6 +1207,9 @@
           ['Cards', (payload.cards || []).length],
           ['Model', meta.contentModel],
         ];
+        if (meta.executionId) {
+          pills.push(['Execution', meta.executionId.slice(0, 8) + '…']);
+        }
         el('metaPills').innerHTML = pills
           .filter(([, value]) => value !== undefined && value !== null && value !== '')
           .map(
@@ -1214,6 +1221,17 @@
               '</b></span>',
           )
           .join('');
+
+        const pipelineLink = el('viewPipelineLink');
+        if (meta.executionId) {
+          pipelineLink.href =
+            '/pipeline-tracker.html?executionId=' +
+            encodeURIComponent(meta.executionId);
+          pipelineLink.style.display = 'inline-flex';
+        } else {
+          pipelineLink.style.display = 'none';
+        }
+
         el('summary').classList.add('show');
       }
 

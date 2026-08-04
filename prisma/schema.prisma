@@ -282,3 +282,119 @@ model TemplateSelectionRule {
   @@index([active, priority])
   @@index([templateId])
 }
+
+enum PipelineExecutionStatus {
+  running
+  completed
+  failed
+  cancelled
+}
+
+enum PipelineStageStatus {
+  pending
+  running
+  completed
+  failed
+  skipped
+  cancelled
+}
+
+/// Observability-only flashcard (and future workflow) pipeline execution.
+model PipelineExecution {
+  id              String                  @id @default(cuid())
+  requestId       String
+  correlationId   String
+  workflowType    String
+  currentStage    String?
+  status          PipelineExecutionStatus @default(running)
+  startedAt       DateTime                @default(now())
+  completedAt     DateTime?
+  totalDurationMs Int?
+  metadata        Json?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  stages         PipelineStageExecution[]
+  aiInvocations  PipelineAiInvocation[]
+  imageSearches  PipelineImageSearchExecution[]
+
+  @@index([requestId])
+  @@index([correlationId])
+  @@index([status])
+  @@index([workflowType])
+  @@index([createdAt])
+}
+
+model PipelineStageExecution {
+  id           String              @id @default(cuid())
+  executionId  String
+  execution    PipelineExecution   @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  stageName    String
+  sequence     Int
+  status       PipelineStageStatus @default(pending)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  durationMs   Int?
+  retryCount   Int                 @default(0)
+  metadata     Json?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  aiInvocations PipelineAiInvocation[]
+  imageSearches PipelineImageSearchExecution[]
+
+  @@index([executionId, sequence])
+  @@index([executionId, stageName])
+  @@index([status])
+}
+
+model PipelineAiInvocation {
+  id               String                  @id @default(cuid())
+  executionId      String
+  execution        PipelineExecution       @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  stageExecutionId String?
+  stageExecution   PipelineStageExecution? @relation(fields: [stageExecutionId], references: [id], onDelete: SetNull)
+  provider         String
+  model            String
+  purpose          String
+  startedAt        DateTime
+  completedAt      DateTime?
+  durationMs       Int?
+  retryCount       Int                     @default(0)
+  status           String
+  promptHash       String?
+  responseHash     String?
+  inputTokens      Int?
+  outputTokens     Int?
+  totalTokens      Int?
+  estimatedCost    Float?
+  promptPayload    Json?
+  responsePayload  Json?
+  createdAt        DateTime                @default(now())
+
+  @@index([executionId])
+  @@index([stageExecutionId])
+  @@index([status])
+  @@index([provider])
+}
+
+model PipelineImageSearchExecution {
+  id               String                  @id @default(cuid())
+  executionId      String
+  execution        PipelineExecution       @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  stageExecutionId String?
+  stageExecution   PipelineStageExecution? @relation(fields: [stageExecutionId], references: [id], onDelete: SetNull)
+  query            String
+  filters          Json?
+  durationMs       Int?
+  resultCount      Int                     @default(0)
+  selectedAssetId  String?
+  cacheHit         Boolean                 @default(false)
+  failed           Boolean                 @default(false)
+  errorMessage     String?
+  createdAt        DateTime                @default(now())
+
+  @@index([executionId])
+  @@index([stageExecutionId])
+  @@index([selectedAssetId])
+}
