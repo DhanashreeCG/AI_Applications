@@ -233,30 +233,42 @@ model AiUsage {
 
 /// Layout-only flashcard template. Never stores educational content.
 model FlashcardTemplate {
-  id                   String   @id @default(cuid())
-  name                 String
-  description          String?
-  supportedAgeMin      Int
-  supportedAgeMax      Int
-  supportedGrades      String[] @default([])
-  learningObjectives   String[]
-  subjectsSupported    String[] @default([])
-  difficultyLevels     String[] @default([])
-  templateVersion      String   @default("1.0")
-  active               Boolean  @default(true)
-  layoutDefinition     Json
-  editableComponents   Json
-  componentHierarchy   Json
-  componentConstraints Json?
-  renderingHints       Json?
-  defaultStyles        Json?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                 String   @id @default(cuid())
 
-  selectionRules TemplateSelectionRule[]
+  name               String
+  description        String?
+
+  templateType       String
+  layoutType         String
+
+  supportedAgeGroups String[]
+  supportedGrades    String[] @default([])
+
+  learningObjectives String[]
+  subjectsSupported  String[] @default([])
+  difficultyLevels   String[] @default([])
+
+  tags               String[] @default([])
+
+  pageSize           String   @default("A6")
+  orientation        String   @default("PORTRAIT")
+
+  layoutDefinition   Json
+
+  thumbnail          String?
+
+  templateVersion    String   @default("1.0")
+  active             Boolean  @default(true)
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  selectionRules     TemplateSelectionRule[]
 
   @@index([active])
-  @@index([supportedAgeMin, supportedAgeMax])
+  @@index([templateType])
+  @@index([layoutType])
+  @@index([supportedAgeGroups])
   @@unique([name, templateVersion])
 }
 

@@ -85,11 +85,20 @@ export interface SelectedTemplatePayload {
   id: string;
   name: string;
   description: string | null;
+  templateType: string;
+  layoutType: string;
   templateVersion: string;
-  supportedAgeMin: number;
-  supportedAgeMax: number;
+  supportedAgeGroups: string[];
+  supportedGrades: string[];
   learningObjectives: string[];
+  subjectsSupported: string[];
+  difficultyLevels: string[];
+  tags: string[];
+  pageSize: string;
+  orientation: string;
+  thumbnail: string | null;
   layoutDefinition: unknown;
+  /** Derived from layoutDefinition for rendering / LLM component keys. */
   editableComponents: unknown;
   componentHierarchy: unknown;
   componentConstraints: unknown;
