@@ -64,23 +64,39 @@ Resolved fields:
 | `difficulty` | Explicit / keywords / grade / age defaults |
 | `language` | Explicit / keywords / default `English` |
 | `learningObjective` | Keyword rules only (never LLM) |
+| `objectiveConfidence` | `exact_keyword` when a keyword matched; otherwise `age_default` |
 
 ### Objective keyword map
 
+Keywords use word-boundary matching for single tokens (so `keyword` does not match `word`). Multi-word phrases match literally.
+
 | Objective | Keywords |
 |---|---|
-| `counting` | count, number, how many |
-| `matching` | match, pair |
-| `sorting` | sort, group |
-| `classification` | classify, category, type of |
-| `comparison` | compare, difference, vs |
-| `question_answer` | quiz, question, ask |
-| `science_facts` | fact, science, why |
-| `reading` | read, sentence, story |
-| `phonics` | phonics, pronounce, sound out, letter sound |
-| `recognition` | recognize, spot, identify |
-| `vocabulary` | word, vocab, learn |
-| `general_knowledge` | know, about |
+| `counting` | count, counting, how many, number of, numbers, add, subtract, total |
+| `matching` | match, matching, pair, pairs, connect |
+| `sorting` | sort, sorting, group, groups, order, arrange |
+| `classification` | classify, classification, category, categories, type of, types of, kind of |
+| `comparison` | compare, comparing, comparison, difference, differences, versus, vs, alike, different |
+| `question_answer` | quiz, question, questions, ask, answer, trivia |
+| `science_facts` | fact, facts, science, why, how does, experiment |
+| `reading` | read, reading, sentence, sentences, story, stories, passage |
+| `phonics` | phonics, pronounce, pronunciation, sound out, letter sound, what sound, alphabet sound |
+| `recognition` | recognize, recognise, spot, identify, name the, names of |
+| `vocabulary` | vocab, vocabulary, words, learn words, spell, spelling, learn |
+| `general_knowledge` | general knowledge, trivia facts |
+
+**Removed:** bare `about` and `word` — they caused false positives (`flashcards about animals` → `general_knowledge`; `keyword` → `vocabulary`).
+
+### Multi-keyword tie-break
+
+When a query matches keywords for more than one objective:
+
+1. Count matched keywords per objective.
+2. Keep objectives with the highest hit count.
+3. Break ties using `OBJECTIVE_PRIORITY` (most specific first):  
+   `phonics` → `counting` → `matching` → `sorting` → `classification` → `comparison` → `question_answer` → `science_facts` → `reading` → `recognition` → `vocabulary` → `general_knowledge`.
+
+Example: `"Identify and count the animals"` matches both `identify` (recognition) and `count` (counting) with hit count 1 each → **counting** wins (higher priority).
 
 If no keyword matches, age midpoint defaults apply:
 
@@ -114,7 +130,9 @@ Topic/`topics` / `intents` do **not** select templates. Topic only affects gener
 
 ### Ranking (best → fallback)
 
-1. **Objective relevance** (highest weight)
+Uses `effectiveObjectiveRank` — when `objectiveConfidence === 'age_default'`, raw objective rank is capped at **2** (related tier) so age-inferred labels do not over-power exact-age rule matches.
+
+1. **Objective relevance** (highest weight; uses effective rank when age-default)
    - `3` exact objective on template or rule
    - `2` related objective fallback
    - `1` generic fallback (`vocabulary` / `recognition` / `general_knowledge`)
@@ -125,7 +143,10 @@ Topic/`topics` / `intents` do **not** select templates. Topic only affects gener
 5. Exact difficulty match
 6. Newer `templateVersion`
 7. Higher rule `priority`
-8. Stable rule id
+8. Higher computed `score`
+9. Stable rule id
+
+`rankTemplateCandidates()` returns the full ordered list with per-candidate score breakdown. When `PIPELINE_STORE_AI_PAYLOAD=true`, the top 10 candidates are attached to the `TEMPLATE_SELECTION` pipeline stage metadata as `rankingBreakdown`.
 
 ### Related-objective fallback map
 
@@ -406,6 +427,84 @@ Rendering engine should require **zero AI processing** after this JSON.
 - Image cascade + top-1 similarity selection
 
 Adding a new flashcard layout should only require template + selection-rule configuration, not orchestrator/prompt/image-pipeline rewrites, as long as component types stay within the supported set.
+
+---
+
+## Changelog (2026-08-05) — template selection hardening
+
+### `objectiveConfidence` (request analysis output)
+
+New field on `ResolvedUserRequest` (internal resolver output, also emitted in pipeline stage metadata):
+
+| Value | Meaning |
+|---|---|
+| `exact_keyword` | At least one objective keyword matched the query (after word-boundary matching). |
+| `age_default` | No keyword matched; `learningObjective` came from the age-midpoint default table. |
+
+Downstream use today: passed into `rankTemplateCandidates()` / `selectBestTemplate()` and stored on `REQUEST_ANALYSIS`, `EDUCATIONAL_OBJECTIVE_DETERMINATION`, and `TEMPLATE_SELECTION` pipeline metadata. **Not** exposed on `GenerateFlashcardsResponse.request` (API unchanged).
+
+### Objective tie-break (keyword inference)
+
+When multiple objectives match:
+
+1. Count keyword hits per objective (word-boundary matching for single tokens; literal phrase match for multi-word keywords).
+2. Keep objectives with the maximum hit count.
+3. Break ties using `OBJECTIVE_PRIORITY` (most specific pedagogical intent first):  
+   `phonics` → `counting` → `matching` → `sorting` → `classification` → `comparison` → `question_answer` → `science_facts` → `reading` → `recognition` → `vocabulary` → `general_knowledge`.
+
+Removed bare `about` / `word` keywords (false positives).
+
+### `effectiveObjectiveRank` cap (`age_default` only)
+
+When `objectiveConfidence === 'age_default'`, raw objective rank is capped at **2** before scoring/sorting. Prevents a weak age-inferred label from scoring as tier 3 (exact) against templates whose objectives happen to match the default.
+
+### Full ranking diagnostics
+
+- Harness: `src/modules/flashcards/utils/template-selection.diagnostic.spec.ts` + `template-selection.diagnostic.util.ts`
+- Artifact: `docs/flashcards/TEMPLATE_SELECTION_RANKING_BREAKDOWN.md` (regenerate: `npm run flashcards:emit-diagnostics`)
+- **Fragile pass:** top two candidates share the same `effectiveObjectiveRank` (tier gap `< 1`); winner depends on age/grade/subject/difficulty/version/priority/rule-id tie-breakers. Twelve of twenty seed-catalog cases are fragile (listed at top of the breakdown doc).
+
+### `OBJECTIVE_RULE_SEEDS` — when they apply
+
+| Scenario | What happens |
+|---|---|
+| **Empty DB** (zero `FlashcardTemplate` rows) | `FlashcardSeedService.onModuleInit()` seeds `TEMPLATE_SEEDS` + **`ALL_RULE_SEEDS`** (age-band + objective rules) on first app boot. |
+| **Existing DB** (any templates already present) | Seed service **skips entirely** — objective rules are **not** auto-inserted. |
+| **Manual backfill** | `npm run flashcards:rule-coverage -- --apply` upserts only `OBJECTIVE_RULE_SEEDS` by stable id (requires templates to exist). **Do not run `--apply` until the target environment is confirmed.** |
+
+**Environment status (not verified against live DBs in this session):**
+
+| Environment | Expected state | Verified? |
+|---|---|---|
+| Local dev | Unknown — depends whether DB was empty on first boot after seed re-enable, or pre-populated via upload | No |
+| Staging | Unknown — likely missing objective rules if DB predates this session | No |
+| Production | Unknown — same as staging | No |
+
+To check an environment: `SELECT id FROM "TemplateSelectionRule" WHERE id LIKE 'rule_obj_%';` — expect 8 rows when applied.
+
+### Rule-id tie-break determinism
+
+Final sort key in `rankTemplateCandidates()` is `ruleId.localeCompare()` (lexicographic). Input fetch order from Prisma does **not** affect the winner.
+
+| Rule source | Id stability | Tie-break safe? |
+|---|---|---|
+| Seed (`FlashcardSeedService`, coverage `--apply`) | Explicit string ids (`rule_age_3_4_vocabulary`, `rule_obj_3_4_comparison`, …) | Yes — identical across fresh seeds and upserts |
+| Synthetic fallback (template with no rule) | `synthetic-${templateId}` | Yes — derived from template id |
+| API-uploaded rules (no explicit id) | Prisma `@default(cuid())` | Deterministic **within** one DB; ids differ across environments/uploads |
+
+**Guarantee:** For the shipped seed catalog, tie-break is fully deterministic. For ad-hoc uploaded rules that tie on all ranked dimensions, treat rule-id order as environment-local unless uploads use explicit ids.
+
+---
+
+## Pending product decisions
+
+### Should `topic` ever influence template selection?
+
+**Current behavior (code):** `topic` is extracted for content generation only. `TemplateSelectionRule.topics` exists in the schema but is **not** read by `template-selection.engine.ts`. Selection is objective + age (+ optional grade/subject/difficulty).
+
+**Open question:** For queries like `"Compare fruits"` vs `"Compare animals"`, should topic ever boost a template (e.g. EVS-specific layout)? Or must topic remain content-only to keep selection auditable and config-driven?
+
+**Status:** Pending product decision — do not implement topic-based ranking until decided.
 
 ---
 

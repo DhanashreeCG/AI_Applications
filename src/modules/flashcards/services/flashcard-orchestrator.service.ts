@@ -152,6 +152,8 @@ export class FlashcardOrchestratorService {
         subject: resolved.subject,
         difficulty: resolved.difficulty,
         language: resolved.language,
+        learningObjective: resolved.learningObjective,
+        objectiveConfidence: resolved.objectiveConfidence,
       },
     });
 
@@ -165,6 +167,7 @@ export class FlashcardOrchestratorService {
       metadata: {
         learningObjective: resolved.learningObjective,
         educationalIntent: resolved.educationalIntent,
+        objectiveConfidence: resolved.objectiveConfidence,
       },
     });
 
@@ -366,6 +369,7 @@ export class FlashcardOrchestratorService {
         ageMax: resolved.ageMax,
         ageGroup: resolved.ageGroup,
         learningObjective: resolved.learningObjective,
+        objectiveConfidence: resolved.objectiveConfidence,
         grade: resolved.grade,
         subject: resolved.subject,
         difficulty: resolved.difficulty,
@@ -383,6 +387,15 @@ export class FlashcardOrchestratorService {
           templateVersion: selected.template.templateVersion,
           requestedAgeGroup: resolved.ageGroup,
           templateAgeGroups: selected.template.supportedAgeGroups,
+          learningObjective: resolved.learningObjective,
+          objectiveConfidence: resolved.objectiveConfidence,
+          selectionScore: selected.selection.score,
+          rankingBreakdown: selected.ranking?.map((candidate) => ({
+            templateId: candidate.templateId,
+            ruleId: candidate.ruleId,
+            score: candidate.score,
+            breakdown: candidate.breakdown,
+          })),
         },
       });
       return selected;

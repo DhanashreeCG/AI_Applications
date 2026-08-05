@@ -1,4 +1,5 @@
 import { TemplateSelectionCriteria } from '../interfaces/flashcard.interfaces';
+import { ObjectiveConfidence } from './user-request.resolver';
 
 export interface SelectableRule {
   id: string;
@@ -30,6 +31,30 @@ export interface SelectionResult {
   priority: number;
   score: number;
   templateVersion: string;
+}
+
+export interface CandidateRankingBreakdown {
+  objectiveRank: number;
+  effectiveObjectiveRank: number;
+  exactAge: boolean;
+  exactGrade: boolean;
+  exactSubject: boolean;
+  exactDifficulty: boolean;
+  exactObjective: boolean;
+  scoreComponents: {
+    objectiveRank: number;
+    exactAge: number;
+    exactGrade: number;
+    exactSubject: number;
+    exactDifficulty: number;
+    rulePriority: number;
+    objectiveExactBoost: number;
+    objectiveConfiguredPenalty: number;
+  };
+}
+
+export interface RankedTemplateCandidate extends SelectionResult {
+  breakdown: CandidateRankingBreakdown;
 }
 
 /** Map legacy / seed difficulty labels onto the revised taxonomy. */
@@ -216,14 +241,7 @@ export function compareTemplateVersions(a: string, b: string): number {
   return b.localeCompare(a);
 }
 
-interface RankedCandidate extends SelectionResult {
-  exactGrade: boolean;
-  exactObjective: boolean;
-  objectiveRank: number;
-  exactSubject: boolean;
-  exactDifficulty: boolean;
-  exactAge: boolean;
-}
+interface RankedCandidate extends RankedTemplateCandidate {}
 
 /**
  * Deterministic template selection (FLASH_CARD_REVISED):
@@ -241,14 +259,27 @@ interface RankedCandidate extends SelectionResult {
  * 6. newest active template version
  * 7. rule priority / stable id
  */
-export function selectBestTemplate(
+function effectiveObjectiveRank(
+  objectiveRank: number,
+  objectiveConfidence: ObjectiveConfidence | undefined,
+): number {
+  if (objectiveConfidence !== 'age_default' || objectiveRank <= 1) {
+    return objectiveRank;
+  }
+  // Age-default objectives are weak signals — cap at "related" tier so
+  // ranking does not over-trust an inferred label.
+  return Math.min(objectiveRank, 2);
+}
+
+export function rankTemplateCandidates(
   rules: SelectableRule[],
   criteria: TemplateSelectionCriteria & {
     learningObjective: string;
     ageMin: number | null;
     ageMax: number | null;
+    objectiveConfidence?: ObjectiveConfidence;
   },
-): SelectionResult | null {
+): RankedTemplateCandidate[] {
   const ranked: RankedCandidate[] = [];
 
   for (const rule of rules) {
@@ -301,9 +332,13 @@ export function selectBestTemplate(
       criteria.learningObjective,
       rule.learningObjectives,
     );
-    const objectiveRank = Math.max(
+    const rawObjectiveRank = Math.max(
       templateObjectiveRank,
       ruleObjectiveRank,
+    );
+    const objectiveRank = effectiveObjectiveRank(
+      rawObjectiveRank,
+      criteria.objectiveConfidence,
     );
     const exactObjective =
       objectiveRank === 3 || ruleObjectiveExact || templateObjectiveExact;
@@ -326,6 +361,14 @@ export function selectBestTemplate(
       rule.ageMax === criteria.ageMax;
     const exactAge = templateAge.exact || exactRuleAge;
 
+    const objectiveExactBoost = ruleObjectiveExact
+      ? 120
+      : templateObjectiveExact
+        ? 80
+        : rule.learningObjectives.length || rule.templateObjectives.length
+          ? -40
+          : 0;
+
     let score = 0;
     score += objectiveRank * 1000;
     if (exactAge) score += 500;
@@ -333,15 +376,7 @@ export function selectBestTemplate(
     if (exactSubject) score += 200;
     if (exactDifficulty) score += 100;
     score += rule.priority;
-
-    if (ruleObjectiveExact) score += 120;
-    else if (templateObjectiveExact) score += 80;
-    else if (
-      rule.learningObjectives.length ||
-      rule.templateObjectives.length
-    ) {
-      score -= 40;
-    }
+    score += objectiveExactBoost;
 
     ranked.push({
       ruleId: rule.id,
@@ -350,28 +385,43 @@ export function selectBestTemplate(
       priority: rule.priority,
       score,
       templateVersion: rule.templateVersion,
-      exactGrade: grade.exact,
-      exactObjective,
-      objectiveRank,
-      exactSubject,
-      exactDifficulty,
-      exactAge,
+      breakdown: {
+        objectiveRank: rawObjectiveRank,
+        effectiveObjectiveRank: objectiveRank,
+        exactAge,
+        exactGrade: grade.exact,
+        exactSubject,
+        exactDifficulty,
+        exactObjective,
+        scoreComponents: {
+          objectiveRank: objectiveRank * 1000,
+          exactAge: exactAge ? 500 : 0,
+          exactGrade: grade.exact ? 300 : 0,
+          exactSubject: exactSubject ? 200 : 0,
+          exactDifficulty: exactDifficulty ? 100 : 0,
+          rulePriority: rule.priority,
+          objectiveExactBoost,
+          objectiveConfiguredPenalty: 0,
+        },
+      },
     });
   }
 
   if (!ranked.length) {
-    return null;
+    return [];
   }
 
   ranked.sort((a, b) => {
-    if (b.objectiveRank !== a.objectiveRank) {
-      return b.objectiveRank - a.objectiveRank;
+    const left = a.breakdown;
+    const right = b.breakdown;
+    if (right.effectiveObjectiveRank !== left.effectiveObjectiveRank) {
+      return right.effectiveObjectiveRank - left.effectiveObjectiveRank;
     }
-    if (a.exactAge !== b.exactAge) return a.exactAge ? -1 : 1;
-    if (a.exactGrade !== b.exactGrade) return a.exactGrade ? -1 : 1;
-    if (a.exactSubject !== b.exactSubject) return a.exactSubject ? -1 : 1;
-    if (a.exactDifficulty !== b.exactDifficulty) {
-      return a.exactDifficulty ? -1 : 1;
+    if (left.exactAge !== right.exactAge) return left.exactAge ? -1 : 1;
+    if (left.exactGrade !== right.exactGrade) return left.exactGrade ? -1 : 1;
+    if (left.exactSubject !== right.exactSubject) return left.exactSubject ? -1 : 1;
+    if (left.exactDifficulty !== right.exactDifficulty) {
+      return left.exactDifficulty ? -1 : 1;
     }
     const versionCmp = compareTemplateVersions(
       a.templateVersion,
@@ -383,6 +433,23 @@ export function selectBestTemplate(
     if (b.score !== a.score) return b.score - a.score;
     return a.ruleId.localeCompare(b.ruleId);
   });
+
+  return ranked;
+}
+
+export function selectBestTemplate(
+  rules: SelectableRule[],
+  criteria: TemplateSelectionCriteria & {
+    learningObjective: string;
+    ageMin: number | null;
+    ageMax: number | null;
+    objectiveConfidence?: ObjectiveConfidence;
+  },
+): SelectionResult | null {
+  const ranked = rankTemplateCandidates(rules, criteria);
+  if (!ranked.length) {
+    return null;
+  }
 
   const best = ranked[0];
   return {

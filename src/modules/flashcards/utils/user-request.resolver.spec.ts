@@ -1,7 +1,9 @@
 import {
   extractGradeFromQuery,
+  keywordMatches,
   parseAgeGroup,
   parseGrade,
+  resolveLearningObjectiveFromQuery,
   resolveUserRequest,
 } from './user-request.resolver';
 import { FlashcardException } from '../errors/flashcard.exception';
@@ -39,6 +41,41 @@ describe('parseGrade / extractGradeFromQuery', () => {
   });
 });
 
+describe('keywordMatches', () => {
+  it('uses word boundaries for single-token keywords', () => {
+    expect(keywordMatches('keyword search', 'word')).toBe(false);
+    expect(keywordMatches('learn words', 'word')).toBe(false);
+    expect(keywordMatches('learn words', 'words')).toBe(true);
+  });
+
+  it('matches multi-word phrases literally', () => {
+    expect(keywordMatches('how many apples', 'how many')).toBe(true);
+    expect(keywordMatches('what sound does a make', 'what sound')).toBe(true);
+  });
+});
+
+describe('resolveLearningObjectiveFromQuery', () => {
+  it('prefers counting over recognition when both keywords match', () => {
+    const resolution = resolveLearningObjectiveFromQuery(
+      'Identify and count the animals',
+      3,
+      4,
+    );
+    expect(resolution.learningObjective).toBe('counting');
+    expect(resolution.objectiveConfidence).toBe('exact_keyword');
+  });
+
+  it('does not treat "about" as general_knowledge', () => {
+    const resolution = resolveLearningObjectiveFromQuery(
+      'Flashcards about animals',
+      3,
+      4,
+    );
+    expect(resolution.learningObjective).toBe('vocabulary');
+    expect(resolution.objectiveConfidence).toBe('age_default');
+  });
+});
+
 describe('resolveUserRequest', () => {
   it('derives topic and age-based objective from a sentence', () => {
     const resolved = resolveUserRequest({
@@ -49,6 +86,7 @@ describe('resolveUserRequest', () => {
     expect(resolved.topic.toLowerCase()).toContain('vegetables');
     expect(resolved.ageGroup).toBe('3-4');
     expect(resolved.learningObjective).toBe('vocabulary');
+    expect(resolved.objectiveConfidence).toBe('age_default');
     expect(resolved.difficulty).toBe('beginner');
     expect(resolved.language).toBe('English');
   });
@@ -73,6 +111,7 @@ describe('resolveUserRequest', () => {
     });
 
     expect(resolved.learningObjective).toBe('question_answer');
+    expect(resolved.objectiveConfidence).toBe('exact_keyword');
     expect(resolved.topic.toLowerCase()).toContain('animals');
   });
 
@@ -82,6 +121,16 @@ describe('resolveUserRequest', () => {
       ageGroup: '4-5',
     });
     expect(resolved.learningObjective).toBe('phonics');
+    expect(resolved.objectiveConfidence).toBe('exact_keyword');
+  });
+
+  it('infers comparison from compare phrasing', () => {
+    const resolved = resolveUserRequest({
+      query: 'Compare fruits',
+      ageGroup: '3-4',
+    });
+    expect(resolved.learningObjective).toBe('comparison');
+    expect(resolved.objectiveConfidence).toBe('exact_keyword');
   });
 
   it('requires query', () => {

@@ -29,7 +29,9 @@
     "validate:vector": "ts-node -r tsconfig-paths/register scripts/validate/validate-vector.ts",
     "validate:search": "ts-node -r tsconfig-paths/register scripts/validate/validate-search.ts",
     "validate:cache": "ts-node -r tsconfig-paths/register scripts/validate/validate-cache.ts",
-    "validate:queue": "ts-node -r tsconfig-paths/register scripts/validate/validate-queue.ts"
+    "validate:queue": "ts-node -r tsconfig-paths/register scripts/validate/validate-queue.ts",
+    "flashcards:rule-coverage": "ts-node -r tsconfig-paths/register scripts/flashcards/template-rule-coverage.ts",
+    "flashcards:emit-diagnostics": "ts-node -r tsconfig-paths/register scripts/flashcards/emit-template-selection-diagnostics.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1097.0",

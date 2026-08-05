@@ -1,5 +1,6 @@
 import {
   SelectableRule,
+  rankTemplateCandidates,
   selectBestTemplate,
 } from './template-selection.engine';
 
@@ -213,9 +214,33 @@ describe('selectBestTemplate', () => {
       ageGroup: '3-4',
       ageMin: 3,
       ageMax: 4,
+      objectiveConfidence: 'exact_keyword',
     });
 
     expect(match?.templateId).toBe('t-comparison');
+  });
+
+  it('returns ranked candidates with score breakdown', () => {
+    const rules = [
+      rule({
+        id: 'r1',
+        templateId: 't1',
+        templateAgeGroups: ['3-4'],
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+      }),
+    ];
+
+    const ranked = rankTemplateCandidates(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0].breakdown.scoreComponents.objectiveRank).toBeGreaterThan(0);
   });
 
   it('falls back to a related objective within the requested age range', () => {
@@ -323,6 +348,49 @@ describe('selectBestTemplate', () => {
     });
 
     expect(match?.templateId).toBe('t1');
+  });
+
+  it('breaks ties deterministically by lexicographic ruleId', () => {
+    const rules = [
+      rule({
+        id: 'z_rule',
+        templateId: 't-z',
+        templateAgeGroups: ['3-4'],
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        ageMin: 3,
+        ageMax: 4,
+        priority: 110,
+      }),
+      rule({
+        id: 'a_rule',
+        templateId: 't-a',
+        templateAgeGroups: ['3-4'],
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        ageMin: 3,
+        ageMax: 4,
+        priority: 110,
+      }),
+    ];
+
+    const forward = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+      objectiveConfidence: 'exact_keyword',
+    });
+    const reverse = selectBestTemplate([...rules].reverse(), {
+      learningObjective: 'vocabulary',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    expect(forward?.ruleId).toBe('a_rule');
+    expect(reverse?.ruleId).toBe('a_rule');
   });
 
   it('returns null when no rule matches', () => {

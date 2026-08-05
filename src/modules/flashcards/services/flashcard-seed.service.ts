@@ -4,7 +4,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { buildRegionLayout } from '../utils/template-layout.util';
 import { TemplateRepository } from './template.repository';
 
-const TEMPLATE_SEEDS: Array<{
+export const TEMPLATE_SEEDS: Array<{
   id: string;
   name: string;
   description: string;
@@ -177,7 +177,7 @@ const TEMPLATE_SEEDS: Array<{
   },
 ];
 
-const RULE_SEEDS: Array<{
+export const RULE_SEEDS: Array<{
   id: string;
   name: string;
   priority: number;
@@ -238,6 +238,83 @@ const RULE_SEEDS: Array<{
   },
 ];
 
+/** Objective-specific boosts for requests that lack a dedicated layout template. */
+export const OBJECTIVE_RULE_SEEDS: Array<{
+  id: string;
+  name: string;
+  priority: number;
+  ageMin: number;
+  ageMax: number;
+  learningObjectives: string[];
+  templateId: string;
+}> = [
+  {
+    id: 'rule_obj_3_4_comparison',
+    name: 'Ages 3-4 comparison',
+    priority: 110,
+    ageMin: 3,
+    ageMax: 4,
+    learningObjectives: ['comparison', 'classification', 'matching'],
+    templateId: 'tmpl_image_word_sentence',
+  },
+  {
+    id: 'rule_obj_3_4_phonics',
+    name: 'Ages 3-4 phonics',
+    priority: 110,
+    ageMin: 3,
+    ageMax: 4,
+    learningObjectives: ['phonics', 'reading'],
+    templateId: 'tmpl_image_word_sentence',
+  },
+  {
+    id: 'rule_obj_3_4_counting',
+    name: 'Ages 3-4 counting',
+    priority: 110,
+    ageMin: 3,
+    ageMax: 4,
+    learningObjectives: ['counting', 'matching'],
+    templateId: 'tmpl_image_word_sentence',
+  },
+  {
+    id: 'rule_obj_5_6_counting',
+    name: 'Ages 5-6 counting',
+    priority: 110,
+    ageMin: 5,
+    ageMax: 6,
+    learningObjectives: ['counting', 'matching', 'vocabulary'],
+    templateId: 'tmpl_image_word_fact',
+  },
+  {
+    id: 'rule_obj_5_6_comparison',
+    name: 'Ages 5-6 comparison',
+    priority: 110,
+    ageMin: 5,
+    ageMax: 6,
+    learningObjectives: ['comparison', 'classification', 'sorting'],
+    templateId: 'tmpl_image_word_fact',
+  },
+  {
+    id: 'rule_obj_3_4_sorting',
+    name: 'Ages 3-4 sorting',
+    priority: 110,
+    ageMin: 3,
+    ageMax: 4,
+    learningObjectives: ['sorting', 'classification', 'matching'],
+    templateId: 'tmpl_image_word_sentence',
+  },
+  {
+    id: 'rule_obj_6_8_comparison',
+    name: 'Ages 6-8 comparison',
+    priority: 110,
+    ageMin: 6,
+    ageMax: 8,
+    learningObjectives: ['comparison', 'classification', 'reading'],
+    templateId: 'tmpl_image_description_question',
+  },
+];
+
+export const ALL_RULE_SEEDS = [...RULE_SEEDS, ...OBJECTIVE_RULE_SEEDS];
+
 @Injectable()
 export class FlashcardSeedService implements OnModuleInit {
   private readonly logger = new Logger(FlashcardSeedService.name);
@@ -253,31 +330,33 @@ export class FlashcardSeedService implements OnModuleInit {
       return;
     }
 
-    this.logger.log('No seeding needed here, and not doing it');
-    // await this.prisma.$transaction(async (tx) => {
-    //   for (const template of TEMPLATE_SEEDS) {
-    //     await tx.flashcardTemplate.create({
-    //       data: {
-    //         ...template,
-    //         templateVersion: '1.0',
-    //         active: true,
-    //         supportedGrades: [],
-    //       },
-    //     });
-    //   }
-    //   for (const rule of RULE_SEEDS) {
-    //     await tx.templateSelectionRule.create({
-    //       data: {
-    //         ...rule,
-    //         active: true,
-    //         grades: [],
-    //         subjects: [],
-    //         difficulties: [],
-    //         intents: [],
-    //         topics: [],
-    //       },
-    //     });
-    //   }
-    // });
+    this.logger.log(
+      `Seeding ${TEMPLATE_SEEDS.length} flashcard templates and ${ALL_RULE_SEEDS.length} selection rules`,
+    );
+    await this.prisma.$transaction(async (tx) => {
+      for (const template of TEMPLATE_SEEDS) {
+        await tx.flashcardTemplate.create({
+          data: {
+            ...template,
+            templateVersion: '1.0',
+            active: true,
+            supportedGrades: [],
+          },
+        });
+      }
+      for (const rule of ALL_RULE_SEEDS) {
+        await tx.templateSelectionRule.create({
+          data: {
+            ...rule,
+            active: true,
+            grades: [],
+            subjects: [],
+            difficulties: [],
+            intents: [],
+            topics: [],
+          },
+        });
+      }
+    });
   }
 }

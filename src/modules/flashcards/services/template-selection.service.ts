@@ -1,6 +1,12 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FlashcardException } from '../errors/flashcard.exception';
-import { selectBestTemplate } from '../utils/template-selection.engine';
+import { ObjectiveConfidence } from '../utils/user-request.resolver';
+import {
+  RankedTemplateCandidate,
+  selectBestTemplate,
+  rankTemplateCandidates,
+} from '../utils/template-selection.engine';
 import { TemplateRepository } from './template.repository';
 
 export interface SelectTemplateInput {
@@ -9,17 +15,31 @@ export interface SelectTemplateInput {
   ageGroup: string;
   topic: string;
   learningObjective: string;
+  objectiveConfidence?: ObjectiveConfidence;
   grade?: string | null;
   subject?: string | null;
   difficulty?: string | null;
   query?: string;
 }
 
+export interface SelectTemplateResult {
+  learningObjective: string;
+  ageMin: number;
+  ageMax: number;
+  ageGroup: string;
+  selection: NonNullable<ReturnType<typeof selectBestTemplate>>;
+  template: Awaited<ReturnType<TemplateRepository['getTemplateById']>>;
+  ranking?: RankedTemplateCandidate[];
+}
+
 @Injectable()
 export class TemplateSelectionService {
-  constructor(private readonly templateRepository: TemplateRepository) {}
+  constructor(
+    private readonly templateRepository: TemplateRepository,
+    private readonly configService: ConfigService,
+  ) {}
 
-  public async select(input: SelectTemplateInput) {
+  public async select(input: SelectTemplateInput): Promise<SelectTemplateResult> {
     if (input.ageMin < 0 || input.ageMax < 0 || input.ageMin > input.ageMax) {
       throw new FlashcardException(
         'UNSUPPORTED_AGE',
@@ -40,15 +60,24 @@ export class TemplateSelectionService {
     }
 
     // Topic is intentionally omitted — content only, never template selection.
-    const match = selectBestTemplate(rules, {
+    const criteria = {
       ageMin: input.ageMin,
       ageMax: input.ageMax,
       ageGroup: input.ageGroup,
       learningObjective: input.learningObjective,
+      objectiveConfidence: input.objectiveConfidence,
       grade: input.grade ?? undefined,
       subject: input.subject ?? undefined,
       difficulty: input.difficulty ?? undefined,
-    });
+    };
+
+    const storeRankingBreakdown =
+      this.configService.get<boolean>('pipelineTracking.storeAiPayload') ===
+      true;
+    const ranking = storeRankingBreakdown
+      ? rankTemplateCandidates(rules, criteria)
+      : undefined;
+    const match = selectBestTemplate(rules, criteria);
 
     if (!match) {
       throw new FlashcardException(
@@ -94,6 +123,7 @@ export class TemplateSelectionService {
       ageGroup: input.ageGroup,
       selection: match,
       template,
+      ranking: ranking?.slice(0, 10),
     };
   }
 }

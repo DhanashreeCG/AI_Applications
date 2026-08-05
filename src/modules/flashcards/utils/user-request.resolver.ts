@@ -10,25 +10,117 @@ import {
 } from '../constants/flashcard.constants';
 import { FlashcardException } from '../errors/flashcard.exception';
 
+export type ObjectiveConfidence = 'exact_keyword' | 'age_default';
+
+export interface LearningObjectiveResolution {
+  learningObjective: LearningObjective;
+  objectiveConfidence: ObjectiveConfidence;
+  matchedKeywords: string[];
+}
+
 const OBJECTIVE_KEYWORDS: Array<{
   objective: LearningObjective;
   keywords: string[];
 }> = [
-  { objective: 'counting', keywords: ['count', 'number', 'how many'] },
-  { objective: 'matching', keywords: ['match', 'pair'] },
-  { objective: 'sorting', keywords: ['sort', 'group'] },
-  { objective: 'classification', keywords: ['classify', 'category', 'type of'] },
-  { objective: 'comparison', keywords: ['compare', 'difference', 'vs'] },
-  { objective: 'question_answer', keywords: ['quiz', 'question', 'ask'] },
-  { objective: 'science_facts', keywords: ['fact', 'science', 'why'] },
-  { objective: 'reading', keywords: ['read', 'sentence', 'story'] },
+  {
+    objective: 'counting',
+    keywords: [
+      'count',
+      'counting',
+      'how many',
+      'number of',
+      'numbers',
+      'add',
+      'subtract',
+      'total',
+    ],
+  },
+  { objective: 'matching', keywords: ['match', 'matching', 'pair', 'pairs', 'connect'] },
+  {
+    objective: 'sorting',
+    keywords: ['sort', 'sorting', 'group', 'groups', 'order', 'arrange'],
+  },
+  {
+    objective: 'classification',
+    keywords: [
+      'classify',
+      'classification',
+      'category',
+      'categories',
+      'type of',
+      'types of',
+      'kind of',
+    ],
+  },
+  {
+    objective: 'comparison',
+    keywords: [
+      'compare',
+      'comparing',
+      'comparison',
+      'difference',
+      'differences',
+      'versus',
+      'vs',
+      'alike',
+      'different',
+    ],
+  },
+  {
+    objective: 'question_answer',
+    keywords: ['quiz', 'question', 'questions', 'ask', 'answer', 'trivia'],
+  },
+  {
+    objective: 'science_facts',
+    keywords: ['fact', 'facts', 'science', 'why', 'how does', 'experiment'],
+  },
+  {
+    objective: 'reading',
+    keywords: ['read', 'reading', 'sentence', 'sentences', 'story', 'stories', 'passage'],
+  },
   {
     objective: 'phonics',
-    keywords: ['phonics', 'pronounce', 'sound out', 'letter sound'],
+    keywords: [
+      'phonics',
+      'pronounce',
+      'pronunciation',
+      'sound out',
+      'letter sound',
+      'what sound',
+      'alphabet sound',
+    ],
   },
-  { objective: 'recognition', keywords: ['recognize', 'spot', 'identify'] },
-  { objective: 'vocabulary', keywords: ['word', 'vocab', 'learn'] },
-  { objective: 'general_knowledge', keywords: ['know', 'about'] },
+  {
+    objective: 'recognition',
+    keywords: ['recognize', 'recognise', 'spot', 'identify', 'name the', 'names of'],
+  },
+  {
+    objective: 'vocabulary',
+    keywords: ['vocab', 'vocabulary', 'words', 'learn words', 'spell', 'spelling', 'learn'],
+  },
+  {
+    objective: 'general_knowledge',
+    keywords: ['general knowledge', 'trivia facts'],
+  },
+];
+
+/**
+ * When multiple objectives match the same keyword-hit count, the higher
+ * priority (lower index) wins. More specific pedagogical intents rank first.
+ */
+export const OBJECTIVE_PRIORITY: LearningObjective[] = [
+  'phonics',
+  'counting',
+  'matching',
+  'sorting',
+  'classification',
+  'comparison',
+  'question_answer',
+  'science_facts',
+  'reading',
+  'recognition',
+  'vocabulary',
+  'general_knowledge',
 ];
 
 const SUBJECT_KEYWORDS: Array<{ subject: string; keywords: string[] }> = [
@@ -100,6 +192,7 @@ export interface ResolvedUserRequest {
   difficulty: DifficultyLevel;
   language: string;
   learningObjective: LearningObjective;
+  objectiveConfidence: ObjectiveConfidence;
   educationalIntent: LearningObjective;
 }
 
@@ -207,26 +300,69 @@ function objectiveFromAge(ageMin: number, ageMax: number): LearningObjective {
   return 'general_knowledge';
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Phrase keywords match literally; single tokens require word boundaries. */
+export function keywordMatches(haystack: string, keyword: string): boolean {
+  const escaped = escapeRegExp(keyword.trim().toLowerCase());
+  if (!escaped) return false;
+  const pattern = keyword.includes(' ')
+    ? escaped
+    : `\\b${escaped}\\b`;
+  return new RegExp(pattern, 'i').test(haystack);
+}
+
+function objectivePriorityRank(objective: LearningObjective): number {
+  const index = OBJECTIVE_PRIORITY.indexOf(objective);
+  return index === -1 ? OBJECTIVE_PRIORITY.length : index;
+}
+
 export function resolveLearningObjectiveFromQuery(
   query: string,
   ageMin: number,
   ageMax: number,
-): LearningObjective {
+): LearningObjectiveResolution {
   const haystack = query.toLowerCase();
+  const scored = OBJECTIVE_KEYWORDS.map((entry) => {
+    const matchedKeywords = entry.keywords.filter((keyword) =>
+      keywordMatches(haystack, keyword),
+    );
+    return {
+      objective: entry.objective,
+      hitCount: matchedKeywords.length,
+      matchedKeywords,
+    };
+  }).filter((entry) => entry.hitCount > 0);
 
-  for (const entry of OBJECTIVE_KEYWORDS) {
-    if (entry.keywords.some((keyword) => haystack.includes(keyword))) {
-      return entry.objective;
-    }
+  if (!scored.length) {
+    return {
+      learningObjective: objectiveFromAge(ageMin, ageMax),
+      objectiveConfidence: 'age_default',
+      matchedKeywords: [],
+    };
   }
 
-  return objectiveFromAge(ageMin, ageMax);
+  const maxHits = Math.max(...scored.map((entry) => entry.hitCount));
+  const topScored = scored.filter((entry) => entry.hitCount === maxHits);
+  topScored.sort(
+    (a, b) =>
+      objectivePriorityRank(a.objective) - objectivePriorityRank(b.objective),
+  );
+
+  const winner = topScored[0];
+  return {
+    learningObjective: winner.objective,
+    objectiveConfidence: 'exact_keyword',
+    matchedKeywords: winner.matchedKeywords,
+  };
 }
 
 export function resolveSubjectFromQuery(query: string): string | null {
   const haystack = query.toLowerCase();
   for (const entry of SUBJECT_KEYWORDS) {
-    if (entry.keywords.some((keyword) => haystack.includes(keyword))) {
+    if (entry.keywords.some((keyword) => keywordMatches(haystack, keyword))) {
       return entry.subject;
     }
   }
@@ -238,7 +374,7 @@ export function resolveDifficultyFromQuery(
 ): DifficultyLevel | null {
   const haystack = query.toLowerCase();
   for (const entry of DIFFICULTY_KEYWORDS) {
-    if (entry.keywords.some((keyword) => haystack.includes(keyword))) {
+    if (entry.keywords.some((keyword) => keywordMatches(haystack, keyword))) {
       return entry.difficulty;
     }
   }
@@ -248,7 +384,7 @@ export function resolveDifficultyFromQuery(
 export function resolveLanguageFromQuery(query: string): string | null {
   const haystack = query.toLowerCase();
   for (const entry of LANGUAGE_KEYWORDS) {
-    if (entry.keywords.some((keyword) => haystack.includes(keyword))) {
+    if (entry.keywords.some((keyword) => keywordMatches(haystack, keyword))) {
       return entry.language;
     }
   }
@@ -360,11 +496,12 @@ export function resolveUserRequest(input: {
     );
   }
 
-  const learningObjective = resolveLearningObjectiveFromQuery(
+  const objectiveResolution = resolveLearningObjectiveFromQuery(
     query,
     ageMin,
     ageMax,
   );
+  const learningObjective = objectiveResolution.learningObjective;
 
   if (!(LEARNING_OBJECTIVES as readonly string[]).includes(learningObjective)) {
     throw new FlashcardException(
@@ -398,6 +535,7 @@ export function resolveUserRequest(input: {
     difficulty,
     language,
     learningObjective,
+    objectiveConfidence: objectiveResolution.objectiveConfidence,
     educationalIntent: learningObjective,
   };
 }
