@@ -19,7 +19,6 @@ import {
   DEFAULT_SIGNED_URL_TTL_SECONDS,
   FLASHCARD_ASSET_IMAGE_PATH,
   FLASHCARD_IMAGE_SEARCH_EMBEDDING_PURPOSE,
-  IMAGE_TOP_ROTATION_COUNT,
 } from '../constants/flashcard.constants';
 import {
   AssetReference,
@@ -137,8 +136,8 @@ export class FlashcardImageRetrievalService {
   }
 
   /**
-   * Search priority:
-   * primary semantic → expected object → object name only → topic → no filters (topic-less short query)
+   * Search priority when the primary LLM query misses:
+   * primary semantic → enriched → expected object → object name → topic
    */
   private buildCascadeQueries(
     primary: ImageSearchQuery | null,
@@ -201,6 +200,7 @@ export class FlashcardImageRetrievalService {
     }
 
     try {
+      // Single top match only — highest similarity / least distance.
       const response = await this.searchService.search({
         query,
         limit: this.searchLimit,
@@ -208,10 +208,8 @@ export class FlashcardImageRetrievalService {
 
       this.emitEmbeddingUsage(telemetry, query, response);
 
-      const candidate = this.selectCandidate(
+      const candidate = this.selectTopSimilarityHit(
         response.results,
-        input.ageMin,
-        input.ageMax,
         input.usedAssetIds,
       );
 
@@ -312,82 +310,33 @@ export class FlashcardImageRetrievalService {
   }
 
   /**
-   * Prefer unused age-overlapping hits; rotate randomly among the top-N of
-   * that tier to reduce visual repetition while keeping relevance.
+   * Pick exactly the top semantic hit (highest similarity / least distance).
+   * No random rotation. If that asset was already used in this set, treat as a
+   * miss so the cascade can try the next LLM-derived query.
+   * When the only hit is already used and this is the sole result, still return
+   * it so the card is not left blank after all attempts.
    */
-  private selectCandidate(
+  private selectTopSimilarityHit(
     results: SearchResultItem[],
-    ageMin: number | null,
-    ageMax: number | null,
     usedAssetIds?: Set<string>,
   ): SearchResultItem | null {
     if (!results.length) {
       return null;
     }
 
-    const ranked = this.rankByAgePreference(results, ageMin, ageMax);
-    const unused = ranked.filter((item) => !usedAssetIds?.has(item.assetId));
-    const pool = unused.length ? unused : ranked;
-    if (!pool.length) {
-      return null;
+    const ranked = [...results].sort(
+      (left, right) => (right.similarity ?? 0) - (left.similarity ?? 0),
+    );
+    const top = ranked[0];
+
+    if (!usedAssetIds?.has(top.assetId)) {
+      return top;
     }
 
-    let tier = pool;
-    if (ageMin !== null && ageMax !== null) {
-      const overlapping = pool.filter((item) =>
-        this.ageGroupsOverlap(item.ageGroups, ageMin, ageMax),
-      );
-      if (overlapping.length) {
-        tier = overlapping;
-      }
-    }
-
-    const top = tier.slice(0, IMAGE_TOP_ROTATION_COUNT);
-    const index = Math.floor(Math.random() * top.length);
-    return top[index];
-  }
-
-  private rankByAgePreference(
-    results: SearchResultItem[],
-    ageMin: number | null,
-    ageMax: number | null,
-  ): SearchResultItem[] {
-    if (ageMin === null || ageMax === null) {
-      return results;
-    }
-
-    const overlapping: SearchResultItem[] = [];
-    const rest: SearchResultItem[] = [];
-    for (const item of results) {
-      if (this.ageGroupsOverlap(item.ageGroups, ageMin, ageMax)) {
-        overlapping.push(item);
-      } else {
-        rest.push(item);
-      }
-    }
-    return overlapping.length ? [...overlapping, ...rest] : results;
-  }
-
-  private ageGroupsOverlap(
-    ageGroups: string[] | undefined,
-    ageMin: number,
-    ageMax: number,
-  ): boolean {
-    if (!ageGroups?.length) {
-      return false;
-    }
-    for (const group of ageGroups) {
-      const match = group.match(/(\d+)\s*-\s*(\d+)/);
-      if (!match) {
-        continue;
-      }
-      const groupMin = Number(match[1]);
-      const groupMax = Number(match[2]);
-      if (groupMin <= ageMax && groupMax >= ageMin) {
-        return true;
-      }
-    }
-    return false;
+    // Top hit already used — only fall through to a lower-ranked unused hit
+    // when the search returned more than one (should not happen with limit=1).
+    const unused = ranked.find((item) => !usedAssetIds.has(item.assetId));
+    return unused ?? top;
   }
 
   private emitEmbeddingUsage(

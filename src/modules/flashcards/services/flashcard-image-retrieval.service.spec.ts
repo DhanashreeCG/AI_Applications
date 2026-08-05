@@ -16,7 +16,7 @@ describe('FlashcardImageRetrievalService', () => {
     get: (key: string) => {
       if (key === 'flashcards.imageConcurrency') return 2;
       if (key === 'flashcards.signedUrlTtlSeconds') return 3600;
-      if (key === 'flashcards.imageSearchLimit') return 5;
+      if (key === 'flashcards.imageSearchLimit') return 1;
       return undefined;
     },
   };
@@ -44,7 +44,7 @@ describe('FlashcardImageRetrievalService', () => {
     workflowType: 'flashcards',
   };
 
-  it('searches by embeddings without hard age filters and returns a hit', async () => {
+  it('fetches only the single top semantic match (limit 1)', async () => {
     searchService.search.mockResolvedValue({
       query: 'carrot vegetable',
       total: 1,
@@ -79,57 +79,41 @@ describe('FlashcardImageRetrievalService', () => {
     expect(searchService.search).toHaveBeenCalledTimes(1);
     expect(searchService.search).toHaveBeenCalledWith({
       query: 'carrot vegetable',
-      limit: 5,
+      limit: 1,
     });
     expect(result.status).toBe('found');
     expect(result.assetId).toBe('asset-1');
     expect(result.attempts).toEqual(['semantic']);
-
-    const started = eventEmitter.emit.mock.calls.filter(
-      ([event]) => event === PIPELINE_TRACKER_EVENTS.IMAGE_SEARCH_STARTED,
-    );
-    const completed = eventEmitter.emit.mock.calls.filter(
-      ([event]) => event === PIPELINE_TRACKER_EVENTS.IMAGE_SEARCH_COMPLETED,
-    );
-    expect(started).toHaveLength(1);
-    expect(completed).toHaveLength(1);
-
-    const embeddingStarted = eventEmitter.emit.mock.calls.filter(
-      ([event, payload]) =>
-        event === PIPELINE_TRACKER_EVENTS.AI_INVOCATION_STARTED &&
-        payload.purpose === 'flashcard_image_search_embedding',
-    );
-    expect(embeddingStarted).toHaveLength(1);
   });
 
-  it('prefers unused age-overlapping hits, then any unused nearby hit', async () => {
+  it('always selects the highest-similarity hit, never a random lower-ranked one', async () => {
     searchService.search.mockResolvedValue({
       query: 'apple',
       total: 3,
       results: [
         {
-          assetId: 'used-1',
-          s3ObjectKey: 'assets/used-1/original.png',
-          caption: 'apple a',
-          similarity: 0.95,
-          mimeType: 'image/png',
-          ageGroups: ['8-12'],
-        },
-        {
-          assetId: 'asset-2',
-          s3ObjectKey: 'assets/asset-2/original.png',
-          caption: 'apple b',
-          similarity: 0.9,
+          assetId: 'lower',
+          s3ObjectKey: 'assets/lower/original.png',
+          caption: 'apple c',
+          similarity: 0.7,
           mimeType: 'image/png',
           ageGroups: ['3-6'],
         },
         {
-          assetId: 'asset-3',
-          s3ObjectKey: 'assets/asset-3/original.png',
-          caption: 'apple c',
+          assetId: 'top',
+          s3ObjectKey: 'assets/top/original.png',
+          caption: 'apple a',
+          similarity: 0.99,
+          mimeType: 'image/png',
+          ageGroups: ['8-12'],
+        },
+        {
+          assetId: 'mid',
+          s3ObjectKey: 'assets/mid/original.png',
+          caption: 'apple b',
           similarity: 0.85,
           mimeType: 'image/png',
-          ageGroups: [],
+          ageGroups: ['3-6'],
         },
       ],
     });
@@ -138,15 +122,18 @@ describe('FlashcardImageRetrievalService', () => {
       queries: ['apple'],
       ageMin: 3,
       ageMax: 4,
-      usedAssetIds: new Set(['used-1']),
     });
 
-    expect(searchService.search).toHaveBeenCalledTimes(1);
+    expect(searchService.search).toHaveBeenCalledWith({
+      query: 'apple',
+      limit: 1,
+    });
     expect(result.status).toBe('found');
-    expect(result.assetId).toBe('asset-2');
+    expect(result.assetId).toBe('top');
+    expect(result.similarity).toBe(0.99);
   });
 
-  it('still attaches the top embedding hit when every candidate is already used', async () => {
+  it('still attaches the top embedding hit when it was already used', async () => {
     searchService.search.mockResolvedValue({
       query: 'apple',
       total: 1,
@@ -174,13 +161,6 @@ describe('FlashcardImageRetrievalService', () => {
     expect(searchService.search).toHaveBeenCalledTimes(1);
     expect(result.status).toBe('found');
     expect(result.assetId).toBe('used-1');
-    expect(
-      eventEmitter.emit.mock.calls.some(
-        ([event, payload]) =>
-          event === PIPELINE_TRACKER_EVENTS.AI_INVOCATION_STARTED &&
-          payload.purpose === 'flashcard_image_search_embedding',
-      ),
-    ).toBe(false);
   });
 
   it('returns IMAGE_NOT_FOUND only when embeddings yield no results', async () => {
@@ -199,7 +179,7 @@ describe('FlashcardImageRetrievalService', () => {
 
     expect(searchService.search).toHaveBeenCalledWith({
       query: 'missing object',
-      limit: 5,
+      limit: 1,
     });
     expect(result.status).toBe('IMAGE_NOT_FOUND');
     expect(result.assetId).toBeNull();
