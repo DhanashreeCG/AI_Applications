@@ -59,8 +59,10 @@ export interface ImageSearchQuery {
 
 export interface LlmCardContent {
   cardIndex: number;
-  components: Record<string, string>;
-  imageSearchQueries: ImageSearchQuery[];
+  /** Text content keyed by the selected template's text componentId. */
+  textComponents: Record<string, string>;
+  /** Image search instructions keyed by the selected template's image componentId. */
+  imageComponents: Record<string, ImageSearchQuery>;
 }
 
 export interface LlmFlashcardPayload {

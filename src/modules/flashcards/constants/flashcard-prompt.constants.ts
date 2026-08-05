@@ -1,6 +1,9 @@
-import { TemplateComponentDefinition } from '../interfaces/flashcard.interfaces';
+import {
+  SelectedTemplatePayload,
+  TemplateComponentDefinition,
+} from '../interfaces/flashcard.interfaces';
 
-export const DEFAULT_FLASHCARD_PROMPT_VERSION = 'v3';
+export const DEFAULT_FLASHCARD_PROMPT_VERSION = 'v4-template-components';
 
 function ageBandGuidance(ageMin: number, ageMax: number): string {
   const midpoint = (ageMin + ageMax) / 2;
@@ -26,7 +29,9 @@ export function buildFlashcardContentPrompt(input: {
   ageMax: number;
   learningObjective: string;
   count: number;
+  selectedTemplate: SelectedTemplatePayload;
   textComponents: TemplateComponentDefinition[];
+  imageComponents: TemplateComponentDefinition[];
   grade?: string | null;
   subject?: string | null;
   difficulty?: string | null;
@@ -35,17 +40,37 @@ export function buildFlashcardContentPrompt(input: {
   const ageLabel = `${input.ageMin}-${input.ageMax}`;
   const language = input.language || 'English';
 
-  const componentContract = input.textComponents
+  const textContract = input.textComponents
     .map(
       (component) =>
-        `- "${component.componentId}" -> ${component.componentType}${component.required ? ' (required)' : ' (optional)'}`,
+        `- "${component.componentId}": type=${component.componentType}, region=${component.regionId ?? 'unspecified'}, ${component.required ? 'required' : 'optional'}, validation=${JSON.stringify(component.validationRules ?? {})}`,
     )
     .join('\n');
 
-  const exampleComponents = input.textComponents
+  const imageContract = input.imageComponents
     .map(
       (component) =>
-        `        "${component.componentId}": "<${component.componentType} text>"`,
+        `- "${component.componentId}": type=image, region=${component.regionId ?? 'unspecified'}, ${component.required ? 'required' : 'optional'}, validation=${JSON.stringify(component.validationRules ?? {})}`,
+    )
+    .join('\n');
+
+  const exampleTextComponents = input.textComponents
+    .map(
+      (component) =>
+        `        "${component.componentId}": "<${component.componentType} content>"`,
+    )
+    .join(',\n');
+
+  const exampleImageComponents = input.imageComponents
+    .map(
+      (component) => `        "${component.componentId}": {
+          "searchQuery": "<precise semantic query for this image slot>",
+          "expectedObjects": ["<primary expected object>"],
+          "preferredStyle": "cartoon",
+          "preferredBackground": "white",
+          "orientation": "${input.selectedTemplate.orientation.toLowerCase()}",
+          "educationalUse": "flashcard"
+        }`,
     )
     .join(',\n');
 
@@ -55,6 +80,9 @@ Rules:
 - Return JSON only.
 - Never invent UI layout, positioning, colors, fonts, styling, or rendering metadata.
 - Never choose templates.
+- The backend already selected the template below. Treat its component IDs and types as the exact output contract.
+- Generate one independent value for every required text component and one independent image search description for every required image component.
+- Never reuse one image component's query as a substitute for another image component.
 - Never return image filenames — only semantic image search fields.
 - Keep language age-appropriate for ages ${ageLabel}.
 - Write all educational text in ${language}.
@@ -72,11 +100,22 @@ Learner profile:
 - Educational objective: ${input.learningObjective}
 - Language: ${language}
 
-Produce exactly ${input.count} cards.
-Inside "components", use these exact keys verbatim. Do not rename, translate, or add keys:
-${componentContract}
+Selected template contract:
+- Template ID: ${input.selectedTemplate.id}
+- Template name: ${input.selectedTemplate.name}
+- Template version: ${input.selectedTemplate.templateVersion}
+- Template type: ${input.selectedTemplate.templateType}
+- Layout type: ${input.selectedTemplate.layoutType}
+- Orientation: ${input.selectedTemplate.orientation}
 
-Each card must include imageSearchQueries: an array with one object per image (usually one) containing:
+Produce exactly ${input.count} cards.
+Inside "textComponents", use these exact component IDs verbatim. Do not rename, translate, omit required IDs, or add IDs:
+${textContract || '- No text components in this template.'}
+
+Inside "imageComponents", use these exact component IDs verbatim. Each ID represents a separate image requirement:
+${imageContract || '- No image components in this template.'}
+
+Every image component value must contain:
 - searchQuery: short precise semantic query (object-first, child-friendly)
 - expectedObjects: array of expected object names
 - preferredStyle: e.g. cartoon
@@ -89,19 +128,12 @@ JSON shape:
   "cards": [
     {
       "cardIndex": 0,
-      "components": {
-${exampleComponents}
+      "textComponents": {
+${exampleTextComponents}
       },
-      "imageSearchQueries": [
-        {
-          "searchQuery": "cartoon green broccoli",
-          "expectedObjects": ["broccoli"],
-          "preferredStyle": "cartoon",
-          "preferredBackground": "white",
-          "orientation": "portrait",
-          "educationalUse": "flashcard"
-        }
-      ]
+      "imageComponents": {
+${exampleImageComponents}
+      }
     }
   ]
 }`;
@@ -113,6 +145,7 @@ ${exampleComponents}
  */
 export function buildFlashcardContentSchema(
   textComponents: TemplateComponentDefinition[],
+  imageComponents: TemplateComponentDefinition[],
 ): Record<string, unknown> {
   const componentProperties: Record<string, { type: string }> = {};
   for (const component of textComponents) {
@@ -147,6 +180,15 @@ export function buildFlashcardContentSchema(
     ],
   };
 
+  const imageComponentProperties: Record<string, unknown> = {};
+  for (const component of imageComponents) {
+    imageComponentProperties[component.componentId] = imageQuerySchema;
+  }
+
+  const requiredImageComponentIds = imageComponents
+    .filter((component) => component.required)
+    .map((component) => component.componentId);
+
   return {
     type: 'object',
     properties: {
@@ -156,7 +198,7 @@ export function buildFlashcardContentSchema(
           type: 'object',
           properties: {
             cardIndex: { type: 'integer' },
-            components: {
+            textComponents: {
               type: 'object',
               properties: componentProperties,
               required: requiredComponentIds,
@@ -164,13 +206,17 @@ export function buildFlashcardContentSchema(
                 (component) => component.componentId,
               ),
             },
-            imageSearchQueries: {
-              type: 'array',
-              items: imageQuerySchema,
+            imageComponents: {
+              type: 'object',
+              properties: imageComponentProperties,
+              required: requiredImageComponentIds,
+              propertyOrdering: imageComponents.map(
+                (component) => component.componentId,
+              ),
             },
           },
-          required: ['components', 'imageSearchQueries'],
-          propertyOrdering: ['cardIndex', 'components', 'imageSearchQueries'],
+          required: ['textComponents', 'imageComponents'],
+          propertyOrdering: ['cardIndex', 'textComponents', 'imageComponents'],
         },
       },
     },

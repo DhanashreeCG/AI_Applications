@@ -81,31 +81,7 @@ export class FlashcardOrchestratorService {
           cardCount: response.cards.length,
         },
       });
-
-      this.emitter.emitStageStarted({
-        ...telemetry,
-        stageName: PIPELINE_STAGES.RESPONSE_RETURN,
-      });
-      this.emitter.emitStageCompleted({
-        ...telemetry,
-        stageName: PIPELINE_STAGES.RESPONSE_RETURN,
-      });
-
-      return {
-        ...response,
-        metadata: {
-          ...response.metadata,
-          requestId: telemetry.requestId,
-          executionId: telemetry.executionId,
-          correlationId: telemetry.correlationId,
-        },
-        renderingMetadata: {
-          ...response.renderingMetadata,
-          requestId: telemetry.requestId,
-          executionId: telemetry.executionId,
-          correlationId: telemetry.correlationId,
-        },
-      };
+      return response;
     } catch (error) {
       this.emitter.emitFailed({
         ...telemetry,
@@ -212,7 +188,9 @@ export class FlashcardOrchestratorService {
         ageMax: selected.ageMax,
         learningObjective: selected.learningObjective,
         count,
+        selectedTemplate: selected.template,
         textComponents,
+        imageComponents,
         grade: resolved.grade,
         subject: resolved.subject,
         difficulty: resolved.difficulty,
@@ -230,13 +208,14 @@ export class FlashcardOrchestratorService {
     const cards = await this.imageRetrievalService.mapWithConcurrency(
       llmPayload.cards,
       async (card): Promise<FlashcardCardPayload> => {
-        const imageRefs = await this.imageRetrievalService.mapWithConcurrency(
+        const retrievedImages =
+          await this.imageRetrievalService.mapWithConcurrency(
           imageComponents,
-          async (imageDef, imageIndex) => {
+          async (imageDefinition) => {
             const query =
-              card.imageSearchQueries[imageIndex] ??
-              card.imageSearchQueries[0];
-            return this.imageRetrievalService.retrieveForCard(
+              card.imageComponents[imageDefinition.componentId];
+            const assetReference =
+              await this.imageRetrievalService.retrieveForCard(
               {
                 queries: query ? [query] : [],
                 topic: resolved.topic,
@@ -246,15 +225,19 @@ export class FlashcardOrchestratorService {
               },
               telemetry,
             );
+            return [
+              imageDefinition.componentId,
+              assetReference,
+            ] as const;
           },
         );
+        const imageRefs = Object.fromEntries(retrievedImages);
 
         const components: EditableComponentPayload[] = editableComponents.map(
           (definition) =>
             this.mergeComponent(
               definition,
-              card.components,
-              imageComponents,
+              card.textComponents,
               imageRefs,
             ),
         );
@@ -283,6 +266,9 @@ export class FlashcardOrchestratorService {
       promptVersion: this.contentService.getPromptVersion(),
       contentModel: this.contentService.getModelName(),
       imageConcurrency: this.imageRetrievalService.getConcurrency(),
+      requestId: telemetry.requestId,
+      executionId: telemetry.executionId,
+      correlationId: telemetry.correlationId,
     };
 
     const response: GenerateFlashcardsResponse = {
@@ -323,10 +309,42 @@ export class FlashcardOrchestratorService {
       ...telemetry,
       stageName: PIPELINE_STAGES.FINAL_VALIDATION,
     });
-    this.assertFinalResponse(response, count, editableComponents);
+    try {
+      this.assertFinalResponse(response, count, editableComponents);
+    } catch (error) {
+      this.emitter.emitStageFailed({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.FINAL_VALIDATION,
+        errorMessage: getErrorMessage(error),
+        metadata: {
+          templateId: response.template.id,
+          templateVersion: response.templateVersion,
+        },
+      });
+      throw error;
+    }
     this.emitter.emitStageCompleted({
       ...telemetry,
       stageName: PIPELINE_STAGES.FINAL_VALIDATION,
+      metadata: {
+        templateId: response.template.id,
+        templateVersion: response.templateVersion,
+        cardCount: response.cards.length,
+        componentCountPerCard: editableComponents.length,
+      },
+    });
+
+    this.emitter.emitStageStarted({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.RESPONSE_RETURN,
+    });
+    this.emitter.emitStageCompleted({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.RESPONSE_RETURN,
+      metadata: {
+        templateId: response.template.id,
+        cardCount: response.cards.length,
+      },
     });
 
     return response;
@@ -419,8 +437,41 @@ export class FlashcardOrchestratorService {
     const allowedIds = new Set(
       editableComponents.map((component) => component.componentId),
     );
+    const expectedIds = editableComponents.map(
+      (component) => component.componentId,
+    );
+    const definitionById = new Map(
+      editableComponents.map((component) => [
+        component.componentId,
+        component,
+      ]),
+    );
+    const seenCardIds = new Set<string>();
 
     for (const card of response.cards) {
+      if (!card.cardId || seenCardIds.has(card.cardId)) {
+        throw new FlashcardException(
+          'INVALID_LLM_OUTPUT',
+          `Assembled response has a missing or duplicate cardId "${card.cardId}"`,
+        );
+      }
+      seenCardIds.add(card.cardId);
+
+      const actualIds = card.components.map(
+        (component) => component.componentId,
+      );
+      if (
+        actualIds.length !== expectedIds.length ||
+        actualIds.some((componentId, index) => componentId !== expectedIds[index])
+      ) {
+        throw new FlashcardException(
+          'INVALID_LLM_OUTPUT',
+          `Card "${card.cardId}" components do not match selected template order`,
+          undefined,
+          { expectedIds, actualIds },
+        );
+      }
+
       for (const component of card.components) {
         if (!allowedIds.has(component.componentId)) {
           throw new FlashcardException(
@@ -428,12 +479,39 @@ export class FlashcardOrchestratorService {
             `Assembled card has unsupported component "${component.componentId}"`,
           );
         }
-      }
-      if (card.components.length !== editableComponents.length) {
-        throw new FlashcardException(
-          'INVALID_LLM_OUTPUT',
-          'Assembled card component count does not match template',
-        );
+        const definition = definitionById.get(component.componentId)!;
+        if (
+          component.type !== definition.componentType ||
+          component.componentType !== definition.componentType ||
+          component.editable !== definition.editable
+        ) {
+          throw new FlashcardException(
+            'INVALID_LLM_OUTPUT',
+            `Component "${component.componentId}" does not match its selected template definition`,
+          );
+        }
+
+        if (
+          definition.componentType !== 'image' &&
+          definition.required &&
+          !component.content?.trim()
+        ) {
+          throw new FlashcardException(
+            'INVALID_LLM_OUTPUT',
+            `Required text component "${component.componentId}" has no content`,
+          );
+        }
+
+        if (
+          definition.componentType === 'image' &&
+          definition.required &&
+          component.assetReference === undefined
+        ) {
+          throw new FlashcardException(
+            'INVALID_LLM_OUTPUT',
+            `Required image component "${component.componentId}" has no retrieval result`,
+          );
+        }
       }
     }
   }
@@ -441,15 +519,13 @@ export class FlashcardOrchestratorService {
   private mergeComponent(
     definition: TemplateComponentDefinition,
     contentById: Record<string, string>,
-    imageComponents: TemplateComponentDefinition[],
-    imageRefs: Array<EditableComponentPayload['assetReference']>,
+    imageRefs: Record<
+      string,
+      NonNullable<EditableComponentPayload['assetReference']>
+    >,
   ): EditableComponentPayload {
     if (definition.componentType === 'image') {
-      const imageIndex = imageComponents.findIndex(
-        (component) => component.componentId === definition.componentId,
-      );
-      const assetReference =
-        imageIndex >= 0 ? (imageRefs[imageIndex] ?? null) : null;
+      const assetReference = imageRefs[definition.componentId] ?? null;
       return {
         componentId: definition.componentId,
         type: definition.componentType,

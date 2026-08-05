@@ -20,6 +20,7 @@ import { FLASHCARD_CONTENT_STAGE } from '../constants/flashcard.constants';
 import { FlashcardException } from '../errors/flashcard.exception';
 import {
   LlmFlashcardPayload,
+  SelectedTemplatePayload,
   TemplateComponentDefinition,
 } from '../interfaces/flashcard.interfaces';
 import {
@@ -38,7 +39,9 @@ export interface GenerateContentInput {
   ageMax: number;
   learningObjective: string;
   count: number;
+  selectedTemplate: SelectedTemplatePayload;
   textComponents: TemplateComponentDefinition[];
+  imageComponents: TemplateComponentDefinition[];
   grade?: string | null;
   subject?: string | null;
   difficulty?: string | null;
@@ -110,10 +113,6 @@ export class FlashcardContentService {
         ...telemetry,
         stageName: PIPELINE_STAGES.LLM_CONTENT_GENERATION,
       });
-      this.emitter.emitStageStarted({
-        ...telemetry,
-        stageName: PIPELINE_STAGES.IMAGE_QUERY_GENERATION,
-      });
     }
 
     try {
@@ -142,18 +141,32 @@ export class FlashcardContentService {
       if (telemetry) {
         this.emitter.emitStageCompleted({
           ...telemetry,
+          stageName: PIPELINE_STAGES.LLM_CONTENT_GENERATION,
+          metadata: {
+            templateId: input.selectedTemplate.id,
+            templateVersion: input.selectedTemplate.templateVersion,
+            cardCount: payload.cards.length,
+          },
+        });
+        this.emitter.emitStageStarted({
+          ...telemetry,
           stageName: PIPELINE_STAGES.IMAGE_QUERY_GENERATION,
           metadata: {
-            queryCount: payload.cards.reduce(
-              (sum, card) => sum + card.imageSearchQueries.length,
-              0,
+            templateId: input.selectedTemplate.id,
+            imageComponentIds: input.imageComponents.map(
+              (component) => component.componentId,
             ),
           },
         });
         this.emitter.emitStageCompleted({
           ...telemetry,
-          stageName: PIPELINE_STAGES.LLM_CONTENT_GENERATION,
-          metadata: { cardCount: payload.cards.length },
+          stageName: PIPELINE_STAGES.IMAGE_QUERY_GENERATION,
+          metadata: {
+            queryCount: payload.cards.reduce(
+              (sum, card) => sum + Object.keys(card.imageComponents).length,
+              0,
+            ),
+          },
         });
       }
 
@@ -252,7 +265,10 @@ export class FlashcardContentService {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           responseMimeType: 'application/json',
-          responseSchema: buildFlashcardContentSchema(input.textComponents),
+          responseSchema: buildFlashcardContentSchema(
+            input.textComponents,
+            input.imageComponents,
+          ),
         },
       });
 
@@ -303,19 +319,44 @@ export class FlashcardContentService {
         });
       }
 
-      const payload = await this.validateOrRepairCards(
-        parsed,
-        input,
-        telemetry,
-        retryCount,
-      );
+      let payload: LlmFlashcardPayload;
+      try {
+        payload = await this.validateOrRepairCards(
+          parsed,
+          input,
+          telemetry,
+          retryCount,
+        );
+      } catch (validationError) {
+        if (telemetry) {
+          this.emitter.emitStageFailed({
+            ...telemetry,
+            stageName: PIPELINE_STAGES.CONTENT_VALIDATION,
+            errorMessage: getErrorMessage(validationError),
+            retryCount,
+            metadata: {
+              templateId: input.selectedTemplate.id,
+              templateVersion: input.selectedTemplate.templateVersion,
+            },
+          });
+        }
+        throw validationError;
+      }
 
       if (telemetry) {
         this.emitter.emitStageCompleted({
           ...telemetry,
           stageName: PIPELINE_STAGES.CONTENT_VALIDATION,
           metadata: {
+            templateId: input.selectedTemplate.id,
+            templateVersion: input.selectedTemplate.templateVersion,
             cardCount: payload.cards.length,
+            textComponentIds: input.textComponents.map(
+              (component) => component.componentId,
+            ),
+            imageComponentIds: input.imageComponents.map(
+              (component) => component.componentId,
+            ),
             responsePreview: {
               cardCount: payload.cards.length,
               cardIndexes: payload.cards.map((card) => card.cardIndex),
@@ -423,6 +464,7 @@ export class FlashcardContentService {
         parsed,
         input.count,
         input.textComponents,
+        input.imageComponents,
       );
     } catch (error) {
       if (input.count <= 1) {
@@ -454,6 +496,7 @@ export class FlashcardContentService {
               rawCards[index],
               index,
               input.textComponents,
+              input.imageComponents,
             ),
           );
         } catch (cardError) {
@@ -469,7 +512,9 @@ export class FlashcardContentService {
                 ageMin: input.ageMin,
                 ageMax: input.ageMax,
                 learningObjective: input.learningObjective,
+                selectedTemplate: input.selectedTemplate,
                 textComponents: input.textComponents,
+                imageComponents: input.imageComponents,
                 grade: input.grade,
                 subject: input.subject,
                 difficulty: input.difficulty,
