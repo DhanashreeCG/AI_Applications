@@ -3,7 +3,7 @@ import { Prisma } from '@generated/prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { SelectableRule } from '../utils/template-selection.engine';
 import { SelectedTemplatePayload } from '../interfaces/flashcard.interfaces';
-import { parseAgeGroupBounds } from '../utils/template-layout.util';
+import { parseAgeGroupBounds } from '../utils/age-group.util';
 
 @Injectable()
 export class TemplateRepository {
@@ -225,6 +225,25 @@ export class TemplateRepository {
 
   public async countTemplates(): Promise<number> {
     return this.prisma.flashcardTemplate.count();
+  }
+
+  public async listAllTemplateSummaries(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      templateType: string;
+      layoutType: string;
+    }>
+  > {
+    return this.prisma.flashcardTemplate.findMany({
+      select: {
+        id: true,
+        name: true,
+        templateType: true,
+        layoutType: true,
+      },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
   }
 
   private toPayload(template: {

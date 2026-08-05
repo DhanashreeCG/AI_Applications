@@ -12,8 +12,9 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { GenerateFlashcardsDto } from './dto/generate-flashcards.dto';
+import { ListFlashcardTemplatesResponseDto } from './dto/flashcard-template-summary.dto';
 import { UploadFlashcardTemplatesDto } from './dto/upload-flashcard-template.dto';
 import { AssetImageService } from './services/asset-image.service';
 import { FlashcardOrchestratorService } from './services/flashcard-orchestrator.service';
@@ -42,6 +43,15 @@ export class FlashcardsController {
     return this.orchestrator.generate(dto, {
       correlationId: correlationId || traceId,
     });
+  }
+
+  @Get('templates')
+  @ApiOperation({
+    summary: 'List all flashcard templates (id, name, templateType, layoutType)',
+  })
+  @ApiOkResponse({ type: ListFlashcardTemplatesResponseDto })
+  async listTemplates() {
+    return this.templateService.listAll();
   }
 
   @Post('templates')

@@ -14,9 +14,26 @@ export interface UploadFlashcardTemplatesResult {
   templates: SelectedTemplatePayload[];
 }
 
+export interface FlashcardTemplateSummary {
+  id: string;
+  name: string;
+  templateType: string;
+  layoutType: string;
+}
+
+export interface ListFlashcardTemplatesResult {
+  templates: FlashcardTemplateSummary[];
+}
+
 @Injectable()
 export class FlashcardTemplateService {
   constructor(private readonly templateRepository: TemplateRepository) {}
+
+  public async listAll(): Promise<ListFlashcardTemplatesResult> {
+    const templates =
+      await this.templateRepository.listAllTemplateSummaries();
+    return { templates };
+  }
 
   public async upload(
     dto: UploadFlashcardTemplatesDto,

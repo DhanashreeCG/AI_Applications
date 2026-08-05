@@ -6,6 +6,7 @@ import { FlashcardException } from '../errors/flashcard.exception';
 describe('FlashcardTemplateService.upload', () => {
   const repository = {
     createTemplates: jest.fn(),
+    listAllTemplateSummaries: jest.fn(),
   };
 
   const service = new FlashcardTemplateService(repository as never);
@@ -106,5 +107,48 @@ describe('FlashcardTemplateService.upload', () => {
     ).rejects.toMatchObject({
       status: HttpStatus.CONFLICT,
     });
+  });
+});
+
+describe('FlashcardTemplateService.listAll', () => {
+  const repository = {
+    listAllTemplateSummaries: jest.fn(),
+  };
+
+  const service = new FlashcardTemplateService(repository as never);
+
+  it('returns id, name, templateType, and layoutType for each template', async () => {
+    repository.listAllTemplateSummaries.mockResolvedValue([
+      {
+        id: 'tmpl_1',
+        name: 'Large Image + Single Word',
+        templateType: 'flashcard',
+        layoutType: 'VERTICAL',
+      },
+      {
+        id: 'tmpl_2',
+        name: 'Image + Word + Fact',
+        templateType: 'flashcard',
+        layoutType: 'VERTICAL',
+      },
+    ]);
+
+    const result = await service.listAll();
+
+    expect(repository.listAllTemplateSummaries).toHaveBeenCalledTimes(1);
+    expect(result.templates).toEqual([
+      {
+        id: 'tmpl_1',
+        name: 'Large Image + Single Word',
+        templateType: 'flashcard',
+        layoutType: 'VERTICAL',
+      },
+      {
+        id: 'tmpl_2',
+        name: 'Image + Word + Fact',
+        templateType: 'flashcard',
+        layoutType: 'VERTICAL',
+      },
+    ]);
   });
 });
