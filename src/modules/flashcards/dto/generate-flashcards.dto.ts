@@ -41,4 +41,11 @@ export class GenerateFlashcardsDto {
 
   @ApiPropertyOptional({ example: 5, default: 5 })
   count?: number;
+
+  @ApiPropertyOptional({
+    example: 'tmpl_image_word_sentence',
+    description:
+      'When set, skips objective determination and template selection and uses this template directly',
+  })
+  templateId?: string;
 }

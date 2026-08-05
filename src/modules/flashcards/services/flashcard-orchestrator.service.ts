@@ -24,6 +24,7 @@ import {
 import { FlashcardContentService } from './flashcard-content.service';
 import { FlashcardImageRetrievalService } from './flashcard-image-retrieval.service';
 import { TemplateSelectionService } from './template-selection.service';
+import type { SelectTemplateResult } from './template-selection.service';
 
 export interface GenerateFlashcardsOptions {
   correlationId?: string;
@@ -64,6 +65,7 @@ export class FlashcardOrchestratorService {
         ageGroup: dto.ageGroup,
         grade: dto.grade,
         count: dto.count ?? DEFAULT_FLASHCARD_COUNT,
+        templateId: dto.templateId?.trim() || undefined,
       },
     });
 
@@ -101,6 +103,19 @@ export class FlashcardOrchestratorService {
       stageName: PIPELINE_STAGES.REQUEST_VALIDATION,
     });
     const count = dto.count ?? DEFAULT_FLASHCARD_COUNT;
+    const explicitTemplateId = dto.templateId?.trim() || null;
+    if (dto.templateId !== undefined && dto.templateId !== null && !explicitTemplateId) {
+      this.emitter.emitStageFailed({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.REQUEST_VALIDATION,
+        errorMessage: 'templateId must be a non-empty string when provided',
+      });
+      throw new FlashcardException(
+        'INVALID_REQUEST',
+        'templateId must be a non-empty string when provided',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     if (!Number.isInteger(count) || count < 1 || count > 20) {
       this.emitter.emitStageFailed({
         ...telemetry,
@@ -154,24 +169,17 @@ export class FlashcardOrchestratorService {
         language: resolved.language,
         learningObjective: resolved.learningObjective,
         objectiveConfidence: resolved.objectiveConfidence,
+        explicitTemplateId,
       },
     });
 
-    this.emitter.emitStageStarted({
-      ...telemetry,
-      stageName: PIPELINE_STAGES.EDUCATIONAL_OBJECTIVE_DETERMINATION,
-    });
-    this.emitter.emitStageCompleted({
-      ...telemetry,
-      stageName: PIPELINE_STAGES.EDUCATIONAL_OBJECTIVE_DETERMINATION,
-      metadata: {
-        learningObjective: resolved.learningObjective,
-        educationalIntent: resolved.educationalIntent,
-        objectiveConfidence: resolved.objectiveConfidence,
-      },
-    });
-
-    const selected = await this.selectTemplateWithRetry(resolved, telemetry);
+    const selected = explicitTemplateId
+      ? await this.loadExplicitTemplate(
+          explicitTemplateId,
+          resolved,
+          telemetry,
+        )
+      : await this.runObjectiveAndTemplateSelection(resolved, telemetry);
 
     const editableComponents = parseEditableComponentsFromLayout(
       selected.template.layoutDefinition,
@@ -353,10 +361,79 @@ export class FlashcardOrchestratorService {
     return response;
   }
 
+  private async runObjectiveAndTemplateSelection(
+    resolved: ReturnType<typeof resolveUserRequest>,
+    telemetry: PipelineTelemetryContext,
+  ): Promise<SelectTemplateResult> {
+    this.emitter.emitStageStarted({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.EDUCATIONAL_OBJECTIVE_DETERMINATION,
+    });
+    this.emitter.emitStageCompleted({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.EDUCATIONAL_OBJECTIVE_DETERMINATION,
+      metadata: {
+        learningObjective: resolved.learningObjective,
+        educationalIntent: resolved.educationalIntent,
+        objectiveConfidence: resolved.objectiveConfidence,
+      },
+    });
+
+    return this.selectTemplateWithRetry(resolved, telemetry);
+  }
+
+  private async loadExplicitTemplate(
+    templateId: string,
+    resolved: ReturnType<typeof resolveUserRequest>,
+    telemetry: PipelineTelemetryContext,
+  ): Promise<SelectTemplateResult> {
+    this.emitter.emitStageSkipped({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.EDUCATIONAL_OBJECTIVE_DETERMINATION,
+      metadata: {
+        reason: 'explicit_templateId',
+        templateId,
+        learningObjective: resolved.learningObjective,
+      },
+    });
+    this.emitter.emitStageSkipped({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+      metadata: {
+        reason: 'explicit_templateId',
+        templateId,
+      },
+    });
+
+    try {
+      return await this.templateSelectionService.selectByTemplateId({
+        templateId,
+        learningObjective: resolved.learningObjective,
+        ageMin: resolved.ageMin,
+        ageMax: resolved.ageMax,
+        ageGroup: resolved.ageGroup,
+      });
+    } catch (error) {
+      if (
+        error instanceof FlashcardException &&
+        (error.code === 'NO_TEMPLATE_FOUND' ||
+          error.code === 'TEMPLATE_VERSION_MISMATCH')
+      ) {
+        this.emitter.emitStageFailed({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+          errorMessage: getErrorMessage(error),
+          metadata: { templateId, bypassed: true },
+        });
+      }
+      throw error;
+    }
+  }
+
   private async selectTemplateWithRetry(
     resolved: ReturnType<typeof resolveUserRequest>,
     telemetry: PipelineTelemetryContext,
-  ) {
+  ): Promise<SelectTemplateResult> {
     this.emitter.emitStageStarted({
       ...telemetry,
       stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,

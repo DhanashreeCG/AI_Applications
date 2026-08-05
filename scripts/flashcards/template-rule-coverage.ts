@@ -1,12 +1,12 @@
-import { PrismaClient } from '@generated/prisma/client';
 import {
   ALL_RULE_SEEDS,
   OBJECTIVE_RULE_SEEDS,
   RULE_SEEDS,
   TEMPLATE_SEEDS,
 } from '../../src/modules/flashcards/services/flashcard-seed.service';
+import { createScriptPrismaClient } from '../shared/create-script-prisma-client';
 
-const prisma = new PrismaClient();
+const prisma = createScriptPrismaClient();
 
 function parseAgeGroup(value: string): { min: number; max: number } | null {
   const match = value.trim().match(/^(\d{1,2})-(\d{1,2})$/);

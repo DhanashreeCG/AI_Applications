@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FlashcardException } from '../errors/flashcard.exception';
+import { SelectedTemplatePayload } from '../interfaces/flashcard.interfaces';
 import { ObjectiveConfidence } from '../utils/user-request.resolver';
 import {
   RankedTemplateCandidate,
@@ -28,8 +29,16 @@ export interface SelectTemplateResult {
   ageMax: number;
   ageGroup: string;
   selection: NonNullable<ReturnType<typeof selectBestTemplate>>;
-  template: Awaited<ReturnType<TemplateRepository['getTemplateById']>>;
+  template: SelectedTemplatePayload;
   ranking?: RankedTemplateCandidate[];
+}
+
+export interface SelectTemplateByIdInput {
+  templateId: string;
+  learningObjective: string;
+  ageMin: number;
+  ageMax: number;
+  ageGroup: string;
 }
 
 @Injectable()
@@ -124,6 +133,54 @@ export class TemplateSelectionService {
       selection: match,
       template,
       ranking: ranking?.slice(0, 10),
+    };
+  }
+
+  public async selectByTemplateId(
+    input: SelectTemplateByIdInput,
+  ): Promise<SelectTemplateResult> {
+    const templateId = input.templateId.trim();
+    if (!templateId) {
+      throw new FlashcardException(
+        'INVALID_REQUEST',
+        'templateId is required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const template = await this.templateRepository.getTemplateById(templateId);
+    if (!template) {
+      throw new FlashcardException(
+        'NO_TEMPLATE_FOUND',
+        `Template ${templateId} was not found`,
+        HttpStatus.NOT_FOUND,
+        { templateId },
+      );
+    }
+
+    if (!template.active) {
+      throw new FlashcardException(
+        'TEMPLATE_VERSION_MISMATCH',
+        `Template ${templateId} is inactive`,
+        HttpStatus.CONFLICT,
+        { templateId },
+      );
+    }
+
+    return {
+      learningObjective: input.learningObjective,
+      ageMin: input.ageMin,
+      ageMax: input.ageMax,
+      ageGroup: input.ageGroup,
+      selection: {
+        ruleId: `explicit-${templateId}`,
+        ruleName: 'Explicit template from request',
+        templateId: template.id,
+        priority: 0,
+        score: 0,
+        templateVersion: template.templateVersion,
+      },
+      template,
     };
   }
 }
