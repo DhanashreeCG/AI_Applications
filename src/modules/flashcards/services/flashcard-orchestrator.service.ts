@@ -364,6 +364,7 @@ export class FlashcardOrchestratorService {
         topic: resolved.topic,
         ageMin: resolved.ageMin,
         ageMax: resolved.ageMax,
+        ageGroup: resolved.ageGroup,
         learningObjective: resolved.learningObjective,
         grade: resolved.grade,
         subject: resolved.subject,
@@ -380,6 +381,8 @@ export class FlashcardOrchestratorService {
           templateId: selected.template.id,
           ruleId: selected.selection.ruleId,
           templateVersion: selected.template.templateVersion,
+          requestedAgeGroup: resolved.ageGroup,
+          templateAgeGroups: selected.template.supportedAgeGroups,
         },
       });
       return selected;

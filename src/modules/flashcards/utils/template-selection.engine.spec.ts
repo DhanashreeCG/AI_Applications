@@ -19,6 +19,7 @@ function rule(
     intents: overrides.intents ?? [],
     topics: overrides.topics ?? [],
     templateActive: overrides.templateActive ?? true,
+    templateAgeGroups: overrides.templateAgeGroups ?? [],
     templateAgeMin: overrides.templateAgeMin ?? 0,
     templateAgeMax: overrides.templateAgeMax ?? 99,
     templateSubjects: overrides.templateSubjects ?? [],
@@ -96,7 +97,7 @@ describe('selectBestTemplate', () => {
     expect(veggies?.templateId).toBe('t-vocab');
   });
 
-  it('prefers exact grade match over age-only match', () => {
+  it('keeps exact age match ahead of grade after objective matching', () => {
     const rules = [
       rule({
         id: 'age-only',
@@ -124,7 +125,123 @@ describe('selectBestTemplate', () => {
       ageMax: 6,
     });
 
-    expect(match?.templateId).toBe('t-grade');
+    expect(match?.templateId).toBe('t-age');
+  });
+
+  it('hard-filters templates using the user-selected age group', () => {
+    const rules = [
+      rule({
+        id: 'disjoint-groups',
+        templateId: 't-disjoint',
+        templateAgeGroups: ['2-3', '8-10'],
+        templateAgeMin: 2,
+        templateAgeMax: 10,
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+      }),
+      rule({
+        id: 'matching-group',
+        templateId: 't-match',
+        templateAgeGroups: ['5-6'],
+        templateAgeMin: 5,
+        templateAgeMax: 6,
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '5-6',
+      ageMin: 5,
+      ageMax: 6,
+    });
+
+    expect(match?.templateId).toBe('t-match');
+  });
+
+  it('prefers an exact template age group over a broader overlap', () => {
+    const rules = [
+      rule({
+        id: 'broad',
+        templateId: 't-broad',
+        templateAgeGroups: ['4-7'],
+        templateVersion: '2.0',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+      }),
+      rule({
+        id: 'exact',
+        templateId: 't-exact',
+        templateAgeGroups: ['5-6'],
+        templateVersion: '1.0',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '5-6',
+      ageMin: 5,
+      ageMax: 6,
+    });
+
+    expect(match?.templateId).toBe('t-exact');
+  });
+
+  it('selects comparison objective within age range over vocabulary', () => {
+    const rules = [
+      rule({
+        id: 'vocabulary-exact-age',
+        templateId: 't-vocabulary',
+        templateAgeGroups: ['3-4'],
+        templateObjectives: ['vocabulary'],
+        templateVersion: '2.0',
+      }),
+      rule({
+        id: 'comparison-overlap',
+        templateId: 't-comparison',
+        templateAgeGroups: ['3-5'],
+        templateObjectives: ['comparison'],
+        templateVersion: '1.0',
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'comparison',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+    });
+
+    expect(match?.templateId).toBe('t-comparison');
+  });
+
+  it('falls back to a related objective within the requested age range', () => {
+    const rules = [
+      rule({
+        id: 'vocabulary',
+        templateId: 't-vocabulary',
+        templateAgeGroups: ['3-4'],
+        templateObjectives: ['vocabulary'],
+      }),
+      rule({
+        id: 'classification',
+        templateId: 't-classification',
+        templateAgeGroups: ['3-4'],
+        templateObjectives: ['classification'],
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'comparison',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+    });
+
+    expect(match?.templateId).toBe('t-classification');
   });
 
   it('prefers newer template version when other ranks tie', () => {
@@ -217,6 +334,7 @@ describe('selectBestTemplate', () => {
         ageMax: 3,
         learningObjectives: ['recognition'],
         templateObjectives: ['recognition'],
+        templateAgeGroups: ['2-3'],
         templateAgeMin: 2,
         templateAgeMax: 3,
       }),

@@ -30,6 +30,7 @@ export interface TemplateLayoutDefinition {
 export interface TemplateSelectionCriteria {
   ageMin?: number | null;
   ageMax?: number | null;
+  ageGroup?: string;
   age?: number;
   grade?: string;
   subject?: string;

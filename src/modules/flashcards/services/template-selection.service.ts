@@ -6,6 +6,7 @@ import { TemplateRepository } from './template.repository';
 export interface SelectTemplateInput {
   ageMin: number;
   ageMax: number;
+  ageGroup: string;
   topic: string;
   learningObjective: string;
   grade?: string | null;
@@ -42,6 +43,7 @@ export class TemplateSelectionService {
     const match = selectBestTemplate(rules, {
       ageMin: input.ageMin,
       ageMax: input.ageMax,
+      ageGroup: input.ageGroup,
       learningObjective: input.learningObjective,
       grade: input.grade ?? undefined,
       subject: input.subject ?? undefined,
@@ -57,6 +59,7 @@ export class TemplateSelectionService {
           learningObjective: input.learningObjective,
           ageMin: input.ageMin,
           ageMax: input.ageMax,
+          ageGroup: input.ageGroup,
           grade: input.grade,
           subject: input.subject,
           difficulty: input.difficulty,
@@ -88,6 +91,7 @@ export class TemplateSelectionService {
       learningObjective: input.learningObjective,
       ageMin: input.ageMin,
       ageMax: input.ageMax,
+      ageGroup: input.ageGroup,
       selection: match,
       template,
     };

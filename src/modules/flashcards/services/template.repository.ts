@@ -10,18 +10,32 @@ export class TemplateRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   public async listActiveSelectionRules(): Promise<SelectableRule[]> {
-    const rules = await this.prisma.templateSelectionRule.findMany({
-      where: { active: true, template: { active: true } },
-      include: { template: true },
-      orderBy: [{ priority: 'desc' }, { id: 'asc' }],
-    });
+    const [rules, templates] = await Promise.all([
+      this.prisma.templateSelectionRule.findMany({
+        where: { active: true, template: { active: true } },
+        include: { template: true },
+        orderBy: [{ priority: 'desc' }, { id: 'asc' }],
+      }),
+      this.prisma.flashcardTemplate.findMany({
+        where: { active: true },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      }),
+    ]);
 
-    if (rules.length) {
-      return rules.map((rule) => this.ruleToSelectable(rule, rule.template));
+    const selectable = rules.map((rule) =>
+      this.ruleToSelectable(rule, rule.template),
+    );
+    const templatesWithRules = new Set(rules.map((rule) => rule.templateId));
+
+    // A template remains selectable even if no explicit rule was configured.
+    // Its own age/objective metadata is sufficient for dynamic selection.
+    for (const template of templates) {
+      if (!templatesWithRules.has(template.id)) {
+        selectable.push(this.templateToSyntheticRule(template));
+      }
     }
 
-    // Fallback: templates exist but selection rules were never seeded.
-    return this.synthesizeRulesFromActiveTemplates();
+    return selectable;
   }
 
   /**
@@ -34,30 +48,45 @@ export class TemplateRepository {
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
     });
 
-    return templates.map((template) => {
-      const ageBounds = parseAgeGroupBounds(template.supportedAgeGroups);
-      return {
-        id: `synthetic-${template.id}`,
-        name: `Synthetic rule for ${template.name}`,
-        priority: 50,
-        ageMin: ageBounds?.min ?? null,
-        ageMax: ageBounds?.max ?? null,
-        grades: template.supportedGrades,
-        subjects: [],
-        learningObjectives: [],
-        difficulties: [],
-        intents: [],
-        topics: [],
-        templateId: template.id,
-        templateActive: template.active,
-        templateAgeMin: ageBounds?.min ?? 0,
-        templateAgeMax: ageBounds?.max ?? 99,
-        templateSubjects: template.subjectsSupported,
-        templateObjectives: template.learningObjectives,
-        templateDifficulties: template.difficultyLevels,
-        templateVersion: template.templateVersion,
-      };
-    });
+    return templates.map((template) =>
+      this.templateToSyntheticRule(template),
+    );
+  }
+
+  private templateToSyntheticRule(template: {
+    id: string;
+    name: string;
+    active: boolean;
+    supportedAgeGroups: string[];
+    supportedGrades: string[];
+    subjectsSupported: string[];
+    learningObjectives: string[];
+    difficultyLevels: string[];
+    templateVersion: string;
+  }): SelectableRule {
+    const ageBounds = parseAgeGroupBounds(template.supportedAgeGroups);
+    return {
+      id: `synthetic-${template.id}`,
+      name: `Template metadata: ${template.name}`,
+      priority: 50,
+      ageMin: ageBounds?.min ?? null,
+      ageMax: ageBounds?.max ?? null,
+      grades: [],
+      subjects: [],
+      learningObjectives: [],
+      difficulties: [],
+      intents: [],
+      topics: [],
+      templateId: template.id,
+      templateActive: template.active,
+      templateAgeGroups: template.supportedAgeGroups,
+      templateAgeMin: ageBounds?.min ?? 0,
+      templateAgeMax: ageBounds?.max ?? 99,
+      templateSubjects: template.subjectsSupported,
+      templateObjectives: template.learningObjectives,
+      templateDifficulties: template.difficultyLevels,
+      templateVersion: template.templateVersion,
+    };
   }
 
   private ruleToSelectable(
@@ -100,6 +129,7 @@ export class TemplateRepository {
       topics: rule.topics,
       templateId: rule.templateId,
       templateActive: template.active,
+      templateAgeGroups: template.supportedAgeGroups,
       templateAgeMin: ageBounds?.min ?? 0,
       templateAgeMax: ageBounds?.max ?? 99,
       templateSubjects: template.subjectsSupported,
