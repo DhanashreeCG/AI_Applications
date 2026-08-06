@@ -55,7 +55,12 @@ export interface AppConfig {
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
     renderer: {
+      enabled: boolean;
+      storageBackend: 'local' | 's3';
       storageRoot: string;
+      s3KeyPrefix: string;
+      s3Bucket?: string;
+      signedUrlTtlSeconds: number;
       concurrency: number;
       apiBaseUrl: string;
     };
@@ -183,8 +188,21 @@ export default (): AppConfig => ({
       10,
     ),
     renderer: {
+      enabled: process.env.FLASHCARD_RENDERER_ENABLED !== 'false',
+      storageBackend:
+        (process.env.FLASHCARD_RENDERER_STORAGE_BACKEND || 'local').toLowerCase() ===
+        's3'
+          ? 's3'
+          : 'local',
       storageRoot:
         process.env.FLASHCARD_RENDERER_STORAGE_ROOT || 'storage/flashcards',
+      s3KeyPrefix:
+        process.env.FLASHCARD_RENDERER_S3_KEY_PREFIX || 'flashcards/rendered',
+      s3Bucket: process.env.FLASHCARD_RENDERER_S3_BUCKET || undefined,
+      signedUrlTtlSeconds: parseInt(
+        process.env.FLASHCARD_RENDERER_SIGNED_URL_TTL_SECONDS || '3600',
+        10,
+      ),
       concurrency: parseInt(
         process.env.FLASHCARD_RENDERER_CONCURRENCY || '4',
         10,

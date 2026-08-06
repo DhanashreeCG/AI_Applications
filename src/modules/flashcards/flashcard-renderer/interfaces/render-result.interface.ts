@@ -1,9 +1,11 @@
+import { FlashcardRenderStorageBackendType } from '../storage/flashcard-render-storage.interface';
+
 export interface RenderedCardFile {
   cardIndex: number;
   cardId: string;
   fileName: string;
-  absolutePath: string;
-  relativePath: string;
+  path: string;
+  uri: string;
 }
 
 export interface FlashcardRenderTiming {
@@ -14,14 +16,18 @@ export interface FlashcardRenderTiming {
   totalMs: number;
 }
 
+export interface FlashcardStoredAsset {
+  path: string;
+  uri: string;
+}
+
 export interface FlashcardRenderResult {
+  storageBackend: FlashcardRenderStorageBackendType;
   requestId: string;
-  outputDir: string;
+  outputLocation: string;
   cards: RenderedCardFile[];
-  previewPath: string;
-  previewRelativePath: string;
-  pdfPath: string;
-  pdfRelativePath: string;
+  preview: FlashcardStoredAsset;
+  pdf: FlashcardStoredAsset;
   timing: FlashcardRenderTiming;
   warnings: string[];
 }

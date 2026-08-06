@@ -129,6 +129,35 @@ export interface SelectedTemplatePayload {
   active?: boolean;
 }
 
+export interface FlashcardRenderedOutput {
+  storageBackend: 'local' | 's3';
+  requestId: string;
+  outputLocation: string;
+  cards: Array<{
+    cardIndex: number;
+    cardId: string;
+    fileName: string;
+    path: string;
+    uri: string;
+  }>;
+  preview: {
+    path: string;
+    uri: string;
+  };
+  pdf: {
+    path: string;
+    uri: string;
+  };
+  timing: {
+    normalizeMs: number;
+    htmlMs: number;
+    browserMs: number;
+    pdfMs: number;
+    totalMs: number;
+  };
+  warnings: string[];
+}
+
 export interface GenerateFlashcardsResponse {
   request: {
     query: string;
@@ -173,6 +202,8 @@ export interface GenerateFlashcardsResponse {
     executionId?: string;
     correlationId?: string;
   };
+  /** Server-rendered WebP card images and PDF output when rendering is enabled. */
+  renderedOutput?: FlashcardRenderedOutput;
 }
 
 export type FlashcardErrorCode =

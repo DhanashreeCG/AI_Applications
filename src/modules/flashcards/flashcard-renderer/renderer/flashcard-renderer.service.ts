@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GenerateFlashcardsResponse } from '../../interfaces/flashcard.interfaces';
@@ -73,8 +72,6 @@ export class FlashcardRendererService {
       this.cardRenderer.render(card, layout, context),
     );
     const htmlMs = Date.now() - htmlStartedAt;
-
-    const outputDir = await this.storageService.ensureRequestDirectory(requestId);
     const browserStartedAt = Date.now();
 
     const renderedCards = await mapWithConcurrency(
@@ -94,53 +91,59 @@ export class FlashcardRendererService {
         });
 
         const fileName = `card-${card.cardIndex}.webp`;
-        const absolutePath = join(outputDir, fileName);
-        await this.storageService.writeBinaryFile(absolutePath, buffer);
+        const stored = await this.storageService.saveFile({
+          requestId,
+          fileName,
+          buffer,
+          contentType: 'image/webp',
+        });
 
         return {
           cardIndex: card.cardIndex,
           cardId: card.cardId,
           fileName,
-          absolutePath,
-          relativePath: this.storageService.toRelativePath(absolutePath),
+          path: stored.path,
+          uri: stored.uri,
         };
       },
     );
 
     const browserMs = Date.now() - browserStartedAt;
 
-    const previewPath = renderedCards[0]?.absolutePath;
-    const previewRelativePath = renderedCards[0]?.relativePath;
-    if (previewPath) {
-      await this.storageService.writeBinaryFile(
-        join(outputDir, 'preview.webp'),
-        await this.pdfService.renderWebpFromHtml({
-          html: renderDocument({
-            title: 'Flashcard Preview',
-            css,
-            bodyHtml: `<div class="flashcard-stage">${cardsHtml[0]}</div>`,
+    const preview = cardsHtml.length
+      ? await this.storageService.saveFile({
+          requestId,
+          fileName: 'preview.webp',
+          buffer: await this.pdfService.renderWebpFromHtml({
+            html: renderDocument({
+              title: 'Flashcard Preview',
+              css,
+              bodyHtml: `<div class="flashcard-stage">${cardsHtml[0]}</div>`,
+            }),
+            width: dimensions.width,
+            height: dimensions.height,
           }),
-          width: dimensions.width,
-          height: dimensions.height,
-        }),
-      );
-    }
+          contentType: 'image/webp',
+        })
+      : { path: '', uri: '' };
 
     const pdfStartedAt = Date.now();
-    const pdfPath = join(outputDir, 'flashcards.pdf');
-    const pdfBuffer = await this.pdfService.renderPdfFromCards({
-      title: `Flashcards ${requestId}`,
-      cardsHtml: cardsHtml.join('\n'),
-      width: dimensions.width,
-      height: dimensions.height,
+    const pdf = await this.storageService.saveFile({
+      requestId,
+      fileName: 'flashcards.pdf',
+      buffer: await this.pdfService.renderPdfFromCards({
+        title: `Flashcards ${requestId}`,
+        cardsHtml: cardsHtml.join('\n'),
+        width: dimensions.width,
+        height: dimensions.height,
+      }),
+      contentType: 'application/pdf',
     });
-    await this.storageService.writeBinaryFile(pdfPath, pdfBuffer);
     const pdfMs = Date.now() - pdfStartedAt;
-
     const totalMs = Date.now() - startedAt;
 
     this.logger.log(
-      `Rendered ${renderedCards.length} cards for ${requestId} in ${totalMs}ms (html=${htmlMs}ms browser=${browserMs}ms pdf=${pdfMs}ms)`,
+      `Rendered ${renderedCards.length} cards for ${requestId} via ${this.storageService.getBackendType()} in ${totalMs}ms (html=${htmlMs}ms browser=${browserMs}ms pdf=${pdfMs}ms)`,
     );
 
     if (warnings.length) {
@@ -150,17 +153,12 @@ export class FlashcardRendererService {
     }
 
     return {
+      storageBackend: this.storageService.getBackendType(),
       requestId,
-      outputDir,
+      outputLocation: this.storageService.resolveOutputLocation(requestId),
       cards: renderedCards,
-      previewPath: previewPath
-        ? join(outputDir, 'preview.webp')
-        : '',
-      previewRelativePath: previewRelativePath
-        ? this.storageService.toRelativePath(join(outputDir, 'preview.webp'))
-        : '',
-      pdfPath,
-      pdfRelativePath: this.storageService.toRelativePath(pdfPath),
+      preview,
+      pdf,
       timing: {
         normalizeMs,
         htmlMs,

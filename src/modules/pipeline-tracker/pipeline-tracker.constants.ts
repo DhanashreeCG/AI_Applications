@@ -28,6 +28,7 @@ export const PIPELINE_TRACKER_STAGE_CATALOG = [
   'response_assembly',
   'response_validation',
   'final_validation',
+  'flashcard_rendering',
   'response_return',
   'completed',
   'failed',

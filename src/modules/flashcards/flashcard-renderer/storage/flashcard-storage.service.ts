@@ -1,39 +1,55 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { S3StorageService } from '../../../storage/s3-storage.service';
+import {
+  FlashcardRenderStorageBackend,
+  FlashcardRenderStorageBackendType,
+  SaveRenderFileInput,
+  StoredRenderFile,
+} from './flashcard-render-storage.interface';
+import { LocalFlashcardRenderStorage } from './local-flashcard-render.storage';
+import { S3FlashcardRenderStorage } from './s3-flashcard-render.storage';
 
 @Injectable()
 export class FlashcardStorageService {
-  private readonly storageRoot: string;
+  private readonly backend: FlashcardRenderStorageBackend;
 
-  constructor(private readonly configService: ConfigService) {
-    this.storageRoot =
-      this.configService.get<string>('flashcards.renderer.storageRoot') ??
-      'storage/flashcards';
+  constructor(
+    configService: ConfigService,
+    s3StorageService: S3StorageService,
+  ) {
+    const backendType = this.resolveBackendType(configService);
+    this.backend =
+      backendType === 's3'
+        ? new S3FlashcardRenderStorage(configService, s3StorageService)
+        : new LocalFlashcardRenderStorage(configService);
   }
 
-  resolveRequestDirectory(requestId: string): string {
-    return join(process.cwd(), this.storageRoot, requestId);
+  getBackendType(): FlashcardRenderStorageBackendType {
+    return this.backend.type;
   }
 
-  async ensureRequestDirectory(requestId: string): Promise<string> {
-    const directory = this.resolveRequestDirectory(requestId);
-    await mkdir(directory, { recursive: true });
-    return directory;
+  resolveOutputLocation(requestId: string): string {
+    return this.backend.resolveOutputLocation(requestId);
   }
 
-  async writeBinaryFile(absolutePath: string, data: Buffer): Promise<void> {
-    await mkdir(dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, data);
+  async saveFile(input: SaveRenderFileInput): Promise<StoredRenderFile> {
+    return this.backend.saveFile(input);
   }
 
-  toRelativePath(absolutePath: string): string {
-    const cwd = process.cwd();
-    if (absolutePath.startsWith(cwd)) {
-      return absolutePath.slice(cwd.length + 1).replace(/\\/g, '/');
+  private resolveBackendType(
+    configService: ConfigService,
+  ): FlashcardRenderStorageBackendType {
+    const configured = (
+      configService.get<string>('flashcards.renderer.storageBackend') ?? 'local'
+    )
+      .trim()
+      .toLowerCase();
+
+    if (configured === 's3') {
+      return 's3';
     }
 
-    return absolutePath.replace(/\\/g, '/');
+    return 'local';
   }
 }

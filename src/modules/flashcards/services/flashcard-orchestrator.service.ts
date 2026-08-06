@@ -12,6 +12,7 @@ import { FlashcardException } from '../errors/flashcard.exception';
 import {
   EditableComponentPayload,
   FlashcardCardPayload,
+  FlashcardRenderedOutput,
   GenerateFlashcardsResponse,
   TemplateComponentDefinition,
 } from '../interfaces/flashcard.interfaces';
@@ -23,6 +24,8 @@ import {
 } from '../telemetry/flashcard-pipeline.events';
 import { FlashcardContentService } from './flashcard-content.service';
 import { FlashcardImageRetrievalService } from './flashcard-image-retrieval.service';
+import { FlashcardRendererService } from '../flashcard-renderer/renderer/flashcard-renderer.service';
+import { FlashcardRenderResult } from '../flashcard-renderer/interfaces/render-result.interface';
 import { TemplateSelectionService } from './template-selection.service';
 import type { SelectTemplateResult } from './template-selection.service';
 
@@ -35,11 +38,13 @@ export class FlashcardOrchestratorService {
   private readonly logger = new Logger(FlashcardOrchestratorService.name);
   private readonly emitter: FlashcardPipelineEmitter;
   private readonly workflowType: string;
+  private readonly renderingEnabled: boolean;
 
   constructor(
     private readonly templateSelectionService: TemplateSelectionService,
     private readonly contentService: FlashcardContentService,
     private readonly imageRetrievalService: FlashcardImageRetrievalService,
+    private readonly rendererService: FlashcardRendererService,
     private readonly configService: ConfigService,
     eventEmitter: EventEmitter2,
   ) {
@@ -47,6 +52,8 @@ export class FlashcardOrchestratorService {
     this.workflowType =
       this.configService.get<string>('pipelineTracking.workflowDefault') ||
       'flashcards';
+    this.renderingEnabled =
+      this.configService.get<boolean>('flashcards.renderer.enabled') !== false;
   }
 
   public async generate(
@@ -81,6 +88,8 @@ export class FlashcardOrchestratorService {
           templateId: response.template.id,
           learningObjective: response.request.learningObjective,
           cardCount: response.cards.length,
+          rendered: Boolean(response.renderedOutput),
+          storageBackend: response.renderedOutput?.storageBackend,
         },
       });
       return response;
@@ -345,6 +354,8 @@ export class FlashcardOrchestratorService {
       },
     });
 
+    const renderedOutput = await this.runRenderingStage(response, telemetry);
+
     this.emitter.emitStageStarted({
       ...telemetry,
       stageName: PIPELINE_STAGES.RESPONSE_RETURN,
@@ -355,10 +366,97 @@ export class FlashcardOrchestratorService {
       metadata: {
         templateId: response.template.id,
         cardCount: response.cards.length,
+        rendered: Boolean(renderedOutput),
       },
     });
 
-    return response;
+    return renderedOutput ? { ...response, renderedOutput } : response;
+  }
+
+  private async runRenderingStage(
+    response: GenerateFlashcardsResponse,
+    telemetry: PipelineTelemetryContext,
+  ): Promise<FlashcardRenderedOutput | undefined> {
+    if (!this.renderingEnabled) {
+      this.emitter.emitStageSkipped({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.FLASHCARD_RENDERING,
+        metadata: { reason: 'renderer_disabled' },
+      });
+      return undefined;
+    }
+
+    this.emitter.emitStageStarted({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.FLASHCARD_RENDERING,
+      metadata: {
+        cardCount: response.cards.length,
+        templateId: response.template.id,
+      },
+    });
+
+    try {
+      const renderResult = await this.rendererService.render(response);
+      const renderedOutput = this.toRenderedOutput(renderResult);
+
+      this.emitter.emitStageCompleted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.FLASHCARD_RENDERING,
+        metadata: {
+          storageBackend: renderedOutput.storageBackend,
+          outputLocation: renderedOutput.outputLocation,
+          cardCount: renderedOutput.cards.length,
+          warningCount: renderedOutput.warnings.length,
+          totalMs: renderedOutput.timing.totalMs,
+          htmlMs: renderedOutput.timing.htmlMs,
+          browserMs: renderedOutput.timing.browserMs,
+          pdfMs: renderedOutput.timing.pdfMs,
+          pdfPath: renderedOutput.pdf.path,
+        },
+      });
+
+      return renderedOutput;
+    } catch (error) {
+      const errorMessage = getErrorMessage(error);
+      this.logger.warn(`Flashcard rendering failed: ${errorMessage}`);
+      this.emitter.emitStageFailed({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.FLASHCARD_RENDERING,
+        errorMessage,
+        metadata: {
+          cardCount: response.cards.length,
+          templateId: response.template.id,
+        },
+      });
+      return undefined;
+    }
+  }
+
+  private toRenderedOutput(
+    renderResult: FlashcardRenderResult,
+  ): FlashcardRenderedOutput {
+    return {
+      storageBackend: renderResult.storageBackend,
+      requestId: renderResult.requestId,
+      outputLocation: renderResult.outputLocation,
+      cards: renderResult.cards.map((card) => ({
+        cardIndex: card.cardIndex,
+        cardId: card.cardId,
+        fileName: card.fileName,
+        path: card.path,
+        uri: card.uri,
+      })),
+      preview: {
+        path: renderResult.preview.path,
+        uri: renderResult.preview.uri,
+      },
+      pdf: {
+        path: renderResult.pdf.path,
+        uri: renderResult.pdf.uri,
+      },
+      timing: renderResult.timing,
+      warnings: renderResult.warnings,
+    };
   }
 
   private async runObjectiveAndTemplateSelection(

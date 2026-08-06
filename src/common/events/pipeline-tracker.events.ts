@@ -45,6 +45,7 @@ export const PIPELINE_STAGES = {
   /** @deprecated Prefer IMAGE_RETRIEVAL */
   IMAGE_MAPPING: 'image_mapping',
   RESPONSE_ASSEMBLY: 'response_assembly',
+  FLASHCARD_RENDERING: 'flashcard_rendering',
   /** @deprecated Prefer FINAL_VALIDATION */
   RESPONSE_VALIDATION: 'response_validation',
   FINAL_VALIDATION: 'final_validation',
