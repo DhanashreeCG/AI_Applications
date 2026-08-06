@@ -54,6 +54,11 @@ export interface AppConfig {
     imageConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
+    renderer: {
+      storageRoot: string;
+      concurrency: number;
+      apiBaseUrl: string;
+    };
   };
   pipelineTracking: {
     enabled: boolean;
@@ -177,6 +182,16 @@ export default (): AppConfig => ({
       process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '1',
       10,
     ),
+    renderer: {
+      storageRoot:
+        process.env.FLASHCARD_RENDERER_STORAGE_ROOT || 'storage/flashcards',
+      concurrency: parseInt(
+        process.env.FLASHCARD_RENDERER_CONCURRENCY || '4',
+        10,
+      ),
+      apiBaseUrl:
+        process.env.FLASHCARD_RENDERER_API_BASE_URL || 'http://localhost:3000',
+    },
   },
   pipelineTracking: {
     enabled: process.env.PIPELINE_TRACKING_ENABLED !== 'false',

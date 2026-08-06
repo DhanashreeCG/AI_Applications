@@ -15,7 +15,9 @@ import type { Response } from 'express';
 import { ApiOperation, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { GenerateFlashcardsDto } from './dto/generate-flashcards.dto';
 import { ListFlashcardTemplatesResponseDto } from './dto/flashcard-template-summary.dto';
+import { RenderFlashcardsDto } from './dto/render-flashcards.dto';
 import { UploadFlashcardTemplatesDto } from './dto/upload-flashcard-template.dto';
+import { FlashcardRendererService } from './flashcard-renderer/renderer/flashcard-renderer.service';
 import { AssetImageService } from './services/asset-image.service';
 import { FlashcardOrchestratorService } from './services/flashcard-orchestrator.service';
 import { FlashcardTemplateService } from './services/flashcard-template.service';
@@ -27,6 +29,7 @@ export class FlashcardsController {
     private readonly orchestrator: FlashcardOrchestratorService,
     private readonly assetImageService: AssetImageService,
     private readonly templateService: FlashcardTemplateService,
+    private readonly rendererService: FlashcardRendererService,
   ) {}
 
   @Post('generate')
@@ -43,6 +46,16 @@ export class FlashcardsController {
     return this.orchestrator.generate(dto, {
       correlationId: correlationId || traceId,
     });
+  }
+
+  @Post('render')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Render flashcards to WebP images and PDF from a GenerateFlashcardsResponse payload',
+  })
+  async render(@Body() dto: RenderFlashcardsDto) {
+    return this.rendererService.render(dto);
   }
 
   @Get('templates')

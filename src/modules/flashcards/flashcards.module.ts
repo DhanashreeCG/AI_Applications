@@ -11,6 +11,10 @@ import { FlashcardSeedService } from './services/flashcard-seed.service';
 import { FlashcardTemplateService } from './services/flashcard-template.service';
 import { TemplateRepository } from './services/template.repository';
 import { TemplateSelectionService } from './services/template-selection.service';
+import { FlashcardRendererService } from './flashcard-renderer/renderer/flashcard-renderer.service';
+import { BrowserPoolService } from './flashcard-renderer/browser/browser-pool.service';
+import { FlashcardPdfService } from './flashcard-renderer/pdf/flashcard-pdf.service';
+import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-storage.service';
 
 @Module({
   imports: [AiModule, SearchModule, StorageModule],
@@ -24,7 +28,15 @@ import { TemplateSelectionService } from './services/template-selection.service'
     FlashcardImageRetrievalService,
     FlashcardOrchestratorService,
     FlashcardSeedService,
+    BrowserPoolService,
+    FlashcardStorageService,
+    FlashcardPdfService,
+    FlashcardRendererService,
   ],
-  exports: [FlashcardOrchestratorService, TemplateSelectionService],
+  exports: [
+    FlashcardOrchestratorService,
+    TemplateSelectionService,
+    FlashcardRendererService,
+  ],
 })
 export class FlashcardsModule {}

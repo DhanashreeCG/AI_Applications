@@ -1,0 +1,243 @@
+:root {
+  --accent: #6c7bff;
+  --accent-2: #ff7ac4;
+  --card-radius: 28px;
+  --card-text: #1b1f3b;
+  --card-muted: #6a739f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--card-text);
+  background: #f4f6ff;
+}
+
+.flashcard-stage {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0;
+}
+
+.flashcard-stage--pdf {
+  flex-direction: column;
+  gap: 0;
+}
+
+.flashcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  background: linear-gradient(170deg, #ffffff, #f4f6ff 62%, #eef1ff);
+  box-shadow: 0 18px 46px rgba(5, 7, 24, 0.18);
+}
+
+.flashcard-stage--pdf .flashcard {
+  box-shadow: none;
+  page-break-after: always;
+}
+
+.flashcard-stage--pdf .flashcard:last-child {
+  page-break-after: auto;
+}
+
+.flashcard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(27, 31, 59, 0.08);
+  pointer-events: none;
+}
+
+.flashcard-region {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.flashcard-region--header,
+.flashcard-region--footer {
+  flex: 0 0 auto;
+}
+
+.flashcard-region--body,
+.flashcard-region--center,
+.flashcard-region--stack,
+.flashcard-region--column,
+.flashcard-region--grid,
+.flashcard-region--overlay,
+.flashcard-region--floating,
+.flashcard-region--circle,
+.flashcard-region--timeline {
+  flex: 1 1 auto;
+}
+
+.flashcard-region__content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  padding: 34px 40px 42px;
+}
+
+.flashcard-region--header .flashcard-region__content,
+.flashcard-region--footer .flashcard-region__content {
+  padding: 24px 40px;
+}
+
+.flashcard-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 500px;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 30% 20%, #dfe5ff 0%, transparent 60%),
+    linear-gradient(135deg, #e9ecff, #f7f0ff);
+}
+
+.flashcard-image img {
+  width: 500px;
+  height: 500px;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+}
+
+.flashcard-image__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 500px;
+  height: 500px;
+  color: var(--card-muted);
+  text-align: center;
+}
+
+.flashcard-image__placeholder-glyph {
+  font-size: 90px;
+  line-height: 1;
+  margin-bottom: 12px;
+  opacity: 0.75;
+}
+
+.flashcard-image__placeholder-text {
+  font-size: 21px;
+  line-height: 1.45;
+  max-width: 420px;
+}
+
+.c-title {
+  font-family: 'Baloo 2', cursive;
+  font-weight: 800;
+  font-size: 62px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: #171a38;
+}
+
+.c-subtitle {
+  font-size: 27px;
+  font-weight: 700;
+  color: #4d5588;
+}
+
+.c-sentence {
+  font-size: 30px;
+  line-height: 1.45;
+  color: #333a63;
+}
+
+.c-callout {
+  border-radius: 20px;
+  padding: 20px 22px;
+  font-size: 26px;
+  line-height: 1.4;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.c-fact {
+  background: rgba(108, 123, 255, 0.1);
+  border-left: 4px solid var(--accent);
+  color: #2c3268;
+}
+
+.c-question {
+  background: rgba(255, 122, 196, 0.12);
+  border-left: 4px solid var(--accent-2);
+  color: #6c2450;
+  font-weight: 700;
+}
+
+.c-answer {
+  background: rgba(70, 211, 154, 0.14);
+  border-left: 4px solid #2fae7c;
+  color: #175a41;
+}
+
+.c-callout .tag {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  opacity: 0.72;
+  white-space: nowrap;
+  padding-top: 2px;
+}
+
+.c-pron {
+  font-family: 'Courier New', monospace;
+  font-size: 25px;
+  color: #5a6194;
+  letter-spacing: 0.02em;
+}
+
+.c-badge {
+  align-self: flex-start;
+  padding: 8px 20px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.c-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.c-chips .chip {
+  padding: 8px 20px;
+  border-radius: 999px;
+  background: rgba(108, 123, 255, 0.12);
+  color: #2c3268;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.c-footer {
+  margin-top: auto;
+  font-size: 20px;
+  color: #7c84ad;
+}
