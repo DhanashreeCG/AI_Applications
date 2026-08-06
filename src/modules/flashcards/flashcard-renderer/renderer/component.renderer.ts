@@ -42,24 +42,24 @@ export class ComponentRenderer {
       case 'image':
         return renderImageComponent(payload, context);
       case 'title':
-        return renderTextComponent(payload, 'c-title');
+        return renderTextComponent(payload, 'u-caption');
       case 'subtitle':
-        return renderTextComponent(payload, 'c-subtitle');
+        return renderTextComponent(payload, 'u-subtitle');
       case 'sentence':
-        return renderTextComponent(payload, 'c-sentence');
+        return renderTextComponent(payload, 'u-sentence');
       case 'fact':
-        return renderCalloutComponent(payload, 'c-fact', 'Fact');
+        return renderCalloutComponent(payload, '', 'Fact');
       case 'question':
-        return renderCalloutComponent(payload, 'c-question', 'Q');
+        return renderCalloutComponent(payload, 'q', 'Q');
       case 'answer':
-        return renderCalloutComponent(payload, 'c-answer', 'A');
+        return renderCalloutComponent(payload, '', 'A');
       case 'badge':
-        return renderTextComponent(payload, 'c-badge');
+        return renderTextComponent(payload, 'u-badge');
       case 'footer':
-        return renderTextComponent(payload, 'c-footer');
+        return renderTextComponent(payload, 'u-footer');
       case 'phonics':
       case 'pronunciation':
-        return renderTextComponent(payload, 'c-pron');
+        return renderTextComponent(payload, 'u-pron');
       case 'chips':
         return renderChipsComponent(payload);
       default:

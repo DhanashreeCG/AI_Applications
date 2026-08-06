@@ -11,8 +11,8 @@ describe('html.util', () => {
 
   it('renders semantic elements with attributes', () => {
     expect(
-      renderElement('div', { class: 'c-title', id: 'title_word' }, 'Apple'),
-    ).toBe('<div class="c-title" id="title_word">Apple</div>');
+      renderElement('div', { class: 'u-caption', id: 'title_word' }, 'Apple'),
+    ).toBe('<div class="u-caption" id="title_word">Apple</div>');
   });
 });
 

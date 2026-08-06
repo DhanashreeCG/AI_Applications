@@ -10,18 +10,16 @@ export function renderImageComponent(
   const source = resolveImageSource(component.assetReference, context.apiBaseUrl);
 
   if (source) {
-  const img = renderElement('img', {
-    src: source,
-    alt: component.assetReference?.caption || '',
-    width: 500,
-    height: 500,
-    loading: 'eager',
-  });
+    const img = renderElement('img', {
+      src: source,
+      alt: component.assetReference?.caption || '',
+      loading: 'eager',
+    });
 
     return renderElement(
       'div',
       {
-        class: 'flashcard-image',
+        class: 'uno-figure',
         'data-component-id': component.componentId,
         'data-component-type': component.componentType,
       },
@@ -34,15 +32,15 @@ export function renderImageComponent(
   );
 
   const placeholder = `
-    <div class="flashcard-image__placeholder">
-      <div class="flashcard-image__placeholder-glyph" aria-hidden="true">🖼</div>
-      <div class="flashcard-image__placeholder-text">Image unavailable</div>
+    <div class="fig-fallback">
+      <div class="glyph" aria-hidden="true">🖼</div>
+      <small>Image unavailable</small>
     </div>`;
 
   return renderElement(
     'div',
     {
-      class: 'flashcard-image',
+      class: 'uno-figure',
       'data-component-id': component.componentId,
       'data-component-type': component.componentType,
     },
@@ -54,10 +52,13 @@ export function renderTextComponent(
   component: EditableComponentPayload,
   cssClass: string,
 ): string {
+  const isLong = (component.content || '').length > 12 && cssClass === 'u-caption';
+  const finalClass = isLong ? `${cssClass} long` : cssClass;
+
   return renderElement(
     'div',
     {
-      class: cssClass,
+      class: finalClass,
       'data-component-id': component.componentId,
       'data-component-type': component.componentType,
     },
@@ -75,7 +76,7 @@ export function renderCalloutComponent(
   return renderElement(
     'div',
     {
-      class: `c-callout ${cssClass}`,
+      class: `u-note ${cssClass}`,
       'data-component-id': component.componentId,
       'data-component-type': component.componentType,
     },
@@ -113,13 +114,13 @@ export function renderChipsComponent(
 ): string {
   const values = parseChipValues(component.content ?? '');
   const chips = values
-    .map((value) => renderElement('span', { class: 'chip' }, escapeHtml(value)))
+    .map((value) => renderElement('span', { class: 'comp-chip' }, escapeHtml(value)))
     .join('');
 
   return renderElement(
     'div',
     {
-      class: 'c-chips',
+      class: 'comp-chips',
       'data-component-id': component.componentId,
       'data-component-type': component.componentType,
     },

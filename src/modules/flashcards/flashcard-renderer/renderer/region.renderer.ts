@@ -29,7 +29,21 @@ export class RegionRenderer {
       return '';
     }
 
-    const regionClass = `flashcard-region flashcard-region--${sanitizeRegionClass(region.id)}`;
+    const regionId = region.id.toLowerCase();
+    let regionClass = '';
+    let innerHtml = renderedComponents;
+
+    if (regionId === 'header') {
+      regionClass = 'uno-top';
+      const logo = `<span class="uno-logo" aria-hidden="true"><span>A</span><span>B</span><span>C</span></span>`;
+      innerHtml += logo;
+    } else if (regionId === 'body') {
+      regionClass = 'uno-main';
+    } else if (regionId === 'footer' || regionId === 'bottom') {
+      regionClass = 'uno-text';
+    } else {
+      regionClass = `uno-region uno-region--${sanitizeRegionClass(region.id)}`;
+    }
 
     return renderElement(
       'section',
@@ -37,7 +51,7 @@ export class RegionRenderer {
         class: regionClass,
         'data-region-id': region.id,
       },
-      renderElement('div', { class: 'flashcard-region__content' }, renderedComponents),
+      innerHtml,
     );
   }
 }

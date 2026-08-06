@@ -64,10 +64,8 @@ describe('CardRenderer', () => {
     expect(html).toContain('data-region-id="body"');
     expect(html).toContain('data-component-id="img_main"');
     expect(html).toContain('data-component-id="title_word"');
-    expect(html).toContain('class="c-title"');
+    expect(html).toContain('class="u-caption"');
     expect(html).toContain('Apple');
-    expect(html).toContain('width="500"');
-    expect(html).toContain('height="500"');
   });
 
   it('skips null text content and still renders image placeholders', () => {
@@ -105,6 +103,6 @@ describe('CardRenderer', () => {
     );
 
     expect(html).toContain('Image unavailable');
-    expect(html).not.toContain('class="c-title"');
+    expect(html).not.toContain('class="u-caption"');
   });
 });
