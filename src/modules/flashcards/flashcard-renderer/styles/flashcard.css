@@ -467,3 +467,115 @@ body {
   flex-direction: column;
   gap: 1.6cqw;
 }
+
+/* ---------- layout engine (configuration-driven) ---------- */
+
+.layout-root {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2cqw;
+}
+
+.layout-root.horizontal {
+  flex-direction: row;
+}
+
+.layout-root.two-column {
+  gap: 2cqw;
+}
+
+.layout-root.two-column .layout-row {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2cqw;
+}
+
+.layout-root.grid .layout-region[data-region-id='body'] .uno-cells {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.layout-root.overlay .layout-region[data-region-id='body'] {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout-root.overlay .layout-region[data-region-id='overlay'] {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.layout-root.split .layout-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2cqw;
+}
+
+.layout-region {
+  display: flex;
+  min-width: 0;
+}
+
+.layout-region[data-region-id='header'] {
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2cqw;
+}
+
+.layout-region[data-region-id='body'] {
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1.6cqw;
+}
+
+.layout-region[data-region-id='footer'],
+.layout-region[data-region-id='bottom'] {
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 1.4cqw;
+  text-align: center;
+}
+
+.layout-region[data-region-id='left'],
+.layout-region[data-region-id='right'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1cqw;
+}
+
+.layout-region.hidden {
+  display: none !important;
+}
+
+.comp-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1cqw;
+  text-align: left;
+}
+
+.comp-option {
+  padding: 1.4cqw 2cqw;
+  border-radius: 2cqw;
+  background: var(--tint);
+  font-size: 3.6cqw;
+  line-height: 1.35;
+  color: #3d3552;
+}

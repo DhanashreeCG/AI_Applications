@@ -20,6 +20,15 @@ export interface TemplateLayoutComponent {
 export interface TemplateLayoutRegion {
   id: string;
   components: TemplateLayoutComponent[];
+  flex?: number | string;
+  gap?: number | string;
+  padding?: number | string;
+  background?: string;
+  border?: string;
+  alignment?: string;
+  orientation?: string;
+  visibility?: boolean;
+  visible?: boolean;
 }
 
 /** Region-based layout. Editable flags live on each component. */

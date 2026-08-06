@@ -37,4 +37,13 @@ export interface FlashcardRenderContext {
   pageWidth: number;
   pageHeight: number;
   warnings: string[];
+  template?: {
+    name: string;
+    description: string | null;
+    templateType: string;
+    layoutType?: string;
+  };
+  request?: {
+    learningObjective?: string;
+  };
 }

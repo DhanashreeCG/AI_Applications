@@ -63,6 +63,8 @@ export class FlashcardRendererService {
       pageWidth: dimensions.width,
       pageHeight: dimensions.height,
       warnings,
+      template: response.template,
+      request: response.request,
     };
 
     const normalizeMs = Date.now() - normalizeStartedAt;

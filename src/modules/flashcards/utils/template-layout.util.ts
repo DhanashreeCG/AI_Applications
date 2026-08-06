@@ -159,7 +159,19 @@ function parseRegionLayout(rawRegions: unknown[]): TemplateLayoutDefinition {
         },
       );
 
-      return { id: regionId, components };
+      return {
+        id: regionId,
+        components,
+        flex: region.flex !== undefined ? (region.flex as any) : undefined,
+        gap: region.gap !== undefined ? (region.gap as any) : undefined,
+        padding: region.padding !== undefined ? (region.padding as any) : undefined,
+        background: region.background !== undefined ? String(region.background) : undefined,
+        border: region.border !== undefined ? String(region.border) : undefined,
+        alignment: region.alignment !== undefined ? String(region.alignment) : undefined,
+        orientation: region.orientation !== undefined ? String(region.orientation) : undefined,
+        visibility: typeof region.visibility === 'boolean' ? region.visibility : undefined,
+        visible: typeof region.visible === 'boolean' ? region.visible : undefined,
+      };
     },
   );
 
