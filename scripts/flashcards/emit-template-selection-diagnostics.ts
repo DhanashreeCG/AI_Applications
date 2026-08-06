@@ -153,6 +153,27 @@ const DIAGNOSTIC_CASES: DiagnosticCaseInput[] = [
     expectedObjective: 'sorting',
     expectedTemplateId: 'tmpl_image_word_sentence',
   },
+  {
+    label: 'calculate verb counting',
+    query: 'Calculate how many stars',
+    ageGroup: '5-6',
+    expectedObjective: 'counting',
+    expectedTemplateId: 'tmpl_image_word_fact',
+  },
+  {
+    label: 'add verb counting',
+    query: 'Add the apples',
+    ageGroup: '5-6',
+    expectedObjective: 'counting',
+    expectedTemplateId: 'tmpl_image_word_fact',
+  },
+  {
+    label: 'reading in range phrasing',
+    query: 'Reading in range practice',
+    ageGroup: '6-8',
+    expectedObjective: 'reading',
+    expectedTemplateId: 'tmpl_image_description_question',
+  },
 ];
 
 const outputPath = path.join(

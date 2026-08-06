@@ -416,4 +416,69 @@ describe('selectBestTemplate', () => {
 
     expect(match).toBeNull();
   });
+
+  it('assigns tier 0 when rule explicitly targets a mismatched objective', () => {
+    const rules = [
+      rule({
+        id: 'counting-rule',
+        templateId: 't-counting',
+        ageMin: 3,
+        ageMax: 4,
+        learningObjectives: ['counting'],
+        templateObjectives: ['vocabulary', 'recognition'],
+        templateAgeGroups: ['3-4'],
+        priority: 110,
+      }),
+      rule({
+        id: 'vocabulary-rule',
+        templateId: 't-vocab',
+        ageMin: 3,
+        ageMax: 4,
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary', 'recognition'],
+        templateAgeGroups: ['3-4'],
+        priority: 100,
+      }),
+    ];
+
+    const ranked = rankTemplateCandidates(rules, {
+      learningObjective: 'comparison',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    const counting = ranked.find((row) => row.ruleId === 'counting-rule');
+    const vocabulary = ranked.find((row) => row.ruleId === 'vocabulary-rule');
+    expect(counting?.breakdown.objectiveRank).toBe(0);
+    expect(counting?.breakdown.effectiveObjectiveRank).toBe(0);
+    expect(vocabulary?.breakdown.effectiveObjectiveRank).toBeGreaterThan(
+      counting?.breakdown.effectiveObjectiveRank ?? 0,
+    );
+  });
+
+  it('normalizes verb-style objective labels when ranking configured rules', () => {
+    const rules = [
+      rule({
+        id: 'counting-rule',
+        templateId: 't-counting',
+        ageMin: 5,
+        ageMax: 6,
+        learningObjectives: ['counting'],
+        templateObjectives: ['counting', 'vocabulary'],
+        templateAgeGroups: ['5-6'],
+      }),
+    ];
+
+    const ranked = rankTemplateCandidates(rules, {
+      learningObjective: 'calculate',
+      ageGroup: '5-6',
+      ageMin: 5,
+      ageMax: 6,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    expect(ranked[0].breakdown.effectiveObjectiveRank).toBe(3);
+  });
 });

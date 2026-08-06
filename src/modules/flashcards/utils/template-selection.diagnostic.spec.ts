@@ -151,6 +151,27 @@ export const DIAGNOSTIC_CASES: DiagnosticCaseInput[] = [
     expectedObjective: 'sorting',
     expectedTemplateId: 'tmpl_image_word_sentence',
   },
+  {
+    label: 'calculate verb counting',
+    query: 'Calculate how many stars',
+    ageGroup: '5-6',
+    expectedObjective: 'counting',
+    expectedTemplateId: 'tmpl_image_word_fact',
+  },
+  {
+    label: 'add verb counting',
+    query: 'Add the apples',
+    ageGroup: '5-6',
+    expectedObjective: 'counting',
+    expectedTemplateId: 'tmpl_image_word_fact',
+  },
+  {
+    label: 'reading in range phrasing',
+    query: 'Reading in range practice',
+    ageGroup: '6-8',
+    expectedObjective: 'reading',
+    expectedTemplateId: 'tmpl_image_description_question',
+  },
 ];
 
 const SEED_RULES = buildSeedCatalog();
@@ -175,8 +196,8 @@ describe('template selection diagnostics', () => {
     },
   );
 
-  it('emits full ranking breakdown for all 20 diagnostic cases', () => {
-    expect(results).toHaveLength(20);
+  it('emits full ranking breakdown for all diagnostic cases', () => {
+    expect(results).toHaveLength(DIAGNOSTIC_CASES.length);
 
     for (const result of results) {
       expect(result.candidates.every((row) => row.rank >= 1)).toBe(true);
@@ -190,13 +211,11 @@ describe('template selection diagnostics', () => {
 
     const markdown = formatDiagnosticReportMarkdown(results);
     expect(markdown).toContain('Template Selection Ranking Breakdown');
-    expect(markdown.match(/^## /gm)?.length).toBe(20);
+    expect(markdown.match(/^## /gm)?.length).toBe(DIAGNOSTIC_CASES.length);
   });
 
   it('lists fragile passes where objective-tier gap is below 1', () => {
     const fragile = results.filter((result) => result.fragilePass);
-
-    expect(fragile.length).toBeGreaterThan(0);
 
     for (const result of fragile) {
       expect(result.objectiveTierGap).toBe(0);
@@ -214,12 +233,41 @@ describe('template selection diagnostics', () => {
       'match pairs',
       'no keyword age default vocabulary',
       'quiz keyword',
+      'reading in range phrasing',
       'reading story',
       'recognition age default 2-3',
       'science facts',
       'spot recognition',
       'vs comparison shorthand',
     ]);
+  });
+
+  it('demotes unrelated objective rules for age-default vocabulary queries', () => {
+    const result = results.find(
+      (entry) => entry.label === 'no keyword age default vocabulary',
+    );
+    expect(result).toBeDefined();
+
+    for (const ruleId of [
+      'rule_obj_3_4_counting',
+      'rule_obj_3_4_comparison',
+      'rule_obj_3_4_sorting',
+    ]) {
+      const row = result!.candidates.find((candidate) => candidate.ruleId === ruleId);
+      expect(row?.effectiveObjectiveRank).toBe(0);
+    }
+  });
+
+  it('gives unrelated explicit rule objectives tier 0 for comparison requests', () => {
+    const result = results.find((entry) => entry.label === 'compare keyword');
+    expect(result).toBeDefined();
+
+    const phonics = result!.candidates.find(
+      (row) => row.ruleId === 'rule_obj_3_4_phonics',
+    );
+    expect(phonics).toBeDefined();
+    expect(phonics!.effectiveObjectiveRank).toBe(0);
+    expect(phonics!.rawObjectiveRank).toBe(0);
   });
 
   it('documents objective tie-break priority for identify + count', () => {

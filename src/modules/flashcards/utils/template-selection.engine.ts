@@ -133,12 +133,73 @@ function normalizeDifficulty(value: string): string {
   return DIFFICULTY_ALIASES[key] ?? key;
 }
 
+/** Canonical objective labels for configured rule/template lists and ranking. */
+const OBJECTIVE_ALIASES: Record<string, string> = {
+  // Counting / math
+  count: 'counting',
+  counting: 'counting',
+  calculate: 'counting',
+  calculating: 'counting',
+  add: 'counting',
+  addition: 'counting',
+  sum: 'counting',
+  tally: 'counting',
+  amount: 'counting',
+  math_operations: 'counting',
+  // Comparison
+  compare: 'comparison',
+  comparing: 'comparison',
+  difference: 'comparison',
+  bigger_smaller: 'comparison',
+  // Sorting / classification phrasing
+  sort: 'sorting',
+  sorting: 'sorting',
+  grouping: 'sorting',
+  categorization: 'classification',
+  // Phonics / reading
+  read: 'reading',
+  reading: 'reading',
+  reading_in_range: 'reading',
+  phonics: 'phonics',
+  letters: 'phonics',
+  sounds: 'phonics',
+  pronunciation: 'phonics',
+  language_learning: 'phonics',
+  // Identification / matching
+  identify: 'recognition',
+  identification: 'recognition',
+  find: 'recognition',
+  spot: 'recognition',
+  match: 'matching',
+  matching: 'matching',
+  pair: 'matching',
+  // Question & answer
+  q_and_a: 'question_answer',
+  qa: 'question_answer',
+  question_and_answer: 'question_answer',
+  quiz: 'question_answer',
+  ask: 'question_answer',
+};
+
+function inflectionVariants(key: string): string[] {
+  const variants = [key];
+  if (key.endsWith('ing') && key.length > 4) {
+    variants.push(key.slice(0, -3));
+  }
+  if (key.endsWith('ed') && key.length > 3) {
+    variants.push(key.slice(0, -2));
+  }
+  if (key.endsWith('s') && key.length > 2 && !key.endsWith('ss')) {
+    variants.push(key.slice(0, -1));
+  }
+  return variants;
+}
+
 function normalizeObjective(value: string): string {
   const key = normalize(value).replace(/[\s-]+/g, '_');
-  if (key === 'language_learning') return 'phonics';
-  if (key === 'identification') return 'recognition';
-  if (key === 'q_and_a' || key === 'qa' || key === 'question_and_answer') {
-    return 'question_answer';
+  for (const variant of inflectionVariants(key)) {
+    const alias = OBJECTIVE_ALIASES[variant];
+    if (alias) return alias;
   }
   return key;
 }
@@ -179,6 +240,18 @@ function objectiveRelevance(
   return configuredKeys.some((objective) => genericFallbacks.includes(objective))
     ? 1
     : 0;
+}
+
+/**
+ * When a rule lists explicit learning objectives that do not match or relate
+ * to the request, template-level generic objectives must not boost the rank.
+ */
+function ruleExplicitlyMismatches(
+  requested: string,
+  ruleObjectives: string[],
+): boolean {
+  if (!ruleObjectives.length) return false;
+  return objectiveRelevance(requested, ruleObjectives) === 0;
 }
 
 function listIncludes(
@@ -324,18 +397,23 @@ export function rankTemplateCandidates(
       normalizeObjective,
     );
 
+    const explicitRuleMismatch = ruleExplicitlyMismatches(
+      criteria.learningObjective,
+      rule.learningObjectives,
+    );
     const templateObjectiveRank = objectiveRelevance(
       criteria.learningObjective,
       rule.templateObjectives,
     );
-    const ruleObjectiveRank = objectiveRelevance(
-      criteria.learningObjective,
-      rule.learningObjectives,
-    );
-    const rawObjectiveRank = Math.max(
-      templateObjectiveRank,
-      ruleObjectiveRank,
-    );
+    const ruleObjectiveRank = explicitRuleMismatch
+      ? 0
+      : objectiveRelevance(
+          criteria.learningObjective,
+          rule.learningObjectives,
+        );
+    const rawObjectiveRank = explicitRuleMismatch
+      ? 0
+      : Math.max(templateObjectiveRank, ruleObjectiveRank);
     const objectiveRank = effectiveObjectiveRank(
       rawObjectiveRank,
       criteria.objectiveConfidence,

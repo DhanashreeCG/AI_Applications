@@ -249,7 +249,7 @@ export function formatDiagnosticReportMarkdown(
 ): string {
   const fragile = results.filter((result) => result.fragilePass);
   const lines: string[] = [
-    '# Template Selection Ranking Breakdown (20 diagnostic cases)',
+    '# Template Selection Ranking Breakdown (23 diagnostic cases)',
     '',
     'Generated from `template-selection.diagnostic.util.ts` against the seed catalog (`TEMPLATE_SEEDS` + `ALL_RULE_SEEDS`).',
     '',

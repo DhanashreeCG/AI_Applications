@@ -430,6 +430,27 @@ Adding a new flashcard layout should only require template + selection-rule conf
 
 ---
 
+## Changelog (2026-08-06) — objective rank normalization & rule mismatch gate
+
+### Rule mismatch gate (`template-selection.engine.ts`)
+
+When a `TemplateSelectionRule` lists explicit `learningObjectives` that do not match or relate to the requested objective, the candidate receives **tier 0** — generic `templateObjectives` on the underlying template can no longer boost the rank via `Math.max()`.
+
+**Effect:** `rule_obj_3_4_counting`, `rule_obj_3_4_comparison`, and `rule_obj_3_4_sorting` are demoted on vocabulary age-default queries instead of tying at tier 2.
+
+### `normalizeObjective()` alias expansion
+
+Engine-side canonicalization now maps verb/action phrasings (e.g. `calculate` → `counting`, `reading_in_range` → `reading`, `grouping` → `sorting`) with hyphen/underscore/whitespace normalization and simple inflection stripping before tier evaluation.
+
+### Diagnostics
+
+- Harness expanded to **23** cases (verb-variation regressions for counting/reading).
+- Regenerate: `npm run flashcards:emit-diagnostics`
+- Coverage script: `npm run flashcards:rule-coverage` — seed catalog has no `(template, ageGroup, objective)` gaps.
+- **Fragile pass:** thirteen of twenty-three seed-catalog cases share `effectiveObjectiveRank` between #1 and #2 (listed at top of the breakdown doc).
+
+---
+
 ## Changelog (2026-08-05) — template selection hardening
 
 ### `objectiveConfidence` (request analysis output)
@@ -462,7 +483,6 @@ When `objectiveConfidence === 'age_default'`, raw objective rank is capped at **
 
 - Harness: `src/modules/flashcards/utils/template-selection.diagnostic.spec.ts` + `template-selection.diagnostic.util.ts`
 - Artifact: `docs/flashcards/TEMPLATE_SELECTION_RANKING_BREAKDOWN.md` (regenerate: `npm run flashcards:emit-diagnostics`)
-- **Fragile pass:** top two candidates share the same `effectiveObjectiveRank` (tier gap `< 1`); winner depends on age/grade/subject/difficulty/version/priority/rule-id tie-breakers. Twelve of twenty seed-catalog cases are fragile (listed at top of the breakdown doc).
 
 ### `OBJECTIVE_RULE_SEEDS` — when they apply
 
@@ -480,7 +500,7 @@ When `objectiveConfidence === 'age_default'`, raw objective rank is capped at **
 | Staging | Unknown — likely missing objective rules if DB predates this session | No |
 | Production | Unknown — same as staging | No |
 
-To check an environment: `SELECT id FROM "TemplateSelectionRule" WHERE id LIKE 'rule_obj_%';` — expect 8 rows when applied.
+To check an environment: `SELECT id FROM "TemplateSelectionRule" WHERE id LIKE 'rule_obj_%';` — expect 7 rows when applied.
 
 ### Rule-id tie-break determinism
 
