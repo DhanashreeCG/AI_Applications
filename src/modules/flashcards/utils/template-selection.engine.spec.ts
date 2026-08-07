@@ -451,8 +451,14 @@ describe('selectBestTemplate', () => {
 
     const counting = ranked.find((row) => row.ruleId === 'counting-rule');
     const vocabulary = ranked.find((row) => row.ruleId === 'vocabulary-rule');
-    expect(counting?.breakdown.objectiveRank).toBe(0);
+    // counting rule objectives ['counting'] have no relation to 'comparison'
+    // → objectiveRelevance = 0. But RELATED_OBJECTIVES['comparison']
+    // includes 'matching' and 'recognition'. 'counting' not in related.
+    // Actually 'counting' is not related to 'comparison'. So tier = 0.
     expect(counting?.breakdown.effectiveObjectiveRank).toBe(0);
+    // vocabulary rule objectives ['vocabulary'] — 'vocabulary' IS in
+    // RELATED_OBJECTIVES['comparison'] → tier 2.
+    expect(vocabulary?.breakdown.effectiveObjectiveRank).toBe(2);
     expect(vocabulary?.breakdown.effectiveObjectiveRank).toBeGreaterThan(
       counting?.breakdown.effectiveObjectiveRank ?? 0,
     );
@@ -480,5 +486,141 @@ describe('selectBestTemplate', () => {
     });
 
     expect(ranked[0].breakdown.effectiveObjectiveRank).toBe(3);
+  });
+
+  it('prefers QA rule over comparison rule for question_answer requests', () => {
+    const rules = [
+      rule({
+        id: 'comparison-rule',
+        templateId: 't-qa-template',
+        ageMin: 6,
+        ageMax: 8,
+        learningObjectives: ['comparison', 'classification', 'reading'],
+        templateObjectives: ['question_answer', 'reading', 'identification'],
+        templateAgeGroups: ['6-8'],
+        priority: 110,
+      }),
+      rule({
+        id: 'qa-rule',
+        templateId: 't-qa-template',
+        ageMin: 6,
+        ageMax: 8,
+        learningObjectives: ['question_answer', 'reading', 'identification'],
+        templateObjectives: ['question_answer', 'reading', 'identification'],
+        templateAgeGroups: ['6-8'],
+        priority: 100,
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'question_answer',
+      ageGroup: '6-8',
+      ageMin: 6,
+      ageMax: 8,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    // QA rule has exact objective match; comparison rule only has related
+    // (reading).  QA must win despite lower priority.
+    expect(match?.ruleId).toBe('qa-rule');
+  });
+
+  it('prefers facts rule over counting rule for science_facts requests', () => {
+    const rules = [
+      rule({
+        id: 'counting-rule',
+        templateId: 't-facts',
+        ageMin: 5,
+        ageMax: 6,
+        learningObjectives: ['counting', 'matching', 'vocabulary'],
+        templateObjectives: ['science_facts', 'vocabulary', 'general_knowledge'],
+        templateAgeGroups: ['5-6'],
+        priority: 110,
+      }),
+      rule({
+        id: 'facts-rule',
+        templateId: 't-facts',
+        ageMin: 5,
+        ageMax: 6,
+        learningObjectives: ['science_facts', 'vocabulary', 'general_knowledge'],
+        templateObjectives: ['science_facts', 'vocabulary', 'general_knowledge'],
+        templateAgeGroups: ['5-6'],
+        priority: 100,
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'science_facts',
+      ageGroup: '5-6',
+      ageMin: 5,
+      ageMax: 6,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    // Facts rule has exact objective match; counting rule's objectives
+    // only have generic relevance (vocabulary).
+    expect(match?.ruleId).toBe('facts-rule');
+  });
+
+  it('prefers vocabulary rule over phonics rule on age-default vocabulary (exactObjective tiebreak)', () => {
+    const rules = [
+      rule({
+        id: 'phonics-rule',
+        templateId: 't-shared',
+        ageMin: 3,
+        ageMax: 4,
+        learningObjectives: ['phonics', 'reading'],
+        templateObjectives: ['vocabulary', 'recognition', 'reading'],
+        templateAgeGroups: ['3-4'],
+        priority: 110,
+      }),
+      rule({
+        id: 'vocabulary-rule',
+        templateId: 't-shared',
+        ageMin: 3,
+        ageMax: 4,
+        learningObjectives: ['vocabulary', 'recognition', 'reading'],
+        templateObjectives: ['vocabulary', 'recognition', 'reading'],
+        templateAgeGroups: ['3-4'],
+        priority: 100,
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+      objectiveConfidence: 'age_default',
+    });
+
+    // Both rules reach effective tier 2 (age_default cap), but vocabulary rule
+    // has ruleObjectiveExact=true → exactObjective=true in sort.
+    expect(match?.ruleId).toBe('vocabulary-rule');
+  });
+
+  it('uses template objectives for synthetic rules without explicit objectives', () => {
+    const rules = [
+      rule({
+        id: 'synthetic-tmpl',
+        templateId: 't-vocab',
+        learningObjectives: [],   // synthetic — no rule objectives
+        templateObjectives: ['vocabulary', 'recognition'],
+        templateAgeGroups: ['3-4'],
+        priority: 50,
+      }),
+    ];
+
+    const ranked = rankTemplateCandidates(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    // Template objectives should still be used for synthetic rules.
+    expect(ranked[0].breakdown.effectiveObjectiveRank).toBe(3);
+    expect(ranked[0].breakdown.exactObjective).toBe(true);
   });
 });

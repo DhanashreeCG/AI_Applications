@@ -236,7 +236,6 @@ describe('template selection diagnostics', () => {
       'reading in range phrasing',
       'reading story',
       'recognition age default 2-3',
-      'science facts',
       'spot recognition',
       'vs comparison shorthand',
     ]);

@@ -132,19 +132,22 @@ Topic/`topics` / `intents` do **not** select templates. Topic only affects gener
 
 Uses `effectiveObjectiveRank` — when `objectiveConfidence === 'age_default'`, raw objective rank is capped at **2** (related tier) so age-inferred labels do not over-power exact-age rule matches.
 
+**Objective rank source:** When a rule defines explicit `learningObjectives`, only those objectives determine the candidate's objective rank. Template-level objectives are **not** merged via `Math.max()`. Template objectives only provide signal for synthetic fallback rules (templates without any selection rule). This prevents a rule created for one purpose (e.g. comparison) from borrowing a tier-3 rank from the underlying template's broader objectives (e.g. question_answer).
+
 1. **Objective relevance** (highest weight; uses effective rank when age-default)
-   - `3` exact objective on template or rule
+   - `3` exact objective on rule (or template for synthetic rules)
    - `2` related objective fallback
    - `1` generic fallback (`vocabulary` / `recognition` / `general_knowledge`)
    - `0` no useful objective signal
-2. Exact age-group match
-3. Exact grade match
-4. Exact subject match
-5. Exact difficulty match
-6. Newer `templateVersion`
-7. Higher rule `priority`
-8. Higher computed `score`
-9. Stable rule id
+2. **Exact objective** — rule's own objectives directly match the requested objective (new tiebreaker)
+3. Exact age-group match
+4. Exact grade match
+5. Exact subject match
+6. Exact difficulty match
+7. Newer `templateVersion`
+8. Higher rule `priority`
+9. Higher computed `score`
+10. Stable rule id
 
 `rankTemplateCandidates()` returns the full ordered list with per-candidate score breakdown. When `PIPELINE_STORE_AI_PAYLOAD=true`, the top 10 candidates are attached to the `TEMPLATE_SELECTION` pipeline stage metadata as `rankingBreakdown`.
 
@@ -430,6 +433,41 @@ Adding a new flashcard layout should only require template + selection-rule conf
 
 ---
 
+## Changelog (2026-08-06b) — rule-scoped objective rank & exactObjective sort
+
+### Rule-scoped objective rank (`template-selection.engine.ts`)
+
+When a `TemplateSelectionRule` defines explicit `learningObjectives`, only those objectives determine the candidate's objective tier. The previous `Math.max(templateObjectiveRank, ruleObjectiveRank)` merge allowed a rule created for one purpose (e.g. comparison) to borrow a tier-3 rank from the underlying template's broader objectives (e.g. question_answer). This caused 4+ wrong winners in the seed catalog.
+
+**Removed:** `ruleExplicitlyMismatches()` gate — superseded by the rule-scoped rank source. The gate was too lenient (it only triggered when `objectiveRelevance === 0`, allowing tangentially related rules to escape).
+
+**New sort dimension:** `exactObjective` — inserted between `effectiveObjectiveRank` and `exactAge`. When two candidates tie on effective tier, the one whose rule directly lists the requested objective wins (e.g. QA rule beats comparison rule for a question_answer request even when both reach tier 3 via different paths).
+
+**Updated `objectiveExactBoost`:** When a rule has explicit objectives, `templateObjectiveExact` no longer inflates the score boost. Only `ruleObjectiveExact` grants the +120 boost.
+
+### Fixed diagnostic cases
+
+| Case | Before (wrong winner) | After (correct winner) |
+|---|---|---|
+| quiz keyword (question_answer, 6-8) | `rule_obj_6_8_comparison` | `rule_age_6_8_qa` |
+| science facts (science_facts, 5-6) | `rule_obj_5_6_counting` | `rule_age_5_6_facts` |
+| no keyword age default (vocabulary, 3-4) | `rule_obj_3_4_phonics` | `rule_age_3_4_vocabulary` |
+| about noise word (vocabulary, 3-4) | `rule_obj_3_4_phonics` | `rule_age_3_4_vocabulary` |
+
+### Diagnostics
+
+- Fragile passes reduced from **13 → 12** of 23 cases.
+- `science facts` case is **no longer fragile** (tier gap = 1, score gap = 1150).
+- Remaining fragile cases are structurally expected: multiple rules legitimately share the same objective tier (e.g. `match pairs` where comparison/counting/sorting rules all list `matching` in their objectives).
+- Regenerate: `npm run flashcards:emit-diagnostics`
+- Unit tests expanded to **19** cases (4 new regression tests for the fixed scenarios).
+
+### Explicit `templateId` bypass (controller)
+
+Confirmed already implemented in `flashcard-orchestrator.service.ts`. When `dto.templateId` is provided, the orchestrator calls `loadExplicitTemplate()` which skips both `EDUCATIONAL_OBJECTIVE_DETERMINATION` and `TEMPLATE_SELECTION` pipeline stages. The template is loaded directly by ID via `TemplateSelectionService.selectByTemplateId()`. No code changes needed.
+
+---
+
 ## Changelog (2026-08-06) — objective rank normalization & rule mismatch gate
 
 ### Rule mismatch gate (`template-selection.engine.ts`)
@@ -437,6 +475,8 @@ Adding a new flashcard layout should only require template + selection-rule conf
 When a `TemplateSelectionRule` lists explicit `learningObjectives` that do not match or relate to the requested objective, the candidate receives **tier 0** — generic `templateObjectives` on the underlying template can no longer boost the rank via `Math.max()`.
 
 **Effect:** `rule_obj_3_4_counting`, `rule_obj_3_4_comparison`, and `rule_obj_3_4_sorting` are demoted on vocabulary age-default queries instead of tying at tier 2.
+
+**Note:** This gate was superseded by the rule-scoped objective rank fix (2026-08-06b) which eliminates the `Math.max()` merge entirely.
 
 ### `normalizeObjective()` alias expansion
 
@@ -447,7 +487,7 @@ Engine-side canonicalization now maps verb/action phrasings (e.g. `calculate` �
 - Harness expanded to **23** cases (verb-variation regressions for counting/reading).
 - Regenerate: `npm run flashcards:emit-diagnostics`
 - Coverage script: `npm run flashcards:rule-coverage` — seed catalog has no `(template, ageGroup, objective)` gaps.
-- **Fragile pass:** thirteen of twenty-three seed-catalog cases share `effectiveObjectiveRank` between #1 and #2 (listed at top of the breakdown doc).
+- **Fragile pass:** twelve of twenty-three seed-catalog cases share `effectiveObjectiveRank` between #1 and #2 (listed at top of the breakdown doc).
 
 ---
 

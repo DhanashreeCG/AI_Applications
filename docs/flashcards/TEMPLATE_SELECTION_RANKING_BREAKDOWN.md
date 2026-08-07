@@ -4,18 +4,17 @@ Generated from `template-selection.diagnostic.util.ts` against the seed catalog 
 
 **Fragile pass definition:** top two candidates share the same `effectiveObjectiveRank` (objective-tier gap `< 1`), so the winner relies on age/grade/subject/difficulty/version/priority/rule-id tie-breakers even when the selected template matches expectations.
 
-**Fragile passes in this catalog:** 13
+**Fragile passes in this catalog:** 12
 
-- **no keyword age default vocabulary** — #1 (rule_obj_3_4_phonics) and #2 (rule_age_3_4_vocabulary) share effectiveObjectiveRank=2; winner decided by downstream tie-breakers; total score gap=-30
-- **about noise word does not hijack objective** — #1 (rule_obj_3_4_phonics) and #2 (rule_age_3_4_vocabulary) share effectiveObjectiveRank=2; winner decided by downstream tie-breakers; total score gap=-30
-- **quiz keyword** — #1 (rule_obj_6_8_comparison) and #2 (rule_age_6_8_qa) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=-30
-- **science facts** — #1 (rule_obj_5_6_counting) and #2 (rule_age_5_6_facts) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=-30
-- **recognition age default 2-3** — #1 (rule_age_2_3_recognition) and #2 (rule_obj_3_4_comparison) share effectiveObjectiveRank=2; winner decided by downstream tie-breakers; total score gap=530
+- **no keyword age default vocabulary** — #1 (rule_age_3_4_vocabulary) and #2 (rule_age_2_3_recognition) share effectiveObjectiveRank=2; winner decided by downstream tie-breakers; total score gap=500
+- **about noise word does not hijack objective** — #1 (rule_age_3_4_vocabulary) and #2 (rule_age_2_3_recognition) share effectiveObjectiveRank=2; winner decided by downstream tie-breakers; total score gap=500
+- **quiz keyword** — #1 (rule_age_6_8_qa) and #2 (rule_age_8_plus_quiz) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=500
+- **recognition age default 2-3** — #1 (rule_age_2_3_recognition) and #2 (rule_age_3_4_vocabulary) share effectiveObjectiveRank=2; winner decided by downstream tie-breakers; total score gap=500
 - **match pairs** — #1 (rule_obj_3_4_comparison) and #2 (rule_obj_3_4_counting) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=0
 - **classify categories** — #1 (rule_obj_5_6_comparison) and #2 (rule_obj_6_8_comparison) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=600
 - **reading story** — #1 (rule_obj_6_8_comparison) and #2 (rule_age_6_8_qa) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=10
 - **difference comparison phrasing** — #1 (rule_obj_5_6_comparison) and #2 (rule_obj_6_8_comparison) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=600
-- **spot recognition** — #1 (rule_age_2_3_recognition) and #2 (rule_obj_3_4_comparison) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=530
+- **spot recognition** — #1 (rule_age_2_3_recognition) and #2 (rule_age_3_4_vocabulary) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=500
 - **grade 1 vegetables EVS** — #1 (rule_obj_5_6_counting) and #2 (rule_age_5_6_facts) share effectiveObjectiveRank=2; winner decided by downstream tie-breakers; total score gap=10
 - **vs comparison shorthand** — #1 (rule_obj_6_8_comparison) and #2 (rule_obj_5_6_comparison) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=500
 - **reading in range phrasing** — #1 (rule_obj_6_8_comparison) and #2 (rule_age_6_8_qa) share effectiveObjectiveRank=3; winner decided by downstream tie-breakers; total score gap=10
@@ -109,26 +108,26 @@ Generated from `template-selection.diagnostic.util.ts` against the seed catalog 
 - **Query:** `Generate flashcards on vegetables`
 - **Age group:** 3-4
 - **Resolved:** objective=`vocabulary`, confidence=`age_default`, topic=`vegetables`
-- **Winner:** `tmpl_image_word_sentence` via rule `rule_obj_3_4_phonics` (expected `tmpl_image_word_sentence`)
-- **Gaps:** total score #1−#2=-30, objective tier #1−#2=0 **FRAGILE**
+- **Winner:** `tmpl_image_word_sentence` via rule `rule_age_3_4_vocabulary` (expected `tmpl_image_word_sentence`)
+- **Gaps:** total score #1−#2=500, objective tier #1−#2=0 **FRAGILE**
 
 | Rank | Template | Rule ID | Total | Obj tier (eff) | Age | Grade | Subject | Diff | Ver | Priority |
 |---|---|---|---:|---:|:-:|:-:|:-:|:-:|:-:|---:|
-| 1 | `tmpl_image_word_sentence` | `rule_obj_3_4_phonics` | 2790 | 2 (raw 3) | Y | n | n | Y | 1.0 | 110 |
-| 2 | `tmpl_image_word_sentence` | `rule_age_3_4_vocabulary` | 2820 | 2 (raw 3) | Y | n | n | Y | 1.0 | 100 |
-| 3 | `tmpl_large_image_word` | `rule_age_2_3_recognition` | 2320 | 2 (raw 3) | n | n | n | Y | 1.0 | 100 |
-| 4 | `tmpl_image_word_sentence` | `rule_obj_3_4_comparison` | 790 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
-| 5 | `tmpl_image_word_sentence` | `rule_obj_3_4_counting` | 790 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
-| 6 | `tmpl_image_word_sentence` | `rule_obj_3_4_sorting` | 790 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
+| 1 | `tmpl_image_word_sentence` | `rule_age_3_4_vocabulary` | 2820 | 2 (raw 3) | Y | n | n | Y | 1.0 | 100 |
+| 2 | `tmpl_large_image_word` | `rule_age_2_3_recognition` | 2320 | 2 (raw 3) | n | n | n | Y | 1.0 | 100 |
+| 3 | `tmpl_image_word_sentence` | `rule_obj_3_4_phonics` | 2670 | 2 (raw 2) | Y | n | n | Y | 1.0 | 110 |
+| 4 | `tmpl_image_word_sentence` | `rule_obj_3_4_comparison` | 670 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
+| 5 | `tmpl_image_word_sentence` | `rule_obj_3_4_counting` | 670 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
+| 6 | `tmpl_image_word_sentence` | `rule_obj_3_4_sorting` | 670 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
 
 <details><summary>Score component detail (all candidates)</summary>
 
-- **#1 `rule_obj_3_4_phonics`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#2 `rule_age_3_4_vocabulary`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#3 `rule_age_2_3_recognition`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#4 `rule_obj_3_4_comparison`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#5 `rule_obj_3_4_counting`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#6 `rule_obj_3_4_sorting`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
+- **#1 `rule_age_3_4_vocabulary`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#2 `rule_age_2_3_recognition`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#3 `rule_obj_3_4_phonics`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#4 `rule_obj_3_4_comparison`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#5 `rule_obj_3_4_counting`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#6 `rule_obj_3_4_sorting`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
 
 </details>
 
@@ -137,26 +136,26 @@ Generated from `template-selection.diagnostic.util.ts` against the seed catalog 
 - **Query:** `Flashcards about animals`
 - **Age group:** 3-4
 - **Resolved:** objective=`vocabulary`, confidence=`age_default`, topic=`animals`
-- **Winner:** `tmpl_image_word_sentence` via rule `rule_obj_3_4_phonics` (expected `tmpl_image_word_sentence`)
-- **Gaps:** total score #1−#2=-30, objective tier #1−#2=0 **FRAGILE**
+- **Winner:** `tmpl_image_word_sentence` via rule `rule_age_3_4_vocabulary` (expected `tmpl_image_word_sentence`)
+- **Gaps:** total score #1−#2=500, objective tier #1−#2=0 **FRAGILE**
 
 | Rank | Template | Rule ID | Total | Obj tier (eff) | Age | Grade | Subject | Diff | Ver | Priority |
 |---|---|---|---:|---:|:-:|:-:|:-:|:-:|:-:|---:|
-| 1 | `tmpl_image_word_sentence` | `rule_obj_3_4_phonics` | 2790 | 2 (raw 3) | Y | n | n | Y | 1.0 | 110 |
-| 2 | `tmpl_image_word_sentence` | `rule_age_3_4_vocabulary` | 2820 | 2 (raw 3) | Y | n | n | Y | 1.0 | 100 |
-| 3 | `tmpl_large_image_word` | `rule_age_2_3_recognition` | 2320 | 2 (raw 3) | n | n | n | Y | 1.0 | 100 |
-| 4 | `tmpl_image_word_sentence` | `rule_obj_3_4_comparison` | 790 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
-| 5 | `tmpl_image_word_sentence` | `rule_obj_3_4_counting` | 790 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
-| 6 | `tmpl_image_word_sentence` | `rule_obj_3_4_sorting` | 790 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
+| 1 | `tmpl_image_word_sentence` | `rule_age_3_4_vocabulary` | 2820 | 2 (raw 3) | Y | n | n | Y | 1.0 | 100 |
+| 2 | `tmpl_large_image_word` | `rule_age_2_3_recognition` | 2320 | 2 (raw 3) | n | n | n | Y | 1.0 | 100 |
+| 3 | `tmpl_image_word_sentence` | `rule_obj_3_4_phonics` | 2670 | 2 (raw 2) | Y | n | n | Y | 1.0 | 110 |
+| 4 | `tmpl_image_word_sentence` | `rule_obj_3_4_comparison` | 670 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
+| 5 | `tmpl_image_word_sentence` | `rule_obj_3_4_counting` | 670 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
+| 6 | `tmpl_image_word_sentence` | `rule_obj_3_4_sorting` | 670 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
 
 <details><summary>Score component detail (all candidates)</summary>
 
-- **#1 `rule_obj_3_4_phonics`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#2 `rule_age_3_4_vocabulary`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#3 `rule_age_2_3_recognition`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#4 `rule_obj_3_4_comparison`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#5 `rule_obj_3_4_counting`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#6 `rule_obj_3_4_sorting`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
+- **#1 `rule_age_3_4_vocabulary`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#2 `rule_age_2_3_recognition`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#3 `rule_obj_3_4_phonics`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#4 `rule_obj_3_4_comparison`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#5 `rule_obj_3_4_counting`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#6 `rule_obj_3_4_sorting`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
 
 </details>
 
@@ -193,25 +192,25 @@ Generated from `template-selection.diagnostic.util.ts` against the seed catalog 
 - **Query:** `Make a quiz about animals`
 - **Age group:** 6-8
 - **Resolved:** objective=`question_answer`, confidence=`exact_keyword`, topic=`quiz animals`
-- **Winner:** `tmpl_image_description_question` via rule `rule_obj_6_8_comparison` (expected `tmpl_image_description_question`)
-- **Gaps:** total score #1−#2=-30, objective tier #1−#2=0 **FRAGILE**
+- **Winner:** `tmpl_image_description_question` via rule `rule_age_6_8_qa` (expected `tmpl_image_description_question`)
+- **Gaps:** total score #1−#2=500, objective tier #1−#2=0 **FRAGILE**
 
 | Rank | Template | Rule ID | Total | Obj tier (eff) | Age | Grade | Subject | Diff | Ver | Priority |
 |---|---|---|---:|---:|:-:|:-:|:-:|:-:|:-:|---:|
-| 1 | `tmpl_image_description_question` | `rule_obj_6_8_comparison` | 3790 | 3 (raw 3) | Y | n | n | Y | 1.0 | 110 |
-| 2 | `tmpl_image_description_question` | `rule_age_6_8_qa` | 3820 | 3 (raw 3) | Y | n | n | Y | 1.0 | 100 |
-| 3 | `tmpl_image_fact_quiz` | `rule_age_8_plus_quiz` | 3320 | 3 (raw 3) | n | n | n | Y | 1.0 | 100 |
-| 4 | `tmpl_image_word_fact` | `rule_obj_5_6_counting` | 2170 | 2 (raw 2) | n | n | n | Y | 1.0 | 110 |
-| 5 | `tmpl_image_word_fact` | `rule_age_5_6_facts` | 2160 | 2 (raw 2) | n | n | n | Y | 1.0 | 100 |
+| 1 | `tmpl_image_description_question` | `rule_age_6_8_qa` | 3820 | 3 (raw 3) | Y | n | n | Y | 1.0 | 100 |
+| 2 | `tmpl_image_fact_quiz` | `rule_age_8_plus_quiz` | 3320 | 3 (raw 3) | n | n | n | Y | 1.0 | 100 |
+| 3 | `tmpl_image_description_question` | `rule_obj_6_8_comparison` | 2670 | 2 (raw 2) | Y | n | n | Y | 1.0 | 110 |
+| 4 | `tmpl_image_word_fact` | `rule_age_5_6_facts` | 2160 | 2 (raw 2) | n | n | n | Y | 1.0 | 100 |
+| 5 | `tmpl_image_word_fact` | `rule_obj_5_6_counting` | 1170 | 1 (raw 1) | n | n | n | Y | 1.0 | 110 |
 | 6 | `tmpl_image_word_fact` | `rule_obj_5_6_comparison` | 170 | 0 (raw 0) | n | n | n | Y | 1.0 | 110 |
 
 <details><summary>Score component detail (all candidates)</summary>
 
-- **#1 `rule_obj_6_8_comparison`:** objectiveRank=3000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#2 `rule_age_6_8_qa`:** objectiveRank=3000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#3 `rule_age_8_plus_quiz`:** objectiveRank=3000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#4 `rule_obj_5_6_counting`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
-- **#5 `rule_age_5_6_facts`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=-40
+- **#1 `rule_age_6_8_qa`:** objectiveRank=3000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#2 `rule_age_8_plus_quiz`:** objectiveRank=3000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#3 `rule_obj_6_8_comparison`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#4 `rule_age_5_6_facts`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=-40
+- **#5 `rule_obj_5_6_counting`:** objectiveRank=1000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
 - **#6 `rule_obj_5_6_comparison`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
 
 </details>
@@ -221,23 +220,23 @@ Generated from `template-selection.diagnostic.util.ts` against the seed catalog 
 - **Query:** `Science facts about planets`
 - **Age group:** 5-6
 - **Resolved:** objective=`science_facts`, confidence=`exact_keyword`, topic=`facts planets`
-- **Winner:** `tmpl_image_word_fact` via rule `rule_obj_5_6_counting` (expected `tmpl_image_word_fact`)
-- **Gaps:** total score #1−#2=-30, objective tier #1−#2=0 **FRAGILE**
+- **Winner:** `tmpl_image_word_fact` via rule `rule_age_5_6_facts` (expected `tmpl_image_word_fact`)
+- **Gaps:** total score #1−#2=1150, objective tier #1−#2=1
 
 | Rank | Template | Rule ID | Total | Obj tier (eff) | Age | Grade | Subject | Diff | Ver | Priority |
 |---|---|---|---:|---:|:-:|:-:|:-:|:-:|:-:|---:|
-| 1 | `tmpl_image_word_fact` | `rule_obj_5_6_counting` | 3990 | 3 (raw 3) | Y | n | Y | Y | 1.0 | 110 |
-| 2 | `tmpl_image_word_fact` | `rule_age_5_6_facts` | 4020 | 3 (raw 3) | Y | n | Y | Y | 1.0 | 100 |
+| 1 | `tmpl_image_word_fact` | `rule_age_5_6_facts` | 4020 | 3 (raw 3) | Y | n | Y | Y | 1.0 | 100 |
+| 2 | `tmpl_image_word_fact` | `rule_obj_5_6_counting` | 2870 | 2 (raw 2) | Y | n | Y | Y | 1.0 | 110 |
 | 3 | `tmpl_image_description_question` | `rule_age_6_8_qa` | 2060 | 2 (raw 2) | n | n | n | n | 1.0 | 100 |
-| 4 | `tmpl_image_word_fact` | `rule_obj_5_6_comparison` | 990 | 0 (raw 0) | Y | n | Y | Y | 1.0 | 110 |
+| 4 | `tmpl_image_word_fact` | `rule_obj_5_6_comparison` | 870 | 0 (raw 0) | Y | n | Y | Y | 1.0 | 110 |
 | 5 | `tmpl_image_description_question` | `rule_obj_6_8_comparison` | 70 | 0 (raw 0) | n | n | n | n | 1.0 | 110 |
 
 <details><summary>Score component detail (all candidates)</summary>
 
-- **#1 `rule_obj_5_6_counting`:** objectiveRank=3000, exactAge=500, exactGrade=0, exactSubject=200, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#2 `rule_age_5_6_facts`:** objectiveRank=3000, exactAge=500, exactGrade=0, exactSubject=200, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#1 `rule_age_5_6_facts`:** objectiveRank=3000, exactAge=500, exactGrade=0, exactSubject=200, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#2 `rule_obj_5_6_counting`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=200, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
 - **#3 `rule_age_6_8_qa`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=0, rulePriority=100, objectiveExactBoost=-40
-- **#4 `rule_obj_5_6_comparison`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=200, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
+- **#4 `rule_obj_5_6_comparison`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=200, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
 - **#5 `rule_obj_6_8_comparison`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=0, rulePriority=110, objectiveExactBoost=-40
 
 </details>
@@ -248,25 +247,25 @@ Generated from `template-selection.diagnostic.util.ts` against the seed catalog 
 - **Age group:** 2-3
 - **Resolved:** objective=`recognition`, confidence=`age_default`, topic=`Animals`
 - **Winner:** `tmpl_large_image_word` via rule `rule_age_2_3_recognition` (expected `tmpl_large_image_word`)
-- **Gaps:** total score #1−#2=530, objective tier #1−#2=0 **FRAGILE**
+- **Gaps:** total score #1−#2=500, objective tier #1−#2=0 **FRAGILE**
 
 | Rank | Template | Rule ID | Total | Obj tier (eff) | Age | Grade | Subject | Diff | Ver | Priority |
 |---|---|---|---:|---:|:-:|:-:|:-:|:-:|:-:|---:|
 | 1 | `tmpl_large_image_word` | `rule_age_2_3_recognition` | 2820 | 2 (raw 3) | Y | n | n | Y | 1.0 | 100 |
-| 2 | `tmpl_image_word_sentence` | `rule_obj_3_4_comparison` | 2290 | 2 (raw 3) | n | n | n | Y | 1.0 | 110 |
-| 3 | `tmpl_image_word_sentence` | `rule_obj_3_4_sorting` | 2290 | 2 (raw 3) | n | n | n | Y | 1.0 | 110 |
-| 4 | `tmpl_image_word_sentence` | `rule_age_3_4_vocabulary` | 2320 | 2 (raw 3) | n | n | n | Y | 1.0 | 100 |
-| 5 | `tmpl_image_word_sentence` | `rule_obj_3_4_counting` | 290 | 0 (raw 0) | n | n | n | Y | 1.0 | 110 |
-| 6 | `tmpl_image_word_sentence` | `rule_obj_3_4_phonics` | 290 | 0 (raw 0) | n | n | n | Y | 1.0 | 110 |
+| 2 | `tmpl_image_word_sentence` | `rule_age_3_4_vocabulary` | 2320 | 2 (raw 3) | n | n | n | Y | 1.0 | 100 |
+| 3 | `tmpl_image_word_sentence` | `rule_obj_3_4_comparison` | 2170 | 2 (raw 2) | n | n | n | Y | 1.0 | 110 |
+| 4 | `tmpl_image_word_sentence` | `rule_obj_3_4_sorting` | 2170 | 2 (raw 2) | n | n | n | Y | 1.0 | 110 |
+| 5 | `tmpl_image_word_sentence` | `rule_obj_3_4_counting` | 170 | 0 (raw 0) | n | n | n | Y | 1.0 | 110 |
+| 6 | `tmpl_image_word_sentence` | `rule_obj_3_4_phonics` | 170 | 0 (raw 0) | n | n | n | Y | 1.0 | 110 |
 
 <details><summary>Score component detail (all candidates)</summary>
 
 - **#1 `rule_age_2_3_recognition`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#2 `rule_obj_3_4_comparison`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#3 `rule_obj_3_4_sorting`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#4 `rule_age_3_4_vocabulary`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#5 `rule_obj_3_4_counting`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#6 `rule_obj_3_4_phonics`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
+- **#2 `rule_age_3_4_vocabulary`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#3 `rule_obj_3_4_comparison`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#4 `rule_obj_3_4_sorting`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#5 `rule_obj_3_4_counting`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#6 `rule_obj_3_4_phonics`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
 
 </details>
 
@@ -460,25 +459,25 @@ Generated from `template-selection.diagnostic.util.ts` against the seed catalog 
 - **Age group:** 2-3
 - **Resolved:** objective=`recognition`, confidence=`exact_keyword`, topic=`Spot red objects`
 - **Winner:** `tmpl_large_image_word` via rule `rule_age_2_3_recognition` (expected `tmpl_large_image_word`)
-- **Gaps:** total score #1−#2=530, objective tier #1−#2=0 **FRAGILE**
+- **Gaps:** total score #1−#2=500, objective tier #1−#2=0 **FRAGILE**
 
 | Rank | Template | Rule ID | Total | Obj tier (eff) | Age | Grade | Subject | Diff | Ver | Priority |
 |---|---|---|---:|---:|:-:|:-:|:-:|:-:|:-:|---:|
 | 1 | `tmpl_large_image_word` | `rule_age_2_3_recognition` | 3820 | 3 (raw 3) | Y | n | n | Y | 1.0 | 100 |
-| 2 | `tmpl_image_word_sentence` | `rule_obj_3_4_comparison` | 3290 | 3 (raw 3) | n | n | n | Y | 1.0 | 110 |
-| 3 | `tmpl_image_word_sentence` | `rule_obj_3_4_sorting` | 3290 | 3 (raw 3) | n | n | n | Y | 1.0 | 110 |
-| 4 | `tmpl_image_word_sentence` | `rule_age_3_4_vocabulary` | 3320 | 3 (raw 3) | n | n | n | Y | 1.0 | 100 |
-| 5 | `tmpl_image_word_sentence` | `rule_obj_3_4_counting` | 290 | 0 (raw 0) | n | n | n | Y | 1.0 | 110 |
-| 6 | `tmpl_image_word_sentence` | `rule_obj_3_4_phonics` | 290 | 0 (raw 0) | n | n | n | Y | 1.0 | 110 |
+| 2 | `tmpl_image_word_sentence` | `rule_age_3_4_vocabulary` | 3320 | 3 (raw 3) | n | n | n | Y | 1.0 | 100 |
+| 3 | `tmpl_image_word_sentence` | `rule_obj_3_4_comparison` | 2170 | 2 (raw 2) | n | n | n | Y | 1.0 | 110 |
+| 4 | `tmpl_image_word_sentence` | `rule_obj_3_4_sorting` | 2170 | 2 (raw 2) | n | n | n | Y | 1.0 | 110 |
+| 5 | `tmpl_image_word_sentence` | `rule_obj_3_4_counting` | 170 | 0 (raw 0) | n | n | n | Y | 1.0 | 110 |
+| 6 | `tmpl_image_word_sentence` | `rule_obj_3_4_phonics` | 170 | 0 (raw 0) | n | n | n | Y | 1.0 | 110 |
 
 <details><summary>Score component detail (all candidates)</summary>
 
 - **#1 `rule_age_2_3_recognition`:** objectiveRank=3000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#2 `rule_obj_3_4_comparison`:** objectiveRank=3000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#3 `rule_obj_3_4_sorting`:** objectiveRank=3000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#4 `rule_age_3_4_vocabulary`:** objectiveRank=3000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
-- **#5 `rule_obj_3_4_counting`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
-- **#6 `rule_obj_3_4_phonics`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
+- **#2 `rule_age_3_4_vocabulary`:** objectiveRank=3000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
+- **#3 `rule_obj_3_4_comparison`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#4 `rule_obj_3_4_sorting`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#5 `rule_obj_3_4_counting`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
+- **#6 `rule_obj_3_4_phonics`:** objectiveRank=0, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
 
 </details>
 
@@ -496,7 +495,7 @@ Generated from `template-selection.diagnostic.util.ts` against the seed catalog 
 | 2 | `tmpl_image_word_fact` | `rule_age_5_6_facts` | 2820 | 2 (raw 3) | Y | n | n | Y | 1.0 | 100 |
 | 3 | `tmpl_image_description_question` | `rule_obj_6_8_comparison` | 2070 | 2 (raw 2) | n | n | n | n | 1.0 | 110 |
 | 4 | `tmpl_image_description_question` | `rule_age_6_8_qa` | 2060 | 2 (raw 2) | n | n | n | n | 1.0 | 100 |
-| 5 | `tmpl_image_word_fact` | `rule_obj_5_6_comparison` | 790 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
+| 5 | `tmpl_image_word_fact` | `rule_obj_5_6_comparison` | 670 | 0 (raw 0) | Y | n | n | Y | 1.0 | 110 |
 
 <details><summary>Score component detail (all candidates)</summary>
 
@@ -504,7 +503,7 @@ Generated from `template-selection.diagnostic.util.ts` against the seed catalog 
 - **#2 `rule_age_5_6_facts`:** objectiveRank=2000, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=100, objectiveExactBoost=120
 - **#3 `rule_obj_6_8_comparison`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=0, rulePriority=110, objectiveExactBoost=-40
 - **#4 `rule_age_6_8_qa`:** objectiveRank=2000, exactAge=0, exactGrade=0, exactSubject=0, exactDifficulty=0, rulePriority=100, objectiveExactBoost=-40
-- **#5 `rule_obj_5_6_comparison`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=80
+- **#5 `rule_obj_5_6_comparison`:** objectiveRank=0, exactAge=500, exactGrade=0, exactSubject=0, exactDifficulty=100, rulePriority=110, objectiveExactBoost=-40
 
 </details>
 

@@ -242,17 +242,7 @@ function objectiveRelevance(
     : 0;
 }
 
-/**
- * When a rule lists explicit learning objectives that do not match or relate
- * to the request, template-level generic objectives must not boost the rank.
- */
-function ruleExplicitlyMismatches(
-  requested: string,
-  ruleObjectives: string[],
-): boolean {
-  if (!ruleObjectives.length) return false;
-  return objectiveRelevance(requested, ruleObjectives) === 0;
-}
+
 
 function listIncludes(
   configured: string[],
@@ -397,7 +387,7 @@ export function rankTemplateCandidates(
       normalizeObjective,
     );
 
-    const explicitRuleMismatch = ruleExplicitlyMismatches(
+    const ruleObjectiveRank = objectiveRelevance(
       criteria.learningObjective,
       rule.learningObjectives,
     );
@@ -405,21 +395,22 @@ export function rankTemplateCandidates(
       criteria.learningObjective,
       rule.templateObjectives,
     );
-    const ruleObjectiveRank = explicitRuleMismatch
-      ? 0
-      : objectiveRelevance(
-          criteria.learningObjective,
-          rule.learningObjectives,
-        );
-    const rawObjectiveRank = explicitRuleMismatch
-      ? 0
-      : Math.max(templateObjectiveRank, ruleObjectiveRank);
+    // When a rule defines explicit objectives, those define the candidate's
+    // purpose.  Template objectives only provide signal for rules without
+    // explicit objectives (e.g. synthetic fallback rules).
+    const ruleHasExplicitObjectives = rule.learningObjectives.length > 0;
+    const rawObjectiveRank = ruleHasExplicitObjectives
+      ? ruleObjectiveRank
+      : templateObjectiveRank;
     const objectiveRank = effectiveObjectiveRank(
       rawObjectiveRank,
       criteria.objectiveConfidence,
     );
-    const exactObjective =
-      objectiveRank === 3 || ruleObjectiveExact || templateObjectiveExact;
+    // exactObjective: the rule's own objectives directly match the request.
+    // For rules without explicit objectives, fall back to template signal.
+    const exactObjective = ruleHasExplicitObjectives
+      ? ruleObjectiveExact
+      : templateObjectiveExact;
     const exactSubject =
       subject.exact || softExact(rule.templateSubjects, criteria.subject);
     const exactDifficulty =
@@ -439,11 +430,13 @@ export function rankTemplateCandidates(
       rule.ageMax === criteria.ageMax;
     const exactAge = templateAge.exact || exactRuleAge;
 
+    // Boost reflects rule-level match quality.  When the rule has explicit
+    // objectives, template-level matches must not inflate the score.
     const objectiveExactBoost = ruleObjectiveExact
       ? 120
-      : templateObjectiveExact
+      : (!ruleHasExplicitObjectives && templateObjectiveExact)
         ? 80
-        : rule.learningObjectives.length || rule.templateObjectives.length
+        : (ruleHasExplicitObjectives || rule.templateObjectives.length)
           ? -40
           : 0;
 
@@ -494,6 +487,10 @@ export function rankTemplateCandidates(
     const right = b.breakdown;
     if (right.effectiveObjectiveRank !== left.effectiveObjectiveRank) {
       return right.effectiveObjectiveRank - left.effectiveObjectiveRank;
+    }
+    // Prefer rules whose own objectives directly match the request.
+    if (left.exactObjective !== right.exactObjective) {
+      return left.exactObjective ? -1 : 1;
     }
     if (left.exactAge !== right.exactAge) return left.exactAge ? -1 : 1;
     if (left.exactGrade !== right.exactGrade) return left.exactGrade ? -1 : 1;
