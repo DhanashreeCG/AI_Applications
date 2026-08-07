@@ -161,6 +161,10 @@
       <div>
         <span id="last-updated" class="timestamp" style="margin-right: 16px;"></span>
         <button onclick="refreshData()">Refresh Data</button>
+        <label style="margin-left: 12px; font-size: 0.875rem; color: var(--text-muted);">
+          <input type="checkbox" id="auto-refresh" />
+          Auto-refresh
+        </label>
       </div>
     </header>
 
@@ -290,11 +294,22 @@
       document.getElementById('last-updated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
     }
 
-    // Initial load
+    let autoRefreshTimer = null;
+
+    function setupAutoRefresh() {
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+      if (document.getElementById('auto-refresh').checked) {
+        autoRefreshTimer = setInterval(refreshData, 10000);
+      }
+    }
+
+    document.getElementById('auto-refresh').addEventListener('change', setupAutoRefresh);
+
+    // Initial load only — auto-refresh starts when the user enables it
     refreshData();
-    
-    // Auto-refresh every 10 seconds
-    setInterval(refreshData, 10000);
   </script>
 </body>
 </html>
