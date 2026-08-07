@@ -9,6 +9,7 @@ import {
   Param,
   Post,
   Res,
+  ServiceUnavailableException,
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -52,9 +53,14 @@ export class FlashcardsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Render flashcards to WebP images and PDF from a GenerateFlashcardsResponse payload',
+      'Render flashcards to WebP images and PDF from a GenerateFlashcardsResponse payload (requires FLASHCARD_RENDERER_ENABLED=true)',
   })
   async render(@Body() dto: RenderFlashcardsDto) {
+    if (!this.rendererService.isEnabled()) {
+      throw new ServiceUnavailableException(
+        'Flashcard renderer is disabled (FLASHCARD_RENDERER_ENABLED=false)',
+      );
+    }
     return this.rendererService.render(dto);
   }
 

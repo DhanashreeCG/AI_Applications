@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GenerateFlashcardsResponse } from '../../interfaces/flashcard.interfaces';
 import { parseLayoutDefinition } from '../../utils/template-layout.util';
@@ -20,6 +24,7 @@ import { loadFlashcardStylesheet } from '../utils/stylesheet.util';
 @Injectable()
 export class FlashcardRendererService {
   private readonly logger = new Logger(FlashcardRendererService.name);
+  private readonly enabled: boolean;
   private readonly concurrency: number;
   private readonly apiBaseUrl: string;
   private readonly cardRenderer: CardRenderer;
@@ -30,6 +35,8 @@ export class FlashcardRendererService {
     private readonly pdfService: FlashcardPdfService,
     private readonly storageService: FlashcardStorageService,
   ) {
+    this.enabled =
+      this.configService.get<boolean>('flashcards.renderer.enabled') !== false;
     this.concurrency =
       this.configService.get<number>('flashcards.renderer.concurrency') ?? 4;
     this.apiBaseUrl =
@@ -41,9 +48,19 @@ export class FlashcardRendererService {
     this.cardRenderer = new CardRenderer(regionRenderer);
   }
 
+  public isEnabled(): boolean {
+    return this.enabled;
+  }
+
   async render(
     response: GenerateFlashcardsResponse,
   ): Promise<FlashcardRenderResult> {
+    if (!this.enabled) {
+      throw new ServiceUnavailableException(
+        'Flashcard renderer is disabled (FLASHCARD_RENDERER_ENABLED=false)',
+      );
+    }
+
     const startedAt = Date.now();
     const warnings: string[] = [];
     const normalizeStartedAt = Date.now();
