@@ -29,6 +29,9 @@ export interface AppConfig {
     geminiModel: string;
     geminiPromptVersion: string;
     flashcardPromptVersion: string;
+    flashcardContentProvider: string;
+    geminiFlashcardModel: string;
+    openaiFlashcardModel: string;
     openaiApiKey?: string;
     openaiEmbeddingModel: string;
     costGeminiPerImageUsd: number;
@@ -124,6 +127,11 @@ export default (): AppConfig => ({
     geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     geminiPromptVersion: process.env.GEMINI_PROMPT_VERSION || 'v1',
     flashcardPromptVersion: process.env.FLASHCARD_PROMPT_VERSION || 'v1',
+    flashcardContentProvider:
+      process.env.FLASHCARD_CONTENT_PROVIDER || 'gemini',
+    geminiFlashcardModel:
+      process.env.FLASHCARD_GEMINI_MODEL || 'gemini-2.5-flash',
+    openaiFlashcardModel: process.env.OPENAI_FLASHCARD_MODEL || 'gpt-4o-mini',
     openaiApiKey: process.env.OPENAI_API_KEY,
     openaiEmbeddingModel:
       process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',

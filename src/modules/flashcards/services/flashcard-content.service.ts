@@ -2,6 +2,7 @@ import { Injectable, Logger, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 import { randomUUID } from 'node:crypto';
 import { getErrorMessage } from '../../../common/utils/error-message';
 import {
@@ -52,6 +53,8 @@ export interface GenerateContentInput {
 export class FlashcardContentService {
   private readonly logger = new Logger(FlashcardContentService.name);
   private client: GoogleGenAI | null;
+  private openaiClient: OpenAI | null;
+  private readonly provider: string;
   private readonly modelName: string;
   private readonly promptVersion: string;
   private readonly rateLimiter: RateLimiter;
@@ -63,14 +66,31 @@ export class FlashcardContentService {
     private readonly aiUsageService: AiUsageService,
     eventEmitter: EventEmitter2,
   ) {
-    const apiKey = this.configService.get<string>('ai.geminiApiKey');
-    this.modelName =
-      this.configService.get<string>('ai.geminiModel') || 'gemini-2.5-flash';
+    const geminiApiKey = this.configService.get<string>('ai.geminiApiKey');
+    const openaiApiKey = this.configService.get<string>('ai.openaiApiKey');
+
+    this.provider =
+      this.configService.get<string>('ai.flashcardContentProvider') || 'gemini';
+
+    if (this.provider === 'openai') {
+      this.modelName =
+        this.configService.get<string>('ai.openaiFlashcardModel') ||
+        'gpt-4o-mini';
+    } else {
+      this.modelName =
+        this.configService.get<string>('ai.geminiFlashcardModel') ||
+        'gemini-2.5-flash';
+    }
+
     this.promptVersion =
       this.configService.get<string>('ai.flashcardPromptVersion') ||
       DEFAULT_FLASHCARD_PROMPT_VERSION;
 
-    const maxRps = this.configService.get<number>('ai.geminiMaxRps') ?? 2;
+    const maxRps =
+      this.provider === 'openai'
+        ? (this.configService.get<number>('ai.openaiMaxRps') ?? 10)
+        : (this.configService.get<number>('ai.geminiMaxRps') ?? 2);
+
     const failureThreshold =
       this.configService.get<number>('ai.circuitFailureThreshold') ?? 5;
     const cooldownMs =
@@ -78,16 +98,26 @@ export class FlashcardContentService {
 
     this.rateLimiter = new RateLimiter(maxRps);
     this.circuitBreaker = new CircuitBreaker(
-      'gemini-flashcard-content',
+      `${this.provider}-flashcard-content`,
       failureThreshold,
       cooldownMs,
     );
     this.emitter = new FlashcardPipelineEmitter(eventEmitter);
 
-    this.client = apiKey ? new GoogleGenAI({ apiKey }) : null;
-    if (!apiKey) {
+    this.client = geminiApiKey
+      ? new GoogleGenAI({ apiKey: geminiApiKey })
+      : null;
+    this.openaiClient = openaiApiKey
+      ? new OpenAI({ apiKey: openaiApiKey })
+      : null;
+
+    if (this.provider === 'gemini' && !geminiApiKey) {
       this.logger.warn(
-        'GEMINI_API_KEY not provided. FlashcardContentService is unavailable.',
+        'GEMINI_API_KEY not provided. FlashcardContentService is unavailable for Gemini.',
+      );
+    } else if (this.provider === 'openai' && !openaiApiKey) {
+      this.logger.warn(
+        'OPENAI_API_KEY not provided. FlashcardContentService is unavailable for OpenAI.',
       );
     }
   }
@@ -102,6 +132,10 @@ export class FlashcardContentService {
 
   public setClient(client: GoogleGenAI): void {
     this.client = client;
+  }
+
+  public setOpenAiClient(client: OpenAI): void {
+    this.openaiClient = client;
   }
 
   public async generateContent(
@@ -207,10 +241,16 @@ export class FlashcardContentService {
     telemetry?: PipelineTelemetryContext,
     retryCount = 0,
   ): Promise<LlmFlashcardPayload> {
-    if (!this.client) {
+    if (this.provider === 'gemini' && !this.client) {
       throw new FlashcardException(
         'RETRY_EXHAUSTION',
         'Gemini content client is not initialized',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    } else if (this.provider === 'openai' && !this.openaiClient) {
+      throw new FlashcardException(
+        'RETRY_EXHAUSTION',
+        'OpenAI content client is not initialized',
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
@@ -247,7 +287,7 @@ export class FlashcardContentService {
         ...telemetry,
         invocationId,
         stageName: PIPELINE_STAGES.LLM_REQUEST,
-        provider: 'google-gemini',
+        provider: this.provider === 'openai' ? 'openai' : 'google-gemini',
         model: this.modelName,
         purpose: FLASHCARD_CONTENT_STAGE,
         promptHash: hashPayload(prompt),
@@ -260,24 +300,57 @@ export class FlashcardContentService {
       this.circuitBreaker.beforeRequest();
       await this.rateLimiter.acquire();
 
-      const response = await this.client.models.generateContent({
-        model: this.modelName,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: buildFlashcardContentSchema(
-            input.textComponents,
-            input.imageComponents,
-          ),
-        },
-      });
+      let responseText: string | undefined;
+      let usage:
+        | {
+            promptTokenCount?: number;
+            candidatesTokenCount?: number;
+            totalTokenCount?: number;
+          }
+        | undefined;
+      let requestId: string | undefined;
+
+      if (this.provider === 'openai') {
+        const response = await this.openaiClient!.chat.completions.create({
+          model: this.modelName,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+        });
+        responseText = response.choices[0]?.message?.content?.trim();
+        usage = {
+          promptTokenCount: response.usage?.prompt_tokens,
+          candidatesTokenCount: response.usage?.completion_tokens,
+          totalTokenCount: response.usage?.total_tokens,
+        };
+        requestId = response.id;
+      } else {
+        const response = await this.client!.models.generateContent({
+          model: this.modelName,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: buildFlashcardContentSchema(
+              input.textComponents,
+              input.imageComponents,
+            ),
+          },
+        });
+        responseText = response.text?.trim();
+        const geminiUsage = (
+          response as { usageMetadata?: Record<string, number> }
+        ).usageMetadata;
+        usage = geminiUsage
+          ? {
+              promptTokenCount: geminiUsage.promptTokenCount,
+              candidatesTokenCount: geminiUsage.candidatesTokenCount,
+              totalTokenCount: geminiUsage.totalTokenCount,
+            }
+          : undefined;
+        requestId = (response as { responseId?: string }).responseId;
+      }
 
       latencyMs = Date.now() - startedAt.getTime();
-      const usage = (response as { usageMetadata?: Record<string, number> })
-        .usageMetadata;
-      const requestId = (response as { responseId?: string }).responseId;
 
-      const responseText = response.text?.trim();
       if (!responseText) {
         throw new FlashcardException(
           'INVALID_LLM_OUTPUT',
@@ -296,9 +369,9 @@ export class FlashcardContentService {
       }
 
       const inputTokens =
-        usage?.promptTokenCount ?? usage?.inputTokenCount ?? undefined;
+        usage?.promptTokenCount ?? undefined;
       const outputTokens =
-        usage?.candidatesTokenCount ?? usage?.outputTokenCount ?? undefined;
+        usage?.candidatesTokenCount ?? undefined;
       const totalTokens = usage?.totalTokenCount ?? undefined;
 
       if (telemetry) {
@@ -380,16 +453,14 @@ export class FlashcardContentService {
       this.circuitBreaker.recordSuccess();
       await this.aiUsageService.record({
         stage: FLASHCARD_CONTENT_STAGE,
-        provider: 'google-gemini',
+        provider: this.provider === 'openai' ? 'openai' : 'google-gemini',
         model: this.modelName,
         requestId,
         startedAt,
         completedAt: new Date(),
         latencyMs,
-        inputTokens:
-          usage?.promptTokenCount ?? usage?.inputTokenCount ?? undefined,
-        outputTokens:
-          usage?.candidatesTokenCount ?? usage?.outputTokenCount ?? undefined,
+        inputTokens: usage?.promptTokenCount ?? undefined,
+        outputTokens: usage?.candidatesTokenCount ?? undefined,
         totalTokens: usage?.totalTokenCount ?? undefined,
         status: 'success',
         retryCount,
@@ -400,7 +471,7 @@ export class FlashcardContentService {
       this.circuitBreaker.recordFailure();
       await this.aiUsageService.record({
         stage: FLASHCARD_CONTENT_STAGE,
-        provider: 'google-gemini',
+        provider: this.provider === 'openai' ? 'openai' : 'google-gemini',
         model: this.modelName,
         startedAt,
         completedAt: new Date(),

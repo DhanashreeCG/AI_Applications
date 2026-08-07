@@ -28,7 +28,7 @@ function assertExactComponentIds(
         'INVALID_LLM_OUTPUT',
         `cards[${cardIndex}].${field} has unsupported component id "${componentId}"`,
         undefined,
-        { expectedComponentIds: [...allowed] },
+        { expectedComponentIds: Array.from(allowed) },
       );
     }
   }
