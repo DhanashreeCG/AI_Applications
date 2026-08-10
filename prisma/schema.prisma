@@ -1,0 +1,412 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum JobState {
+  CREATED
+  SCANNING
+  PROCESSING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+  CANCELLED
+}
+
+enum AssetState {
+  DISCOVERED
+  DOWNLOADING
+  VALIDATING
+  HASHING
+  DUPLICATE_CHECK
+  UPLOADING_TO_S3
+  STORED_IN_S3
+  GENERATING_METADATA
+  METADATA_GENERATED
+  GENERATING_EMBEDDING
+  EMBEDDING_GENERATED
+  COMPLETED
+  FAILED
+  RETRY_PENDING
+  DEAD_LETTER
+}
+
+model IngestionJob {
+  id              String    @id @default(cuid())
+  sourceType      String    @default("GOOGLE_DRIVE")
+  rootFolderId    String
+  mode            String    @default("FULL")
+  status          JobState  @default(CREATED)
+  totalDiscovered Int       @default(0)
+  totalProcessed  Int       @default(0)
+  totalSuccessful Int       @default(0)
+  totalSkipped    Int       @default(0)
+  totalFailed     Int       @default(0)
+  totalDuplicate  Int       @default(0)
+  expectedGeminiCalls    Int?
+  expectedEmbeddingCalls Int?
+  estimatedGeminiCostUsd Float?
+  estimatedOpenAiCostUsd Float?
+  estimatedTotalCostUsd  Float?
+  errorMessage    String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  files IngestionFile[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model IngestionFile {
+  id                 String       @id @default(cuid())
+  jobId              String
+  job                IngestionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  driveFileId        String
+  filename           String
+  mimeType           String?
+  fileSize           BigInt?
+  folderPath         String?
+  driveFileCreatedAt DateTime?
+  status             AssetState   @default(DISCOVERED)
+  errorMessage       String?
+  assetId            String?
+  asset              Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  assetSource AssetSource?
+  attempts    ProcessingAttempt[]
+
+  @@unique([jobId, driveFileId])
+  @@index([driveFileId])
+  @@index([status])
+  @@index([assetId])
+}
+
+model Asset {
+  id          String     @id @default(cuid())
+  contentHash String     @unique
+  mimeType    String
+  fileSize    BigInt
+  width       Int?
+  height      Int?
+  s3Bucket    String
+  s3ObjectKey String
+  status      AssetState @default(STORED_IN_S3)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  sources        AssetSource[]
+  ingestionFiles IngestionFile[]
+  metadata       AssetMetadata?
+  embeddings     AssetEmbedding[]
+  attempts       ProcessingAttempt[]
+  aiUsages       AiUsage[]
+
+  @@index([status])
+  @@index([contentHash])
+}
+
+model AssetSource {
+  id              String        @id @default(cuid())
+  assetId         String
+  asset           Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  ingestionFileId String        @unique
+  ingestionFile   IngestionFile @relation(fields: [ingestionFileId], references: [id], onDelete: Cascade)
+  sourceType      String        @default("GOOGLE_DRIVE")
+  externalId      String
+  folderPath      String?
+  filename        String
+  linkReason      String?
+  createdAt       DateTime      @default(now())
+
+  @@index([assetId])
+  @@index([sourceType, externalId])
+}
+
+model AssetMetadata {
+  id                    String   @id @default(cuid())
+  assetId               String   @unique
+  asset                 Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  caption               String
+  objects               String[]
+  actions               String[]
+  styles                String[]
+  colors                String[]
+  background            String?
+  composition           String?
+  orientation           String?
+  ageGroups             String[]
+  grades                String[] @default([])
+  educationalUses       String[]
+  searchKeywords        String[]
+  searchDescription     String
+  searchDescriptionHash String
+  rawResponse           Json?
+  provider              String   @default("gemini")
+  model                 String   @default("gemini-2.5-flash")
+  modelVersion          String   @default("1.0")
+  promptVersion         String   @default("1.0")
+  metadataVersion       Int      @default(1)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([searchDescriptionHash])
+}
+
+model AssetEmbedding {
+  id               String                       @id @default(cuid())
+  assetId          String
+  asset            Asset                        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  provider         String                       @default("openai")
+  model            String                       @default("text-embedding-3-small")
+  dimensions       Int                          @default(1536)
+  sourceTextHash   String
+  embeddingVersion Int                          @default(1)
+  vector           Unsupported("vector(1536)")?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  @@index([assetId])
+  @@index([sourceTextHash])
+}
+
+model ProcessingAttempt {
+  id              String         @id @default(cuid())
+  assetId         String?
+  asset           Asset?         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  ingestionFileId String?
+  ingestionFile   IngestionFile? @relation(fields: [ingestionFileId], references: [id], onDelete: Cascade)
+  stage           AssetState
+  attemptNumber   Int            @default(1)
+  status          String
+  errorCode       String?
+  errorMessage    String?
+  stackTrace      String?
+  durationMs      Int?
+  sqsMessageId    String?
+  createdAt       DateTime       @default(now())
+
+  @@index([assetId])
+  @@index([ingestionFileId])
+  @@index([stage])
+}
+
+model AiUsage {
+  id             String   @id @default(cuid())
+  assetId        String?
+  asset          Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  stage          String
+  provider       String
+  model          String
+  requestId      String?
+  startedAt      DateTime
+  completedAt    DateTime?
+  latencyMs      Int?
+  inputTokens    Int?
+  outputTokens   Int?
+  totalTokens    Int?
+  estimatedCost  Float?
+  status         String
+  retryCount     Int      @default(0)
+  errorType      String?
+  createdAt      DateTime @default(now())
+
+  @@index([assetId])
+  @@index([stage])
+  @@index([provider])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Layout-only flashcard template. Never stores educational content.
+model FlashcardTemplate {
+  id                 String   @id @default(cuid())
+
+  name               String
+  description        String?
+
+  templateType       String
+  layoutType         String
+
+  supportedAgeGroups String[]
+  supportedGrades    String[] @default([])
+
+  learningObjectives String[]
+  subjectsSupported  String[] @default([])
+  difficultyLevels   String[] @default([])
+
+  tags               String[] @default([])
+
+  pageSize           String   @default("A6")
+  orientation        String   @default("PORTRAIT")
+
+  layoutDefinition   Json
+
+  thumbnail          String?
+
+  templateVersion    String   @default("1.0")
+  active             Boolean  @default(true)
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  selectionRules     TemplateSelectionRule[]
+
+  @@index([active])
+  @@index([templateType])
+  @@index([layoutType])
+  @@index([supportedAgeGroups])
+  @@unique([name, templateVersion])
+}
+
+/// Configurable, deterministic template selection rules (no hardcoded age→template chains).
+model TemplateSelectionRule {
+  id                 String   @id @default(cuid())
+  name               String
+  priority           Int      @default(100)
+  active             Boolean  @default(true)
+  ageMin             Int?
+  ageMax             Int?
+  grades             String[] @default([])
+  subjects           String[] @default([])
+  learningObjectives String[] @default([])
+  difficulties       String[] @default([])
+  intents            String[] @default([])
+  topics             String[] @default([])
+  templateId         String
+  template           FlashcardTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([active, priority])
+  @@index([templateId])
+}
+
+enum PipelineExecutionStatus {
+  running
+  completed
+  failed
+  cancelled
+}
+
+enum PipelineStageStatus {
+  pending
+  running
+  completed
+  failed
+  skipped
+  cancelled
+}
+
+/// Observability-only flashcard (and future workflow) pipeline execution.
+model PipelineExecution {
+  id              String                  @id @default(cuid())
+  requestId       String
+  correlationId   String
+  workflowType    String
+  currentStage    String?
+  status          PipelineExecutionStatus @default(running)
+  startedAt       DateTime                @default(now())
+  completedAt     DateTime?
+  totalDurationMs Int?
+  metadata        Json?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  stages         PipelineStageExecution[]
+  aiInvocations  PipelineAiInvocation[]
+  imageSearches  PipelineImageSearchExecution[]
+
+  @@index([requestId])
+  @@index([correlationId])
+  @@index([status])
+  @@index([workflowType])
+  @@index([createdAt])
+}
+
+model PipelineStageExecution {
+  id           String              @id @default(cuid())
+  executionId  String
+  execution    PipelineExecution   @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  stageName    String
+  sequence     Int
+  status       PipelineStageStatus @default(pending)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  durationMs   Int?
+  retryCount   Int                 @default(0)
+  metadata     Json?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  aiInvocations PipelineAiInvocation[]
+  imageSearches PipelineImageSearchExecution[]
+
+  @@index([executionId, sequence])
+  @@index([executionId, stageName])
+  @@index([status])
+}
+
+model PipelineAiInvocation {
+  id               String                  @id @default(cuid())
+  executionId      String
+  execution        PipelineExecution       @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  stageExecutionId String?
+  stageExecution   PipelineStageExecution? @relation(fields: [stageExecutionId], references: [id], onDelete: SetNull)
+  provider         String
+  model            String
+  purpose          String
+  startedAt        DateTime
+  completedAt      DateTime?
+  durationMs       Int?
+  retryCount       Int                     @default(0)
+  status           String
+  promptHash       String?
+  responseHash     String?
+  inputTokens      Int?
+  outputTokens     Int?
+  totalTokens      Int?
+  estimatedCost    Float?
+  promptPayload    Json?
+  responsePayload  Json?
+  createdAt        DateTime                @default(now())
+
+  @@index([executionId])
+  @@index([stageExecutionId])
+  @@index([status])
+  @@index([provider])
+}
+
+model PipelineImageSearchExecution {
+  id               String                  @id @default(cuid())
+  executionId      String
+  execution        PipelineExecution       @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  stageExecutionId String?
+  stageExecution   PipelineStageExecution? @relation(fields: [stageExecutionId], references: [id], onDelete: SetNull)
+  query            String
+  filters          Json?
+  durationMs       Int?
+  resultCount      Int                     @default(0)
+  selectedAssetId  String?
+  cacheHit         Boolean                 @default(false)
+  failed           Boolean                 @default(false)
+  errorMessage     String?
+  createdAt        DateTime                @default(now())
+
+  @@index([executionId])
+  @@index([stageExecutionId])
+  @@index([selectedAssetId])
+}
