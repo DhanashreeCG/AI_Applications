@@ -1,0 +1,581 @@
+:root {
+  --bg: #f3f1fd;
+  --surface: #ffffff;
+  --ink: #2a1b4a;
+  --ink-soft: #4b3b73;
+  --muted: #8b84ab;
+  --line: #e8e4f7;
+  --primary: #6d28d9;
+  --primary-deep: #4c1d95;
+  --magenta: #b4189b;
+  --danger: #e0245e;
+  --ok: #22a06b;
+  --warn: #d98600;
+  --shadow-sm: 0 2px 10px rgba(76, 29, 149, 0.06);
+  --shadow-md: 0 14px 40px rgba(76, 29, 149, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+}
+
+body {
+  font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.flashcard-stage {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0;
+}
+
+.flashcard-stage--pdf {
+  flex-direction: column;
+  gap: 0;
+}
+
+.flashcard-stage--pdf .uno {
+  box-shadow: none;
+  page-break-after: always;
+}
+
+.flashcard-stage--pdf .uno:last-child {
+  page-break-after: auto;
+}
+
+/* =========================================================
+   THE FLASH CARD (UNO-card proportions, fully dynamic)
+   All internal sizing is expressed in cqw so a single markup
+   tree scales from a 196px thumbnail to a 1000px export.
+   ========================================================= */
+
+.uno {
+  container-type: inline-size;
+  position: relative;
+  aspect-ratio: 5 / 7;
+  width: 100%;
+  display: flex;
+  border-radius: 22px;
+  box-shadow: 0 10px 26px rgba(42, 27, 74, 0.16);
+  background: transparent;
+}
+
+.uno-frame {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  background: var(--frame);
+  border-radius: 5.4cqw;
+  padding: 5.2cqw;
+  overflow: hidden;
+}
+
+/* dashed keyline that sits on the coloured frame */
+.uno-frame::before {
+  content: '';
+  position: absolute;
+  inset: 2.1cqw;
+  border: 0.5cqw dashed var(--dash);
+  border-radius: 4cqw;
+  pointer-events: none;
+}
+
+.uno-sheet {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #fff;
+  border-radius: 3.4cqw;
+  padding: 3.6cqw 3.8cqw 4.2cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 2cqw;
+  overflow: hidden;
+}
+
+/* ---- header ---- */
+
+.uno-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2cqw;
+  flex: 0 0 auto;
+}
+
+.uno-cat {
+  font-size: 3.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #3a3a4d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uno-logo {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.5cqw;
+  flex: 0 0 auto;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.uno-logo span {
+  font-size: 4.6cqw;
+  padding: 0.5cqw 0.9cqw;
+  border-radius: 1.2cqw;
+  color: #fff;
+}
+
+.uno-logo span:nth-child(1) {
+  background: #5b1d9c;
+  transform: rotate(-6deg);
+}
+
+.uno-logo span:nth-child(2) {
+  background: #f5b700;
+  color: #3a2a00;
+  transform: translateY(-0.6cqw);
+}
+
+.uno-logo span:nth-child(3) {
+  background: #e0245e;
+  transform: rotate(7deg);
+}
+
+/* ---- main / figures ---- */
+
+.uno-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.6cqw;
+  position: relative;
+}
+
+.uno-figure {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* images sit flush: no frame, no outline, never cropped */
+.uno-figure img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  object-position: center;
+  border: 0;
+  outline: 0;
+  background: none;
+}
+
+.uno-main.cover .uno-figure img {
+  object-fit: cover;
+  border-radius: 2cqw;
+}
+
+.fig-fallback {
+  text-align: center;
+  color: #a8a2c0;
+  padding: 3cqw;
+  display: grid;
+  gap: 1.4cqw;
+  place-items: center;
+}
+
+.fig-fallback svg, .fig-fallback .glyph {
+  width: 14cqw;
+  height: 14cqw;
+  font-size: 14cqw;
+  opacity: 0.55;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fig-fallback small {
+  font-size: 2.9cqw;
+  line-height: 1.4;
+  max-width: 60cqw;
+  display: block;
+}
+
+/* hero glyph (letter / number / word being taught) */
+.uno-hero {
+  flex: 0 0 auto;
+  text-align: center;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: 38cqw;
+  line-height: 0.98;
+  color: var(--frame);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.uno-hero.long {
+  font-size: 16cqw;
+}
+
+/* duo layout: two labelled figures side by side */
+.uno-cells {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  gap: 2cqw;
+}
+
+.uno-cells.duo {
+  grid-template-columns: 1fr 1fr;
+}
+
+.uno-cells.quad {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2.4cqw;
+}
+
+.uno-cell {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1cqw;
+}
+
+.uno-cell .uno-figure {
+  flex: 1 1 auto;
+}
+
+.cell-label {
+  flex: 0 0 auto;
+  text-align: center;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  font-size: 5.2cqw;
+  line-height: 1.1;
+  color: #33333f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uno-cells.quad .cell-label {
+  font-size: 4.6cqw;
+}
+
+/* dashed cross dividers for the 4-up layout */
+.uno-cells.quad::before,
+.uno-cells.quad::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+.uno-cells.quad::before {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 0.45cqw dashed #d7d3e6;
+}
+
+.uno-cells.quad::after {
+  top: 50%;
+  left: 0;
+  right: 0;
+  border-top: 0.45cqw dashed #d7d3e6;
+}
+
+/* centre bubble that overlaps the 4-up grid */
+.uno-bubble {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 30cqw;
+  padding: 3.4cqw 5cqw;
+  border-radius: 50%;
+  background: var(--bubble);
+  color: #fff;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: 12cqw;
+  line-height: 1;
+  text-align: center;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1.4cqw 3cqw rgba(0, 0, 0, 0.12);
+}
+
+/* counting dots (number-concept templates) — max 5 per row like the
+   printed reference cards, so 8 reads as 5 + 3 */
+.uno-dots {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  gap: 1.8cqw;
+  padding-top: 0.6cqw;
+  margin: 0 auto;
+  max-width: 61cqw;
+}
+
+.uno-dots i {
+  width: 10.4cqw;
+  height: 10.4cqw;
+  border-radius: 50%;
+  background: var(--frame);
+  display: block;
+}
+
+/* ---- text stack ---- */
+
+.uno-text {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4cqw;
+  text-align: center;
+}
+
+.u-caption {
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  font-size: 8.6cqw;
+  line-height: 1.05;
+  color: #2f2f3d;
+  text-wrap: balance;
+}
+
+.u-caption.long {
+  font-size: 6.2cqw;
+}
+
+.u-subtitle {
+  font-size: 4cqw;
+  font-weight: 700;
+  color: #6b6489;
+}
+
+.u-sentence {
+  font-size: 3.9cqw;
+  line-height: 1.42;
+  color: #4e4a63;
+  text-wrap: pretty;
+}
+
+.u-pron {
+  font-size: 3.6cqw;
+  letter-spacing: 0.06em;
+  color: #7d76a0;
+  font-weight: 700;
+}
+
+.u-note {
+  display: flex;
+  gap: 1.4cqw;
+  align-items: flex-start;
+  text-align: left;
+  padding: 2cqw 2.4cqw;
+  border-radius: 2.4cqw;
+  font-size: 3.5cqw;
+  line-height: 1.4;
+  background: var(--tint);
+  color: #3d3552;
+}
+
+.u-note .tag {
+  flex: 0 0 auto;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: 3.2cqw;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--frame-ink);
+  padding-top: 0.3cqw;
+}
+
+.u-note.q {
+  font-weight: 700;
+}
+
+.u-badge {
+  align-self: center;
+  padding: 1.2cqw 3.4cqw;
+  border-radius: 999px;
+  background: var(--frame);
+  color: var(--frame-ink);
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: 3.6cqw;
+}
+
+.u-footer {
+  font-size: 3cqw;
+  color: #9a94b3;
+}
+
+.comp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.2cqw;
+}
+
+.comp-chip {
+  padding: 1.2cqw 3cqw;
+  border-radius: 999px;
+  background: var(--tint);
+  color: var(--frame-ink);
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  font-size: 3.6cqw;
+}
+
+.comp-placeholder {
+  font-size: 3cqw;
+  color: #a8a2c0;
+  font-style: italic;
+  text-align: center;
+  padding: 2cqw;
+}
+
+.uno-region {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6cqw;
+}
+
+/* ---------- layout engine (configuration-driven) ---------- */
+
+.layout-root {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2cqw;
+}
+
+.layout-root.horizontal {
+  flex-direction: row;
+}
+
+.layout-root.two-column {
+  gap: 2cqw;
+}
+
+.layout-root.two-column .layout-row {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2cqw;
+}
+
+.layout-root.grid .layout-region[data-region-id='body'] .uno-cells {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.layout-root.overlay .layout-region[data-region-id='body'] {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout-root.overlay .layout-region[data-region-id='overlay'] {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.layout-root.split .layout-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2cqw;
+}
+
+.layout-region {
+  display: flex;
+  min-width: 0;
+}
+
+.layout-region[data-region-id='header'] {
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2cqw;
+}
+
+.layout-region[data-region-id='body'] {
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1.6cqw;
+}
+
+.layout-region[data-region-id='footer'],
+.layout-region[data-region-id='bottom'] {
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 1.4cqw;
+  text-align: center;
+}
+
+.layout-region[data-region-id='left'],
+.layout-region[data-region-id='right'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1cqw;
+}
+
+.layout-region.hidden {
+  display: none !important;
+}
+
+.comp-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1cqw;
+  text-align: left;
+}
+
+.comp-option {
+  padding: 1.4cqw 2cqw;
+  border-radius: 2cqw;
+  background: var(--tint);
+  font-size: 3.6cqw;
+  line-height: 1.35;
+  color: #3d3552;
+}

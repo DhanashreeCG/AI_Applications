@@ -1,0 +1,4 @@
+export const SAMPLE_GIF_BUFFER = Buffer.from(
+  'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+  'base64',
+);
