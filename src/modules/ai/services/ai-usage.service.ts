@@ -11,6 +11,7 @@ export interface RecordAiUsageInput {
   completedAt?: Date;
   latencyMs?: number;
   inputTokens?: number;
+  cachedInputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
   estimatedCost?: number;
@@ -35,6 +36,7 @@ export class AiUsageService {
         completedAt: input.completedAt ?? new Date(),
         latencyMs: input.latencyMs,
         inputTokens: input.inputTokens,
+        cachedInputTokens: input.cachedInputTokens,
         outputTokens: input.outputTokens,
         totalTokens: input.totalTokens,
         estimatedCost: input.estimatedCost,

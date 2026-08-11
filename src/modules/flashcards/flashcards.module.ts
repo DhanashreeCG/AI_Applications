@@ -9,7 +9,9 @@ import { FlashcardImageRetrievalService } from './services/flashcard-image-retri
 import { FlashcardOrchestratorService } from './services/flashcard-orchestrator.service';
 import { FlashcardSeedService } from './services/flashcard-seed.service';
 import { FlashcardTemplateService } from './services/flashcard-template.service';
+import { TemplateCatalogCacheService } from './services/template-catalog-cache.service';
 import { TemplateRepository } from './services/template.repository';
+import { TemplateSelectionAiService } from './services/template-selection-ai.service';
 import { TemplateSelectionService } from './services/template-selection.service';
 import { FlashcardRendererService } from './flashcard-renderer/renderer/flashcard-renderer.service';
 import { BrowserPoolService } from './flashcard-renderer/browser/browser-pool.service';
@@ -22,6 +24,8 @@ import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-
   providers: [
     AssetImageService,
     TemplateRepository,
+    TemplateCatalogCacheService,
+    TemplateSelectionAiService,
     TemplateSelectionService,
     FlashcardTemplateService,
     FlashcardContentService,

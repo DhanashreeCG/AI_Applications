@@ -549,29 +549,42 @@ export class FlashcardOrchestratorService {
         subject: resolved.subject,
         difficulty: resolved.difficulty,
         query: resolved.query,
+        telemetry,
       });
+
+    const buildSelectionMetadata = (
+      selected: SelectTemplateResult,
+      extra?: Record<string, unknown>,
+    ) => ({
+      templateId: selected.template.id,
+      ruleId: selected.selection.ruleId,
+      templateVersion: selected.template.templateVersion,
+      requestedAgeGroup: resolved.ageGroup,
+      templateAgeGroups: selected.template.supportedAgeGroups,
+      learningObjective: resolved.learningObjective,
+      objectiveConfidence: resolved.objectiveConfidence,
+      selectionScore: selected.selection.score,
+      selectionMode: selected.aiSelection?.selectionMode ?? 'deterministic',
+      aiConfidence: selected.aiSelection?.result?.confidenceScore,
+      aiReasoning: selected.aiSelection?.result?.reasoning,
+      aiFallbackReason: selected.aiSelection?.fallbackReason,
+      catalogHash: selected.aiSelection?.catalogHash,
+      cachedTokens: selected.aiSelection?.result?.cachedInputTokens,
+      rankingBreakdown: selected.ranking?.map((candidate) => ({
+        templateId: candidate.templateId,
+        ruleId: candidate.ruleId,
+        score: candidate.score,
+        breakdown: candidate.breakdown,
+      })),
+      ...extra,
+    });
 
     try {
       const selected = await selectOnce();
       this.emitter.emitStageCompleted({
         ...telemetry,
         stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
-        metadata: {
-          templateId: selected.template.id,
-          ruleId: selected.selection.ruleId,
-          templateVersion: selected.template.templateVersion,
-          requestedAgeGroup: resolved.ageGroup,
-          templateAgeGroups: selected.template.supportedAgeGroups,
-          learningObjective: resolved.learningObjective,
-          objectiveConfidence: resolved.objectiveConfidence,
-          selectionScore: selected.selection.score,
-          rankingBreakdown: selected.ranking?.map((candidate) => ({
-            templateId: candidate.templateId,
-            ruleId: candidate.ruleId,
-            score: candidate.score,
-            breakdown: candidate.breakdown,
-          })),
-        },
+        metadata: buildSelectionMetadata(selected),
       });
       return selected;
     } catch (error) {
@@ -587,11 +600,9 @@ export class FlashcardOrchestratorService {
           this.emitter.emitStageCompleted({
             ...telemetry,
             stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
-            metadata: {
-              templateId: selected.template.id,
-              ruleId: selected.selection.ruleId,
+            metadata: buildSelectionMetadata(selected, {
               retriedAfterInactive: true,
-            },
+            }),
           });
           return selected;
         } catch (retryError) {
