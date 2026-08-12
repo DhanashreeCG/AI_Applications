@@ -250,6 +250,9 @@ const RAW_VALUE_SEMANTIC_ROLES = new Set([
   'numbers.digit.item',
   'numbers.reading.item',
   'sightwords.item',
+  'comparison.left.label',
+  'comparison.right.label',
+  'vocabulary.word.label',
 ]);
 
 const RAW_VALUE_ID_PATTERN = /^(num|number|reading|word)-\d+$/;
