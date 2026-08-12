@@ -45,18 +45,118 @@ export interface RepeatCountMap {
   [templatedComponentId: string]: number;
 }
 
+/** Hard cap for inferred grid size when falling back from the user query. */
+const MAX_FALLBACK_REPEAT = 50;
+
+/**
+ * Parses a requested numeric range size from free-text (query/topic).
+ * Supports start+end, end-only, and start-only forms with separators like
+ * "-", "to", "through", "till", "until", "between…and", "up to", "from".
+ * Returns undefined when no usable range is found.
+ */
+export function parseRequestedRangeCount(text?: string): number | undefined {
+  if (!text?.trim()) return undefined;
+
+  // Strip thousands separators so "1,000" → "1000"
+  const normalized = text.replace(/,/g, ' ');
+
+  type DualMatch = { start: number; end: number; index: number };
+  const dualMatches: DualMatch[] = [];
+
+  const dualPatterns: RegExp[] = [
+    /\bfrom\s+(\d+)\s+(?:to|through|thru|till|until|upto|-|–|—)\s+(\d+)\b/gi,
+    /\bbetween\s+(\d+)\s+and\s+(\d+)\b/gi,
+    /\b(\d+)\s*(?:-|–|—)\s*(\d+)\b/g,
+    /\b(\d+)\s+(?:to|through|thru|till|until)\s+(\d+)\b/gi,
+  ];
+
+  for (const pattern of dualPatterns) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(normalized)) !== null) {
+      const start = Number.parseInt(match[1], 10);
+      const end = Number.parseInt(match[2], 10);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+      dualMatches.push({ start, end, index: match.index });
+    }
+  }
+
+  const isLikelyAgeBand = (start: number, end: number, index: number): boolean => {
+    const lo = Math.min(start, end);
+    const hi = Math.max(start, end);
+    // Typical learner age bands are small and near age/year wording.
+    if (lo < 1 || hi > 18) return false;
+    const windowStart = Math.max(0, index - 24);
+    const windowEnd = Math.min(normalized.length, index + 40);
+    const window = normalized.slice(windowStart, windowEnd);
+    return /\b(age|ages|year|years|old|olds|yr|yrs)\b/i.test(window);
+  };
+
+  const usableDual = dualMatches.filter(
+    (m) => !isLikelyAgeBand(m.start, m.end, m.index),
+  );
+
+  if (usableDual.length > 0) {
+    // Prefer the widest span (e.g. 1–100 over incidental smaller pairs).
+    let best = usableDual[0];
+    let bestSpan = Math.abs(best.end - best.start);
+    for (let i = 1; i < usableDual.length; i++) {
+      const span = Math.abs(usableDual[i].end - usableDual[i].start);
+      if (span > bestSpan) {
+        best = usableDual[i];
+        bestSpan = span;
+      }
+    }
+    const lo = Math.min(best.start, best.end);
+    const hi = Math.max(best.start, best.end);
+    return Math.max(1, hi - lo + 1);
+  }
+
+  // End-only: "up to 100", "until 50", "till 20", "numbers to 100"
+  const endOnly =
+    /\b(?:up\s*to|upto|until|till)\s+(\d+)\b/i.exec(normalized) ??
+    /(?:^|[^\d])\bto\s+(\d+)\b/i.exec(normalized);
+  if (endOnly) {
+    const end = Number.parseInt(endOnly[1], 10);
+    if (Number.isFinite(end) && end >= 1) {
+      // Implicit start at 1 → inclusive count is `end`
+      return end;
+    }
+  }
+
+  // Start-only: "from 51", "starting from 20", "starting at 10"
+  // Open-ended → caller caps at MAX_FALLBACK_REPEAT.
+  const startOnly =
+    /\b(?:starting\s+from|starting\s+at|from)\s+(\d+)\b/i.exec(normalized);
+  if (startOnly) {
+    const start = Number.parseInt(startOnly[1], 10);
+    if (Number.isFinite(start) && start >= 0) {
+      return MAX_FALLBACK_REPEAT;
+    }
+  }
+
+  return undefined;
+}
+
 // Known repeating component ids and how to size them when the caller
 // doesn't pass an explicit repeatCounts entry. This is a SAFETY NET, not
 // the primary mechanism — whenever the actual requested range/count is
 // known upstream (e.g. "numbers 51 to 100"), pass it via `repeatCounts` so
 // the card reflects exactly what was asked for. These fallbacks exist so a
 // missing repeatCounts entry degrades to a reasonable default instead of
-// crashing generation.
+// crashing generation. When a range is detectable in `query`, use
+// min(50, rangeSize); otherwise keep the age/template defaults below.
 function inferFallbackRepeatCount(
   templatedComponentId: string,
   ageMin?: number,
   ageMax?: number,
+  query?: string,
 ): number {
+  const fromQuery = parseRequestedRangeCount(query);
+  if (fromQuery !== undefined) {
+    return Math.min(MAX_FALLBACK_REPEAT, Math.max(1, fromQuery));
+  }
+
   if (templatedComponentId === 'word-{x}') {
     const midpoint = ((ageMin ?? 5) + (ageMax ?? 5)) / 2;
     return midpoint <= 4 ? 4 : 6; // matches GRID_1X4 vs GRID_2X3 selectionRule
@@ -66,7 +166,7 @@ function inferFallbackRepeatCount(
     templatedComponentId === 'number-{x}' ||
     templatedComponentId === 'reading-{x}'
   ) {
-    return 10; // safe cap shared by both numeric-grid templates
+    return 10; // safe default when no range is present in the query
   }
   return 10; // generic fallback for any other repeating field
 }
@@ -89,9 +189,11 @@ export function expandTemplateComponents(
     repeatCounts?: RepeatCountMap;
     ageMin?: number;
     ageMax?: number;
+    /** User request text — used to infer range size when repeatCounts is missing. */
+    query?: string;
   } = {},
 ): TemplateComponentDefinition[] {
-  const { repeatCounts = {}, ageMin, ageMax } = options;
+  const { repeatCounts = {}, ageMin, ageMax, query } = options;
   const expanded: TemplateComponentDefinition[] = [];
 
   for (const component of components) {
@@ -102,7 +204,12 @@ export function expandTemplateComponents(
 
     let count = repeatCounts[component.componentId];
     if (!count || count < 1) {
-      count = inferFallbackRepeatCount(component.componentId, ageMin, ageMax);
+      count = inferFallbackRepeatCount(
+        component.componentId,
+        ageMin,
+        ageMax,
+        query,
+      );
       // eslint-disable-next-line no-console
       console.warn(
         `[flashcard-prompt] No repeatCounts entry for "${component.componentId}"; ` +
@@ -209,6 +316,7 @@ export function buildFlashcardContentPrompt(input: {
     repeatCounts: input.repeatCounts,
     ageMin: input.ageMin,
     ageMax: input.ageMax,
+    query: input.query,
   });
 
   const titleComponents = textComponents.filter(isTitleLabelComponent);
@@ -348,8 +456,8 @@ ${exampleImageComponents}
  *
  * Self-contained: expands any "{x}" ids automatically via
  * expandTemplateComponents(), same as buildFlashcardContentPrompt — no
- * caller-side pre-expansion required. Pass `repeatCounts`/`ageMin`/`ageMax`
- * in `options` whenever the real requested count is known, so the schema
+ * caller-side pre-expansion required. Pass `repeatCounts`/`ageMin`/`ageMax`/
+ * `query` in `options` whenever the real requested count is known, so the schema
  * (and therefore the model's available slots) matches exactly what the
  * user asked for rather than the inferred fallback.
  */
@@ -360,6 +468,7 @@ export function buildFlashcardContentSchema(
     repeatCounts?: RepeatCountMap;
     ageMin?: number;
     ageMax?: number;
+    query?: string;
   } = {},
 ): Record<string, unknown> {
   const textComponents = expandTemplateComponents(rawTextComponents, options);

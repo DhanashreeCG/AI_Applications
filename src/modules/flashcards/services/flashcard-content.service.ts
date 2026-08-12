@@ -332,6 +332,11 @@ export class FlashcardContentService {
             responseSchema: buildFlashcardContentSchema(
               input.textComponents,
               input.imageComponents,
+              {
+                ageMin: input.ageMin,
+                ageMax: input.ageMax,
+                query: input.query,
+              },
             ),
           },
         });
