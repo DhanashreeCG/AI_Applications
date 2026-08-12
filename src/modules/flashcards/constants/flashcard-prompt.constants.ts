@@ -132,8 +132,11 @@ export function expandTemplateComponents(
 // (post-expansion) componentId matches a numbered-slot pattern like
 // "num-3", "number-7", "reading-2", "word-4".
 //
-// Everything else (skillLabel, free-text description/fact/question fields)
-// keeps the existing age-band narrative guidance.
+// Title/Label components (skillLabel, title, etc.) are a third category:
+// clean 1–4 word domain titles — never age-band narrative sentences.
+//
+// Everything else (free-text description/fact/question fields) keeps the
+// existing age-band narrative guidance.
 
 const RAW_VALUE_SEMANTIC_ROLES = new Set([
   'counting.sequence.item',
@@ -148,6 +151,28 @@ function isRawValueComponent(component: TemplateComponentDefinition): boolean {
   const role = (component as { semanticRole?: string }).semanticRole;
   if (role) return RAW_VALUE_SEMANTIC_ROLES.has(role);
   return RAW_VALUE_ID_PATTERN.test(component.componentId);
+}
+
+const TITLE_LABEL_SEMANTIC_ROLES = new Set([
+  'phonics.skill.label',
+  'header.label',
+  'title.label',
+  'card.title',
+  'skill.label',
+]);
+
+const TITLE_LABEL_ID_PATTERN = /^(skillLabel|title|headerLabel|cardTitle)$/i;
+
+function isTitleLabelComponent(component: TemplateComponentDefinition): boolean {
+  const role = (component as { semanticRole?: string }).semanticRole;
+  if (role) return TITLE_LABEL_SEMANTIC_ROLES.has(role);
+  return TITLE_LABEL_ID_PATTERN.test(component.componentId);
+}
+
+function componentStyleLabel(component: TemplateComponentDefinition): string {
+  if (isRawValueComponent(component)) return 'RAW_VALUE';
+  if (isTitleLabelComponent(component)) return 'TITLE_LABEL';
+  return 'NARRATIVE';
 }
 
 // ---------------------------------------------------------------------------
@@ -186,15 +211,13 @@ export function buildFlashcardContentPrompt(input: {
     ageMax: input.ageMax,
   });
 
-  const narrativeComponents = textComponents.filter(
-    (c) => !isRawValueComponent(c),
-  );
+  const titleComponents = textComponents.filter(isTitleLabelComponent);
   const rawValueComponents = textComponents.filter(isRawValueComponent);
 
   const textContract = textComponents
     .map(
       (component) =>
-        `- "${component.componentId}": type=${component.componentType}, region=${component.regionId ?? 'unspecified'}, ${component.required ? 'required' : 'optional'}, style=${isRawValueComponent(component) ? 'RAW_VALUE' : 'NARRATIVE'}, validation=${JSON.stringify(component.validationRules ?? {})}`,
+        `- "${component.componentId}": type=${component.componentType}, region=${component.regionId ?? 'unspecified'}, ${component.required ? 'required' : 'optional'}, style=${componentStyleLabel(component)}, validation=${JSON.stringify(component.validationRules ?? {})}`,
     )
     .join('\n');
 
@@ -206,10 +229,16 @@ export function buildFlashcardContentPrompt(input: {
     .join('\n');
 
   const exampleTextComponents = textComponents
-    .map(
-      (component) =>
-        `        "${component.componentId}": "<${isRawValueComponent(component) ? 'bare value, e.g. a number or single word — no sentence' : component.componentType + ' content'}>"`,
-    )
+    .map((component) => {
+      const style = componentStyleLabel(component);
+      const placeholder =
+        style === 'RAW_VALUE'
+          ? 'bare value, e.g. a number or single word — no sentence'
+          : style === 'TITLE_LABEL'
+            ? '1–4 word domain title, e.g. Numbers 91 to 100 — no sentence'
+            : component.componentType + ' content';
+      return `        "${component.componentId}": "<${placeholder}>"`;
+    })
     .join(',\n');
 
   const exampleImageComponents = input.imageComponents
@@ -238,6 +267,15 @@ RAW VALUE fields (listed as style=RAW_VALUE above — e.g. ${rawValueComponents
 - Respect each field's own validation limits exactly (see "validation" above).`
       : '';
 
+  const titleLabelRules =
+    titleComponents.length > 0
+      ? `
+TITLE / SKILL LABEL fields (e.g. ${titleComponents.map((c) => `"${c.componentId}"`).join(', ')}):
+- Output ONLY a clean, 1 to 4 word domain/topic title (e.g., "Numbers 91 to 100" or "Sight Words").
+- NEVER write full sentences, conversational filler, or instructions (FORBIDDEN: "Let us read", "Look at the", "Read together", "Carefully").
+- Ignore age-band sentence/narrative guidelines for these fields.`
+      : '';
+
   return `You generate educational flashcard CONTENT only.
 
 Rules:
@@ -250,10 +288,10 @@ Rules:
 - Never return image filenames — only semantic image search fields.
 - Keep language age-appropriate for ages ${ageLabel}.
 - Write all educational text in ${language}.
-- ${ageBandGuidance(input.ageMin, input.ageMax)} (applies only to NARRATIVE-style fields — see per-field style below; never applies to RAW_VALUE fields.)
+- ${ageBandGuidance(input.ageMin, input.ageMax)} (applies only to NARRATIVE-style fields — see per-field style below; never applies to RAW_VALUE or TITLE_LABEL fields.)
 - Maximize educational variety. Do NOT always reuse the same canonical examples (e.g. A→Apple/Ball/Cat, or Potato/Tomato/Carrot). Rotate equally valid age-appropriate alternatives when they exist.
 - Content must be factually correct, concise, curriculum-aligned, and visually teachable.
-${rawValueRules}
+${rawValueRules}${titleLabelRules}
 
 Learner profile:
 - User request: ${input.query}
