@@ -253,6 +253,9 @@ const RAW_VALUE_SEMANTIC_ROLES = new Set([
   'comparison.left.label',
   'comparison.right.label',
   'vocabulary.word.label',
+  'phonics.letter.uppercase',
+  'phonics.letter.lowercase',
+  'phonics.example.label',
 ]);
 
 const RAW_VALUE_ID_PATTERN = /^(num|number|reading|word)-\d+$/;
