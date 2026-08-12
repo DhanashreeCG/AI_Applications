@@ -243,6 +243,7 @@ export class TemplateRepository {
         layoutType: true,
       },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      where: { active: true },
     });
   }
 
