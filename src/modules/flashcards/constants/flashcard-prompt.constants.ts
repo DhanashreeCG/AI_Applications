@@ -145,18 +145,28 @@ export function parseRequestedRangeCount(text?: string): number | undefined {
 // the card reflects exactly what was asked for. These fallbacks exist so a
 // missing repeatCounts entry degrades to a reasonable default instead of
 // crashing generation. When a range is detectable in `query`, use
-// min(50, rangeSize); otherwise keep the age/template defaults below.
+// min(50, rangeSize); otherwise prefer bounds from the component definition
+// (`validationRules`), then age/template defaults below.
 function inferFallbackRepeatCount(
   templatedComponentId: string,
+  componentDef?: TemplateComponentDefinition,
   ageMin?: number,
   ageMax?: number,
   query?: string,
 ): number {
+  // 1. Check if user specified a numeric range in query (e.g. "1 to 50")
   const fromQuery = parseRequestedRangeCount(query);
   if (fromQuery !== undefined) {
     return Math.min(MAX_FALLBACK_REPEAT, Math.max(1, fromQuery));
   }
 
+  // 2. Read explicit bounds from the template component definition when present
+  const fromDef = repeatCountFromComponentDef(componentDef);
+  if (fromDef !== undefined) {
+    return Math.min(MAX_FALLBACK_REPEAT, Math.max(1, fromDef));
+  }
+
+  // 3. Fallback defaults for unconstrained repeating components
   if (templatedComponentId === 'word-{x}') {
     const midpoint = ((ageMin ?? 5) + (ageMax ?? 5)) / 2;
     return midpoint <= 4 ? 4 : 6; // matches GRID_1X4 vs GRID_2X3 selectionRule
@@ -166,14 +176,108 @@ function inferFallbackRepeatCount(
     templatedComponentId === 'number-{x}' ||
     templatedComponentId === 'reading-{x}'
   ) {
-    return 10; // safe default when no range is present in the query
+    return 10;
   }
-  return 10; // generic fallback for any other repeating field
+  return 10; // generic fallback for any other repeating field (incl. image-{x})
 }
 
 /**
- * Expands "{x}"-templated componentIds (e.g. "num-{x}") into concrete,
- * individually-addressable ids ("num-1".."num-N").
+ * Pulls a repeat/grid size hint from a component's validationRules when the
+ * CMS/template declares one (maxItems, count, range, etc.).
+ */
+// function repeatCountFromComponentDef(
+//   componentDef?: TemplateComponentDefinition,
+// ): number | undefined {
+//   if (!componentDef?.validationRules) return undefined;
+//   const rules = componentDef.validationRules;
+
+//   const asPositiveInt = (value: unknown): number | undefined => {
+//     if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+//     const n = Math.trunc(value);
+//     return n >= 1 ? n : undefined;
+//   };
+
+//   const direct =
+//     asPositiveInt(rules.maxItems) ??
+//     asPositiveInt(rules.count) ??
+//     asPositiveInt(rules.repeatCount) ??
+//     asPositiveInt(rules.maxCount) ??
+//     asPositiveInt(rules.minItems);
+//   if (direct !== undefined) return direct;
+
+//   const range = rules.range;
+//   if (range && typeof range === 'object' && !Array.isArray(range)) {
+//     const start = asPositiveInt((range as { start?: unknown }).start);
+//     const end = asPositiveInt((range as { end?: unknown }).end);
+//     if (start !== undefined && end !== undefined) {
+//       return Math.abs(end - start) + 1;
+//     }
+//     if (end !== undefined) return end;
+//   }
+//   if (Array.isArray(range) && range.length >= 2) {
+//     const start = asPositiveInt(range[0]);
+//     const end = asPositiveInt(range[1]);
+//     if (start !== undefined && end !== undefined) {
+//       return Math.abs(end - start) + 1;
+//     }
+//   }
+
+//   return undefined;
+// }
+
+function repeatCountFromComponentDef(
+  componentDef?: TemplateComponentDefinition,
+): number | undefined {
+  if (!componentDef) return undefined;
+
+  const asPositiveInt = (value: unknown): number | undefined => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+    const n = Math.trunc(value);
+    return n >= 1 ? n : undefined;
+  };
+
+  // Extract from both `constraints` AND `validationRules`
+  const sources = [
+    componentDef as unknown as Record<string, unknown>,
+    (componentDef.constraints as Record<string, unknown> | undefined) ?? {},
+    (componentDef.validationRules as Record<string, unknown> | undefined) ?? {},
+  ];
+
+  for (const src of sources) {
+    const direct =
+      asPositiveInt(src.maxItems) ??
+      asPositiveInt(src.minItems) ??
+      asPositiveInt(src.count) ??
+      asPositiveInt(src.repeatCount) ??
+      asPositiveInt(src.maxCount) ??
+      asPositiveInt(src.itemCount);
+
+    if (direct !== undefined) return direct;
+
+    const range = src.range;
+    if (range && typeof range === 'object' && !Array.isArray(range)) {
+      const start = asPositiveInt((range as { start?: unknown }).start);
+      const end = asPositiveInt((range as { end?: unknown }).end);
+      if (start !== undefined && end !== undefined) {
+        return Math.abs(end - start) + 1;
+      }
+      if (end !== undefined) return end;
+    }
+    if (Array.isArray(range) && range.length >= 2) {
+      const start = asPositiveInt(range[0]);
+      const end = asPositiveInt(range[1]);
+      if (start !== undefined && end !== undefined) {
+        return Math.abs(end - start) + 1;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Expands "{x}"-templated componentIds (e.g. "num-{x}", "image-{x}") into
+ * concrete, individually-addressable ids ("num-1".."num-N", "image-1"..).
  *
  * Never throws. If `repeatCounts` doesn't have an entry for a given
  * templated id, falls back to inferFallbackRepeatCount() and logs a
@@ -182,6 +286,10 @@ function inferFallbackRepeatCount(
  * `repeatCounts` explicitly whenever the real count is known (it always
  * should be, since it comes from the same range/age-group the request
  * already carries) to get an exact rather than a default-sized grid.
+ *
+ * For `image-{x}`, when no explicit count is provided, the count is
+ * inherited from a paired text repeat field (word-/num-/number-/reading-{x})
+ * via `pairWithComponents` or already-resolved entries in `repeatCounts`.
  */
 export function expandTemplateComponents(
   components: TemplateComponentDefinition[],
@@ -191,9 +299,15 @@ export function expandTemplateComponents(
     ageMax?: number;
     /** User request text — used to infer range size when repeatCounts is missing. */
     query?: string;
+    /**
+     * Sibling component defs (typically the template's text components) used
+     * to infer `image-{x}` count so image slots stay 1:1 with word/num slots.
+     */
+    pairWithComponents?: TemplateComponentDefinition[];
   } = {},
 ): TemplateComponentDefinition[] {
-  const { repeatCounts = {}, ageMin, ageMax, query } = options;
+  const { ageMin, ageMax, query } = options;
+  const repeatCounts = resolveRepeatCounts(components, options);
   const expanded: TemplateComponentDefinition[] = [];
 
   for (const component of components) {
@@ -206,10 +320,21 @@ export function expandTemplateComponents(
     if (!count || count < 1) {
       count = inferFallbackRepeatCount(
         component.componentId,
+        component,
         ageMin,
         ageMax,
         query,
       );
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[flashcard-prompt] No repeatCounts entry for "${component.componentId}"; ` +
+          `falling back to inferred count ${count}. Pass the real requested ` +
+          `count via repeatCounts to render exactly what the user asked for.`,
+      );
+    } else if (
+      !options.repeatCounts?.[component.componentId] ||
+      (options.repeatCounts[component.componentId] ?? 0) < 1
+    ) {
       // eslint-disable-next-line no-console
       console.warn(
         `[flashcard-prompt] No repeatCounts entry for "${component.componentId}"; ` +
@@ -227,6 +352,114 @@ export function expandTemplateComponents(
   }
 
   return expanded;
+}
+
+/** True for repeating image placeholders such as `image-{x}`. */
+function isImageRepeatId(componentId: string): boolean {
+  return /(?:^|-)image-\{x\}$/i.test(componentId) || /^image-\{x\}$/i.test(componentId);
+}
+
+const PAIRED_TEXT_REPEAT_IDS = [
+  'word-{x}',
+  'num-{x}',
+  'number-{x}',
+  'reading-{x}',
+] as const;
+
+/**
+ * Fills missing repeatCounts so text `{x}` fields are sized first, then
+ * `image-{x}` inherits that size when not set explicitly.
+ */
+function resolveRepeatCounts(
+  components: TemplateComponentDefinition[],
+  options: {
+    repeatCounts?: RepeatCountMap;
+    ageMin?: number;
+    ageMax?: number;
+    query?: string;
+    pairWithComponents?: TemplateComponentDefinition[];
+  },
+): RepeatCountMap {
+  const { ageMin, ageMax, query, pairWithComponents = [] } = options;
+  const counts: RepeatCountMap = { ...(options.repeatCounts ?? {}) };
+
+  const findComponentDef = (
+    templatedId: string,
+  ): TemplateComponentDefinition | undefined =>
+    components.find((c) => c.componentId === templatedId) ??
+    pairWithComponents.find((c) => c.componentId === templatedId);
+
+  const ensureCount = (
+    templatedId: string,
+    componentDef?: TemplateComponentDefinition,
+  ): void => {
+    if (counts[templatedId] && counts[templatedId] >= 1) return;
+    counts[templatedId] = inferFallbackRepeatCount(
+      templatedId,
+      componentDef ?? findComponentDef(templatedId),
+      ageMin,
+      ageMax,
+      query,
+    );
+  };
+
+  // 1) Resolve paired text siblings first (source of truth for image grids).
+  for (const component of pairWithComponents) {
+    if (
+      component.componentId.includes('{x}') &&
+      !isImageRepeatId(component.componentId)
+    ) {
+      ensureCount(component.componentId, component);
+    }
+  }
+
+  // 2) Resolve non-image repeating fields in the list being expanded.
+  for (const component of components) {
+    if (!component.componentId.includes('{x}')) continue;
+    if (isImageRepeatId(component.componentId)) continue;
+    ensureCount(component.componentId, component);
+  }
+
+  // 3) Image repeats inherit paired text count when not explicit.
+  for (const component of components) {
+    if (!isImageRepeatId(component.componentId)) continue;
+    if (!component.componentId.includes('{x}')) continue;
+    if (counts[component.componentId] && counts[component.componentId] >= 1) {
+      continue;
+    }
+
+    let paired: number | undefined;
+    for (const id of PAIRED_TEXT_REPEAT_IDS) {
+      if (counts[id] && counts[id] >= 1) {
+        paired = counts[id];
+        break;
+      }
+    }
+    if (paired === undefined) {
+      for (const [id, value] of Object.entries(counts)) {
+        if (
+          value >= 1 &&
+          id.includes('{x}') &&
+          !isImageRepeatId(id)
+        ) {
+          paired = value;
+          break;
+        }
+      }
+    }
+
+    counts[component.componentId] =
+      paired ??
+      inferFallbackRepeatCount(
+        component.componentId,
+        component,
+        ageMin,
+        ageMax,
+        query,
+      );
+  }
+
+  return counts;
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +521,28 @@ function componentStyleLabel(component: TemplateComponentDefinition): string {
   return 'NARRATIVE';
 }
 
+const BARE_EXACT_QUERY_IMAGE_ROLES = new Set(['phonics.letter.image']);
+
+const BARE_EXACT_QUERY_IMAGE_ID_PATTERN = /^(letterImage|letter_image)$/i;
+
+/**
+ * Letter-glyph image slots whose searchQuery must be ONLY the letter phrase
+ * (e.g. "Letter Q") — no style adjectives or decorative filler.
+ */
+function isBareExactQueryImageComponent(
+  component: TemplateComponentDefinition,
+): boolean {
+  const role = component.semanticRole;
+  if (role) return BARE_EXACT_QUERY_IMAGE_ROLES.has(role);
+  return BARE_EXACT_QUERY_IMAGE_ID_PATTERN.test(component.componentId);
+}
+
+function imageStyleLabel(component: TemplateComponentDefinition): string {
+  return isBareExactQueryImageComponent(component)
+    ? 'BARE_EXACT_QUERY'
+    : 'STANDARD';
+}
+
 // ---------------------------------------------------------------------------
 // Prompt builder
 // ---------------------------------------------------------------------------
@@ -301,7 +556,7 @@ export function buildFlashcardContentPrompt(input: {
   count: number;
   selectedTemplate: SelectedTemplatePayload;
   textComponents: TemplateComponentDefinition[]; // may contain "{x}" ids — expanded internally
-  imageComponents: TemplateComponentDefinition[];
+  imageComponents: TemplateComponentDefinition[]; // may contain "image-{x}" — expanded with text pairing
   grade?: string | null;
   subject?: string | null;
   difficulty?: string | null;
@@ -318,15 +573,27 @@ export function buildFlashcardContentPrompt(input: {
   // Self-contained: expands any "{x}" ids automatically. No caller-side
   // change required — this is what makes the fix resilient to upstream
   // code that hasn't been (or can't yet be) updated to pre-expand.
-  const textComponents = expandTemplateComponents(input.textComponents, {
+  const expansionOptions = {
     repeatCounts: input.repeatCounts,
     ageMin: input.ageMin,
     ageMax: input.ageMax,
     query: input.query,
+  };
+  const textComponents = expandTemplateComponents(
+    input.textComponents,
+    expansionOptions,
+  );
+  // image-{x} must expand to the same slot count as paired text (word-/num-{x}).
+  const imageComponents = expandTemplateComponents(input.imageComponents, {
+    ...expansionOptions,
+    pairWithComponents: input.textComponents,
   });
 
   const titleComponents = textComponents.filter(isTitleLabelComponent);
   const rawValueComponents = textComponents.filter(isRawValueComponent);
+  const bareExactQueryImages = imageComponents.filter(
+    isBareExactQueryImageComponent,
+  );
 
   const textContract = textComponents
     .map(
@@ -335,10 +602,10 @@ export function buildFlashcardContentPrompt(input: {
     )
     .join('\n');
 
-  const imageContract = input.imageComponents
+  const imageContract = imageComponents
     .map(
       (component) =>
-        `- "${component.componentId}": type=image, region=${component.regionId ?? 'unspecified'}, ${component.required ? 'required' : 'optional'}, validation=${JSON.stringify(component.validationRules ?? {})}`,
+        `- "${component.componentId}": type=image, region=${component.regionId ?? 'unspecified'}, ${component.required ? 'required' : 'optional'}, style=${imageStyleLabel(component)}, validation=${JSON.stringify(component.validationRules ?? {})}`,
     )
     .join('\n');
 
@@ -355,17 +622,27 @@ export function buildFlashcardContentPrompt(input: {
     })
     .join(',\n');
 
-  const exampleImageComponents = input.imageComponents
-    .map(
-      (component) => `        "${component.componentId}": {
+  const exampleImageComponents = imageComponents
+    .map((component) => {
+      if (isBareExactQueryImageComponent(component)) {
+        return `        "${component.componentId}": {
+          "searchQuery": "<Letter Q — ONLY the letter phrase, no extra words>",
+          "expectedObjects": ["Q"],
+          "preferredStyle": "cartoon",
+          "preferredBackground": "white",
+          "orientation": "${input.selectedTemplate.orientation.toLowerCase()}",
+          "educationalUse": "flashcard"
+        }`;
+      }
+      return `        "${component.componentId}": {
           "searchQuery": "<precise semantic query for this image slot>",
           "expectedObjects": ["<primary expected object>"],
           "preferredStyle": "cartoon",
           "preferredBackground": "white",
           "orientation": "${input.selectedTemplate.orientation.toLowerCase()}",
           "educationalUse": "flashcard"
-        }`,
-    )
+        }`;
+    })
     .join(',\n');
 
   const rawValueRules =
@@ -390,6 +667,17 @@ TITLE / SKILL LABEL fields (e.g. ${titleComponents.map((c) => `"${c.componentId}
 - Ignore age-band sentence/narrative guidelines for these fields.`
       : '';
 
+  const bareExactQueryRules =
+    bareExactQueryImages.length > 0
+      ? `
+BARE_EXACT_QUERY image fields (e.g. ${bareExactQueryImages
+          .map((c) => `"${c.componentId}"`)
+          .join(', ')}):
+- searchQuery MUST be ONLY the requested letter phrase (e.g., "Letter Q" or "letter q").
+- NEVER add styles, adjectives, or extra words like "cartoon", "fun", "capital", "style", or "colorful" inside searchQuery.
+- expectedObjects should be just the letter itself (e.g. ["Q"]). Prefer preferredStyle/preferredBackground fields for rendering hints — do not bake those words into searchQuery.`
+      : '';
+
   return `You generate educational flashcard CONTENT only.
 
 Rules:
@@ -405,7 +693,7 @@ Rules:
 - ${ageBandGuidance(input.ageMin, input.ageMax)} (applies only to NARRATIVE-style fields — see per-field style below; never applies to RAW_VALUE or TITLE_LABEL fields.)
 - Maximize educational variety. Do NOT always reuse the same canonical examples (e.g. A→Apple/Ball/Cat, or Potato/Tomato/Carrot). Rotate equally valid age-appropriate alternatives when they exist.
 - Content must be factually correct, concise, curriculum-aligned, and visually teachable.
-${rawValueRules}${titleLabelRules}
+${rawValueRules}${titleLabelRules}${bareExactQueryRules}
 
 Learner profile:
 - User request: ${input.query}
@@ -433,7 +721,7 @@ Inside "imageComponents", use these exact component IDs verbatim. Each ID repres
 ${imageContract || '- No image components in this template.'}
 
 Every image component value must contain:
-- searchQuery: short precise semantic query (object-first, child-friendly)
+- searchQuery: for style=STANDARD use a short precise semantic query (object-first, child-friendly); for style=BARE_EXACT_QUERY use ONLY the letter phrase (e.g. "Letter Q") with no extra adjectives
 - expectedObjects: array of expected object names
 - preferredStyle: e.g. cartoon
 - preferredBackground: e.g. white
@@ -466,10 +754,13 @@ ${exampleImageComponents}
  * `query` in `options` whenever the real requested count is known, so the schema
  * (and therefore the model's available slots) matches exactly what the
  * user asked for rather than the inferred fallback.
+ *
+ * Both text and image components are expanded here — a literal "{x}" must
+ * never appear as a Gemini schema property key.
  */
 export function buildFlashcardContentSchema(
   rawTextComponents: TemplateComponentDefinition[],
-  imageComponents: TemplateComponentDefinition[],
+  rawImageComponents: TemplateComponentDefinition[],
   options: {
     repeatCounts?: RepeatCountMap;
     ageMin?: number;
@@ -478,6 +769,10 @@ export function buildFlashcardContentSchema(
   } = {},
 ): Record<string, unknown> {
   const textComponents = expandTemplateComponents(rawTextComponents, options);
+  const imageComponents = expandTemplateComponents(rawImageComponents, {
+    ...options,
+    pairWithComponents: rawTextComponents,
+  });
 
   const componentProperties: Record<string, unknown> = {};
   for (const component of textComponents) {

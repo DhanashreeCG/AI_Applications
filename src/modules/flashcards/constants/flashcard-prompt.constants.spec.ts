@@ -100,6 +100,42 @@ describe('flashcard template-aware prompt', () => {
       'image_secondary',
     );
   });
+
+  it('includes BARE_EXACT_QUERY rules for letterImage slots', () => {
+    const prompt = buildFlashcardContentPrompt({
+      query: 'Letter Q phonics',
+      topic: 'alphabet',
+      ageMin: 3,
+      ageMax: 4,
+      learningObjective: 'phonics',
+      count: 1,
+      selectedTemplate,
+      textComponents: [
+        {
+          componentId: 'uppercaseLetter',
+          componentType: 'title',
+          editable: true,
+          required: true,
+          semanticRole: 'phonics.letter.uppercase',
+        },
+      ],
+      imageComponents: [
+        {
+          componentId: 'letterImage',
+          componentType: 'image',
+          editable: true,
+          required: true,
+          semanticRole: 'phonics.letter.image',
+        },
+      ],
+    });
+
+    expect(prompt).toContain('style=BARE_EXACT_QUERY');
+    expect(prompt).toContain('BARE_EXACT_QUERY image fields');
+    expect(prompt).toContain('"letterImage"');
+    expect(prompt).toMatch(/searchQuery MUST be ONLY the requested letter/i);
+    expect(prompt).toContain('NEVER add styles, adjectives, or extra words');
+  });
 });
 
 describe('parseRequestedRangeCount', () => {
@@ -168,5 +204,114 @@ describe('expandTemplateComponents range fallback', () => {
       query: 'counting practice',
     });
     expect(expanded).toHaveLength(10);
+  });
+
+  it('uses validationRules.maxItems from the component definition', () => {
+    const withMaxItems: TemplateComponentDefinition = {
+      ...numComponent,
+      validationRules: { maxItems: 8 },
+    };
+    const expanded = expandTemplateComponents([withMaxItems], {
+      query: 'counting practice',
+    });
+    expect(expanded).toHaveLength(8);
+  });
+
+  it('uses validationRules.range from the component definition', () => {
+    const withRange: TemplateComponentDefinition = {
+      ...numComponent,
+      validationRules: { range: { start: 1, end: 12 } },
+    };
+    const expanded = expandTemplateComponents([withRange], {
+      query: 'counting practice',
+    });
+    expect(expanded).toHaveLength(12);
+  });
+});
+
+describe('expandTemplateComponents image-{x} pairing', () => {
+  const wordComponent: TemplateComponentDefinition = {
+    componentId: 'word-{x}',
+    componentType: 'text',
+    editable: true,
+    required: true,
+  };
+  const imageComponent: TemplateComponentDefinition = {
+    componentId: 'image-{x}',
+    componentType: 'image',
+    editable: true,
+    required: true,
+  };
+
+  it('expands image-{x} to match paired word-{x} count', () => {
+    const expanded = expandTemplateComponents([imageComponent], {
+      ageMin: 5,
+      ageMax: 6,
+      pairWithComponents: [wordComponent],
+    });
+    // word-{x} for ages 5-6 → 6
+    expect(expanded).toHaveLength(6);
+    expect(expanded.map((c) => c.componentId)).toEqual([
+      'image-1',
+      'image-2',
+      'image-3',
+      'image-4',
+      'image-5',
+      'image-6',
+    ]);
+  });
+
+  it('respects explicit image-{x} repeatCounts over paired text', () => {
+    const expanded = expandTemplateComponents([imageComponent], {
+      repeatCounts: { 'image-{x}': 2, 'word-{x}': 6 },
+      pairWithComponents: [wordComponent],
+    });
+    expect(expanded).toHaveLength(2);
+    expect(expanded.map((c) => c.componentId)).toEqual(['image-1', 'image-2']);
+  });
+
+  it('leaves non-repeating image ids unchanged', () => {
+    const staticImage: TemplateComponentDefinition = {
+      componentId: 'image_primary',
+      componentType: 'image',
+      editable: true,
+      required: true,
+    };
+    const expanded = expandTemplateComponents([staticImage], {
+      pairWithComponents: [wordComponent],
+    });
+    expect(expanded).toHaveLength(1);
+    expect(expanded[0].componentId).toBe('image_primary');
+  });
+});
+
+describe('buildFlashcardContentSchema expands image-{x}', () => {
+  it('never puts a literal image-{x} key in the schema', () => {
+    const schema = buildFlashcardContentSchema(
+      [
+        {
+          componentId: 'word-{x}',
+          componentType: 'text',
+          editable: true,
+          required: true,
+        },
+      ],
+      [
+        {
+          componentId: 'image-{x}',
+          componentType: 'image',
+          editable: true,
+          required: true,
+        },
+      ],
+      { ageMin: 5, ageMax: 6 },
+    ) as any;
+
+    const imageProps =
+      schema.properties.cards.items.properties.imageComponents.properties;
+    expect(imageProps).not.toHaveProperty('image-{x}');
+    expect(imageProps).toHaveProperty('image-1');
+    expect(imageProps).toHaveProperty('image-6');
+    expect(Object.keys(imageProps)).toHaveLength(6);
   });
 });

@@ -1,6 +1,8 @@
 import { ComponentType } from '../constants/flashcard.constants';
 
 export interface TemplateComponentDefinition {
+  constraints?: Record<string, unknown>;
+  semanticRole?: string;
   componentId: string;
   componentType: ComponentType;
   editable: boolean;
