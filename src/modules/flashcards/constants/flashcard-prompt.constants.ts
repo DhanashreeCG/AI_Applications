@@ -489,6 +489,9 @@ const RAW_VALUE_SEMANTIC_ROLES = new Set([
   'phonics.letter.uppercase',
   'phonics.letter.lowercase',
   'phonics.example.label',
+  'phonics.letter',
+  'phonics.word',
+  'phonics.sound',
 ]);
 
 const RAW_VALUE_ID_PATTERN = /^(num|number|reading|word)-\d+$/;
