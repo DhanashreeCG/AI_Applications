@@ -107,6 +107,15 @@ export class AssetPipelineService {
     return this.pipelineRetry.replayFromDlq(request);
   }
 
+  public async replayStuck(request: {
+    status: AssetState;
+    failedStage?: AssetState;
+    limit?: number;
+    dryRun?: boolean;
+  }) {
+    return this.pipelineRetry.replayStuck(request);
+  }
+
   /**
    * Single Drive download → validate → hash → dedup OR create Asset → S3 → AI.
    * Resume: if Asset already STORED_IN_S3+ with S3 object, skip download/upload.

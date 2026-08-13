@@ -42,9 +42,52 @@ export interface PipelineFailureContext {
  */
 export type ReplayDlqRequest = Partial<DlqMessage> & { ingestionFileId: string };
 
+export interface ReplayStuckRequest {
+  status: AssetState;
+  failedStage?: AssetState;
+  limit?: number;
+  dryRun?: boolean;
+}
+
+export interface ReplayStuckItemResult {
+  ingestionFileId: string;
+  assetId: string | null;
+  status: string;
+  failedStage?: AssetState;
+  messageId?: string;
+  error?: string;
+}
+
+export interface ReplayStuckResult {
+  status: AssetState;
+  failedStage: AssetState | null;
+  dryRun: boolean;
+  limit: number;
+  totalFound: number;
+  enqueued: number;
+  failed: number;
+  results: ReplayStuckItemResult[];
+}
+
 const REPLAYABLE_STAGES = new Set<AssetState>(
   Object.keys(STAGE_QUEUE_MAP) as AssetState[],
 );
+
+/** Sensible resume stage when operator only passes the stuck status. */
+const DEFAULT_RESUME_STAGE: Partial<Record<AssetState, AssetState>> = {
+  [AssetState.STORED_IN_S3]: AssetState.GENERATING_METADATA,
+  [AssetState.GENERATING_METADATA]: AssetState.GENERATING_METADATA,
+  [AssetState.METADATA_GENERATED]: AssetState.GENERATING_EMBEDDING,
+  [AssetState.GENERATING_EMBEDDING]: AssetState.GENERATING_EMBEDDING,
+  [AssetState.EMBEDDING_GENERATED]: AssetState.GENERATING_EMBEDDING,
+  [AssetState.UPLOADING_TO_S3]: AssetState.UPLOADING_TO_S3,
+  [AssetState.DISCOVERED]: AssetState.DISCOVERED,
+  [AssetState.DOWNLOADING]: AssetState.DOWNLOADING,
+};
+
+const DEFAULT_REPLAY_LIMIT = 500;
+const MAX_REPLAY_LIMIT = 2000;
+const RESULT_SAMPLE_LIMIT = 100;
 
 @Injectable()
 export class PipelineRetryService {
@@ -92,6 +135,118 @@ export class PipelineRetryService {
     }
 
     await this.moveToDeadLetter(context, classification);
+  }
+
+  /**
+   * Find files stuck in a given status and replay each through the normal
+   * DLQ replay path (enqueue to the correct BullMQ stage queue).
+   */
+  public async replayStuck(
+    request: ReplayStuckRequest,
+  ): Promise<ReplayStuckResult> {
+    const status = request.status;
+    if (!status || !Object.values(AssetState).includes(status)) {
+      throw new BadRequestException(
+        `status is required and must be a valid AssetState`,
+      );
+    }
+
+    const dryRun = request.dryRun !== false;
+    const limit = Math.min(
+      Math.max(request.limit ?? DEFAULT_REPLAY_LIMIT, 1),
+      MAX_REPLAY_LIMIT,
+    );
+
+    const defaultStage = DEFAULT_RESUME_STAGE[status];
+    const explicitStage = request.failedStage;
+    if (explicitStage && !REPLAYABLE_STAGES.has(explicitStage)) {
+      throw new BadRequestException(
+        `failedStage "${explicitStage}" cannot be replayed. Expected one of: ${[
+          ...REPLAYABLE_STAGES,
+        ].join(', ')}`,
+      );
+    }
+
+    const targets = await this.findStuckIngestionFiles(status, limit);
+    const resolvedStage = explicitStage ?? defaultStage ?? null;
+
+    if (dryRun) {
+      this.logger.log('Stuck replay dry-run', {
+        status,
+        failed_stage: resolvedStage,
+        total_found: targets.length,
+        limit,
+      });
+      return {
+        status,
+        failedStage: resolvedStage,
+        dryRun: true,
+        limit,
+        totalFound: targets.length,
+        enqueued: 0,
+        failed: 0,
+        results: targets.slice(0, RESULT_SAMPLE_LIMIT).map((target) => ({
+          ingestionFileId: target.ingestionFileId,
+          assetId: target.assetId,
+          status: target.status,
+          failedStage: resolvedStage ?? undefined,
+        })),
+      };
+    }
+
+    const results: ReplayStuckItemResult[] = [];
+    let enqueued = 0;
+    let failed = 0;
+
+    for (const target of targets) {
+      try {
+        const messageId = await this.replayFromDlq({
+          ingestionFileId: target.ingestionFileId,
+          assetId: target.assetId ?? undefined,
+          ...(resolvedStage ? { failedStage: resolvedStage } : {}),
+        });
+        enqueued++;
+        if (results.length < RESULT_SAMPLE_LIMIT) {
+          results.push({
+            ingestionFileId: target.ingestionFileId,
+            assetId: target.assetId,
+            status: target.status,
+            failedStage: resolvedStage ?? undefined,
+            messageId,
+          });
+        }
+      } catch (error: unknown) {
+        failed++;
+        if (results.length < RESULT_SAMPLE_LIMIT) {
+          results.push({
+            ingestionFileId: target.ingestionFileId,
+            assetId: target.assetId,
+            status: target.status,
+            failedStage: resolvedStage ?? undefined,
+            error: getErrorMessage(error),
+          });
+        }
+      }
+    }
+
+    this.logger.log('Stuck replay completed', {
+      status,
+      failed_stage: resolvedStage,
+      total_found: targets.length,
+      enqueued,
+      failed,
+    });
+
+    return {
+      status,
+      failedStage: resolvedStage,
+      dryRun: false,
+      limit,
+      totalFound: targets.length,
+      enqueued,
+      failed,
+      results,
+    };
   }
 
   public async replayFromDlq(request: ReplayDlqRequest): Promise<string> {
@@ -416,5 +571,92 @@ export class PipelineRetryService {
 
   public getErrorMessage(error: unknown): string {
     return getErrorMessage(error);
+  }
+
+  /**
+   * Prefer one ingestion file per asset stuck in the status, then orphan
+   * ingestion files stuck in the same status (no asset / early failure / DLQ).
+   */
+  private async findStuckIngestionFiles(
+    status: AssetState,
+    limit: number,
+  ): Promise<
+    Array<{ ingestionFileId: string; assetId: string | null; status: string }>
+  > {
+    const dbStatus = status as DatabaseAssetState;
+    const seenFileIds = new Set<string>();
+    const seenAssetIds = new Set<string>();
+    const targets: Array<{
+      ingestionFileId: string;
+      assetId: string | null;
+      status: string;
+    }> = [];
+
+    const assetLinked = await this.prisma.ingestionFile.findMany({
+      where: {
+        assetId: { not: null },
+        asset: { status: dbStatus },
+      },
+      select: {
+        id: true,
+        assetId: true,
+        status: true,
+        updatedAt: true,
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: limit * 3,
+    });
+
+    for (const file of assetLinked) {
+      if (seenFileIds.has(file.id)) continue;
+      if (file.assetId && seenAssetIds.has(file.assetId)) continue;
+      seenFileIds.add(file.id);
+      if (file.assetId) seenAssetIds.add(file.assetId);
+      targets.push({
+        ingestionFileId: file.id,
+        assetId: file.assetId,
+        status: String(dbStatus),
+      });
+      if (targets.length >= limit) {
+        return targets;
+      }
+    }
+
+    const remaining = limit - targets.length;
+    if (remaining <= 0) {
+      return targets;
+    }
+
+    const fileStuck = await this.prisma.ingestionFile.findMany({
+      where: {
+        status: dbStatus,
+        ...(seenFileIds.size > 0 ? { id: { notIn: [...seenFileIds] } } : {}),
+      },
+      select: {
+        id: true,
+        assetId: true,
+        status: true,
+        updatedAt: true,
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: remaining * 2,
+    });
+
+    for (const file of fileStuck) {
+      if (seenFileIds.has(file.id)) continue;
+      if (file.assetId && seenAssetIds.has(file.assetId)) continue;
+      seenFileIds.add(file.id);
+      if (file.assetId) seenAssetIds.add(file.assetId);
+      targets.push({
+        ingestionFileId: file.id,
+        assetId: file.assetId,
+        status: file.status,
+      });
+      if (targets.length >= limit) {
+        break;
+      }
+    }
+
+    return targets;
   }
 }
