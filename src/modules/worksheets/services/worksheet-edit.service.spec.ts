@@ -28,6 +28,20 @@ describe('WorksheetEditService', () => {
   };
   const assetService = {
     resolveSlot: jest.fn(),
+    applySlot: jest.fn(
+      (structure: Record<string, unknown>, slot: { assetId?: string; imageUrl?: string; assetUrl?: string; signedUrl?: string }) => ({
+        ...structure,
+        items: [
+          {
+            ...((structure.items as Array<Record<string, unknown>>)[0] ?? {}),
+            assetId: slot.assetId,
+            imageUrl: slot.imageUrl,
+            assetUrl: slot.assetUrl,
+            signedUrl: slot.signedUrl,
+          },
+        ],
+      }),
+    ),
   };
 
   const eventEmitter = { emit: jest.fn() };
@@ -105,6 +119,9 @@ describe('WorksheetEditService', () => {
       path: 'items[0]',
       imageQuery: 'green grapes',
       assetId: 'asset-999',
+      imageUrl: 'http://localhost:3000/worksheets/assets/asset-999/image',
+      assetUrl: 'http://localhost:3000/worksheets/assets/asset-999/image',
+      signedUrl: 'https://signed.example/img',
     });
 
     const result = await service.edit('ws-1', {
@@ -118,8 +135,8 @@ describe('WorksheetEditService', () => {
       expect.any(Object),
       expect.objectContaining({ workflowType: 'worksheets_edit' }),
     );
-    expect((result.structure.items as Array<Record<string, unknown>>)[0].assetId).toBe(
-      'asset-999',
-    );
+    expect(
+      (result.structure.items as Array<Record<string, unknown>>)[0].assetId,
+    ).toBe('asset-999');
   });
 });

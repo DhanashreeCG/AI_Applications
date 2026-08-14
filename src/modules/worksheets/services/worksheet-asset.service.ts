@@ -4,12 +4,14 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
 import { SearchService } from '../../search/search.service';
 import type { SearchAssetsResponse } from '../../search/interfaces/search-result.interface';
+import { S3StorageService } from '../../storage/s3-storage.service';
 import {
   PIPELINE_STAGES,
   PipelineTelemetryContext,
 } from '../../../common/events/pipeline-tracker.events';
 import {
   mapWithConcurrency,
+  WORKSHEET_ASSET_IMAGE_PATH,
   WORKSHEET_IMAGE_SEARCH_EMBEDDING_PURPOSE,
 } from '../constants/worksheet.constants';
 import { ResolvedAssetSlot } from '../types/worksheet.types';
@@ -24,10 +26,13 @@ export class WorksheetAssetService {
   private readonly logger = new Logger(WorksheetAssetService.name);
   private readonly concurrency: number;
   private readonly searchLimit: number;
+  private readonly signedUrlTtlSeconds: number;
+  private readonly apiBaseUrl: string;
   private readonly emitter: WorksheetPipelineEmitter;
 
   constructor(
     private readonly searchService: SearchService,
+    private readonly s3StorageService: S3StorageService,
     private readonly configService: ConfigService,
     eventEmitter: EventEmitter2,
   ) {
@@ -35,6 +40,12 @@ export class WorksheetAssetService {
       this.configService.get<number>('worksheets.imageConcurrency') ?? 3;
     this.searchLimit =
       this.configService.get<number>('worksheets.imageSearchLimit') ?? 1;
+    this.signedUrlTtlSeconds =
+      this.configService.get<number>('worksheets.signedUrlTtlSeconds') ?? 3600;
+    this.apiBaseUrl = (
+      this.configService.get<string>('worksheets.renderer.apiBaseUrl') ??
+      'http://localhost:3000'
+    ).replace(/\/$/, '');
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
   }
 
@@ -60,17 +71,34 @@ export class WorksheetAssetService {
 
     let next = structure;
     for (const slot of slots) {
-      if (!slot.assetId) {
-        continue;
-      }
-      if (slot.path === '') {
-        next = { ...next, assetId: slot.assetId };
-      } else {
-        next = setValueAtPath(next, `${slot.path}.assetId`, slot.assetId);
-      }
+      next = this.applySlot(next, slot);
     }
 
     return { structure: next, slots };
+  }
+
+  public applySlot(
+    structure: Record<string, unknown>,
+    slot: ResolvedAssetSlot,
+  ): Record<string, unknown> {
+    const fields: Record<string, string> = {};
+    if (slot.assetId) fields.assetId = slot.assetId;
+    if (slot.imageUrl) fields.imageUrl = slot.imageUrl;
+    if (slot.assetUrl) fields.assetUrl = slot.assetUrl;
+    if (slot.signedUrl) fields.signedUrl = slot.signedUrl;
+    if (!Object.keys(fields).length) {
+      return structure;
+    }
+
+    let next = structure;
+    for (const [key, value] of Object.entries(fields)) {
+      if (slot.path === '') {
+        next = { ...next, [key]: value };
+      } else {
+        next = setValueAtPath(next, `${slot.path}.${key}`, value);
+      }
+    }
+    return next;
   }
 
   public async resolveSlot(
@@ -81,15 +109,16 @@ export class WorksheetAssetService {
   ): Promise<ResolvedAssetSlot> {
     const query = imageQuery.trim();
     if (!query) {
-      return { path, imageQuery: query, assetId: null };
+      return this.emptySlot(path, query);
     }
 
     const searchId = randomUUID();
     const startedAt = Date.now();
     const filters = {
-      grades: options?.grades,
-      ageGroups: options?.ageGroups,
+      grades: options?.grades?.filter(Boolean),
+      ageGroups: options?.ageGroups?.filter(Boolean),
     };
+    const hasFilters = Boolean(filters.grades?.length || filters.ageGroups?.length);
 
     if (telemetry) {
       this.emitter.emitImageSearchStarted({
@@ -97,36 +126,53 @@ export class WorksheetAssetService {
         searchId,
         stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
         query,
-        filters,
+        filters: hasFilters ? filters : undefined,
       });
     }
 
     try {
-      const response = await this.searchService.search({
+      let response = await this.searchService.search({
         query,
         limit: this.searchLimit,
-        filters,
+        filters: hasFilters ? filters : undefined,
       });
       this.emitEmbeddingUsage(telemetry, query, response);
-      const assetId = response.results[0]?.assetId ?? null;
-      if (!assetId) {
+
+      if (!response.results.length && hasFilters) {
+        this.logger.warn(
+          `No filtered asset for "${query}" at ${path}; retrying without grade/age filters`,
+        );
+        response = await this.searchService.search({
+          query,
+          limit: this.searchLimit,
+        });
+        this.emitEmbeddingUsage(telemetry, query, response);
+      }
+
+      const hit = response.results[0];
+      const slot = hit
+        ? await this.toResolvedSlot(path, query, hit)
+        : this.emptySlot(path, query);
+
+      if (!slot.assetId) {
         this.logger.warn(`No asset found for imageQuery "${query}" at ${path}`);
       }
+
       if (telemetry) {
         this.emitter.emitImageSearchCompleted({
           ...telemetry,
           searchId,
           stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
           query,
-          filters,
+          filters: hasFilters ? filters : undefined,
           resultCount: response.results.length,
-          selectedAssetId: assetId,
+          selectedAssetId: slot.assetId,
           cacheHit: response.fromCache === true,
           failed: false,
           durationMs: Date.now() - startedAt,
         });
       }
-      return { path, imageQuery: query, assetId };
+      return slot;
     } catch (error) {
       this.logger.warn(
         `Asset search failed for imageQuery "${query}" at ${path}`,
@@ -137,7 +183,7 @@ export class WorksheetAssetService {
           searchId,
           stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
           query,
-          filters,
+          filters: hasFilters ? filters : undefined,
           resultCount: 0,
           selectedAssetId: null,
           failed: true,
@@ -145,8 +191,49 @@ export class WorksheetAssetService {
           durationMs: Date.now() - startedAt,
         });
       }
-      return { path, imageQuery: query, assetId: null };
+      return this.emptySlot(path, query);
     }
+  }
+
+  private async toResolvedSlot(
+    path: string,
+    imageQuery: string,
+    hit: { assetId: string; s3ObjectKey?: string },
+  ): Promise<ResolvedAssetSlot> {
+    const imageUrl = `${this.apiBaseUrl}${WORKSHEET_ASSET_IMAGE_PATH}/${hit.assetId}/image`;
+    let signedUrl: string | null = null;
+    if (hit.s3ObjectKey) {
+      try {
+        signedUrl = await this.s3StorageService.getSignedUrl(
+          hit.s3ObjectKey,
+          this.signedUrlTtlSeconds,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Signed URL failed for worksheet asset ${hit.assetId}`,
+        );
+      }
+    }
+
+    return {
+      path,
+      imageQuery,
+      assetId: hit.assetId,
+      imageUrl,
+      assetUrl: imageUrl,
+      signedUrl,
+    };
+  }
+
+  private emptySlot(path: string, imageQuery: string): ResolvedAssetSlot {
+    return {
+      path,
+      imageQuery,
+      assetId: null,
+      imageUrl: null,
+      assetUrl: null,
+      signedUrl: null,
+    };
   }
 
   private emitEmbeddingUsage(

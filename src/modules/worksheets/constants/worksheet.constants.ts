@@ -7,7 +7,12 @@ export const WORKSHEET_WORKFLOW_EDIT = 'worksheets_edit';
 export const WORKSHEET_WORKFLOW_RENDER = 'worksheets_render';
 export const GENERIC_RENDERER_TYPE = 'generic';
 export const WORKSHEET_ASSET_IMAGE_PATH = '/worksheets/assets';
-export const ENRICHMENT_KEYS = new Set(['assetId']);
+export const ENRICHMENT_KEYS = new Set([
+  'assetId',
+  'imageUrl',
+  'assetUrl',
+  'signedUrl',
+]);
 export const WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const WORKSHEET_TEMPLATE_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',

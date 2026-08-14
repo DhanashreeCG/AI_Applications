@@ -240,13 +240,7 @@ export class WorksheetEditService {
               { grades: meta.grades },
               telemetry,
             );
-            if (slot.assetId) {
-              updated = setValueAtPath(
-                updated,
-                `${item.parentPath}.assetId`,
-                slot.assetId,
-              );
-            }
+            updated = this.assetService.applySlot(updated, slot);
           }
           return updated;
         },

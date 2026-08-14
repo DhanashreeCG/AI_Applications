@@ -64,7 +64,7 @@ export class GenerateWorksheetResponseDto {
     example: {
       instruction: 'Count the objects.',
       items: [
-        { count: 3, imageQuery: 'red apples', assetId: 'asset-id' },
+        { count: 3, imageQuery: 'red apples', assetId: 'asset-id', imageUrl: 'http://localhost:3000/worksheets/assets/asset-id/image' },
       ],
     },
   })

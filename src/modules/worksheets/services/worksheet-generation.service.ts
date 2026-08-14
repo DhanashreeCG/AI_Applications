@@ -210,6 +210,7 @@ export class WorksheetGenerationService {
             path: slot.path,
             imageQuery: slot.imageQuery,
             assetId: slot.assetId,
+            imageUrl: slot.imageUrl,
           })),
         }),
       },

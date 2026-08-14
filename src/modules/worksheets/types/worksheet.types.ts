@@ -95,4 +95,7 @@ export interface ResolvedAssetSlot {
   path: string;
   imageQuery: string;
   assetId: string | null;
+  imageUrl: string | null;
+  assetUrl: string | null;
+  signedUrl: string | null;
 }
