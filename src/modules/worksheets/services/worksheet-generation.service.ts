@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@generated/prisma/client';
 import { getErrorMessage } from '../../../common/utils/error-message';
@@ -8,7 +9,12 @@ import {
 } from '../../../common/events/pipeline-tracker.events';
 import { PrismaService } from '../../database/prisma.service';
 import { GenerateWorksheetDto } from '../dto/generate-worksheet.dto';
-import { WORKSHEET_WORKFLOW_GENERATE } from '../constants/worksheet.constants';
+import { WorksheetException } from '../errors/worksheet.exception';
+import {
+  mapWithConcurrency,
+  WORKSHEET_ASSET_IMAGE_PATH,
+  WORKSHEET_WORKFLOW_GENERATE,
+} from '../constants/worksheet.constants';
 import { GenerateWorksheetResponse } from '../types/worksheet.types';
 import { asStructureRecord, collectImageQueries } from '../utils/structure.util';
 import {
@@ -18,6 +24,7 @@ import {
 } from '../telemetry/worksheet-pipeline.events';
 import { WorksheetAssetService } from './worksheet-asset.service';
 import { WorksheetContentService } from './worksheet-content.service';
+import { WorksheetRenderService } from './worksheet-render.service';
 import { WorksheetTemplateSelectionService } from './worksheet-template-selection.service';
 import { WorksheetTemplateService } from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
@@ -31,6 +38,8 @@ export class WorksheetGenerationService {
   private readonly logger = new Logger(WorksheetGenerationService.name);
   private readonly emitter: WorksheetPipelineEmitter;
   private readonly workflowType: string;
+  private readonly defaultCount: number;
+  private readonly maxCount: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -39,10 +48,32 @@ export class WorksheetGenerationService {
     private readonly templateService: WorksheetTemplateService,
     private readonly contentService: WorksheetContentService,
     private readonly assetService: WorksheetAssetService,
+    private readonly renderService: WorksheetRenderService,
+    private readonly configService: ConfigService,
     eventEmitter: EventEmitter2,
   ) {
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
     this.workflowType = WORKSHEET_WORKFLOW_GENERATE;
+    this.defaultCount = Math.max(
+      1,
+      this.configService.get<number>('worksheets.generateCountDefault') ?? 1,
+    );
+    this.maxCount = Math.max(
+      this.defaultCount,
+      this.configService.get<number>('worksheets.generateCountMax') ?? 10,
+    );
+  }
+
+  public uiSettings() {
+    return {
+      defaultCount: this.defaultCount,
+      maxCount: this.maxCount,
+    };
+  }
+
+  public normalizeCount(count?: number): number {
+    const raw = count == null || Number.isNaN(Number(count)) ? this.defaultCount : Number(count);
+    return Math.min(this.maxCount, Math.max(1, Math.floor(raw)));
   }
 
   public async generate(
@@ -210,7 +241,6 @@ export class WorksheetGenerationService {
             path: slot.path,
             imageQuery: slot.imageQuery,
             assetId: slot.assetId,
-            imageUrl: slot.imageUrl,
           })),
         }),
       },
@@ -222,7 +252,7 @@ export class WorksheetGenerationService {
       PIPELINE_STAGES.STRUCTURE_VALIDATION,
       () =>
         this.validationService.validateGeneratedStructure(
-          attached.structure,
+          this.assetService.persistableStructure(attached.structure),
           template,
           { allowEnrichmentKeys: true },
         ),
@@ -254,8 +284,14 @@ export class WorksheetGenerationService {
       this.emitter,
       telemetry,
       PIPELINE_STAGES.RESPONSE_ASSEMBLY,
-      () =>
-        ({
+      () => {
+        const composed = this.renderService.composeHtml({
+          template,
+          structure: asStructureRecord(worksheet.structure),
+          request: dto as unknown as Record<string, unknown>,
+          mode: 'editor',
+        });
+        return {
           id: worksheet.id,
           status: worksheet.status,
           template: {
@@ -266,7 +302,10 @@ export class WorksheetGenerationService {
           },
           request: dto,
           structure: asStructureRecord(worksheet.structure),
-        }) satisfies GenerateWorksheetResponse,
+          html: composed.html,
+          canvas: composed.canvas,
+        } satisfies GenerateWorksheetResponse;
+      },
     );
 
     await runTrackedStage(
@@ -301,5 +340,142 @@ export class WorksheetGenerationService {
     );
 
     return response;
+  }
+
+  public async generateSet(
+    dto: GenerateWorksheetDto,
+    options: GenerateWorksheetOptions = {},
+  ): Promise<{ items: GenerateWorksheetResponse[]; failed: number }> {
+    this.validationService.validateRequest(dto);
+    const count = this.normalizeCount(dto.count);
+    const matching = await this.templateSelectionService.listMatching(dto, count);
+    const pool = matching.length
+      ? matching
+      : [await this.templateSelectionService.select(dto)];
+    const targets = Array.from({ length: count }, (_, index) => pool[index % pool.length]);
+
+    const results: GenerateWorksheetResponse[] = [];
+    let failed = 0;
+    await mapWithConcurrency(targets, 2, async (template) => {
+      try {
+        const item = await this.generate(
+          { ...dto, templateId: template.id, count: undefined },
+          options,
+        );
+        results.push(item);
+      } catch (error) {
+        failed += 1;
+        this.logger.warn(
+          `generate-set skipped template ${template.slug}: ${getErrorMessage(error)}`,
+        );
+      }
+    });
+
+    if (!results.length) {
+      throw new WorksheetException(
+        'NO_TEMPLATE_FOUND',
+        'No worksheets could be generated for this request',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return { items: results, failed };
+  }
+
+  public async list(options: { skip?: number; take?: number } = {}) {
+    const skip = Math.max(0, options.skip ?? 0);
+    const take = Math.min(50, Math.max(1, options.take ?? 10));
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.worksheet.findMany({
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          template: true,
+        },
+      }),
+      this.prisma.worksheet.count(),
+    ]);
+    return {
+      total,
+      skip,
+      take,
+      items: rows.map((row) => {
+        const item = this.toListItem(row);
+        const composed = this.renderService.composeHtml({
+          template: row.template,
+          structure: asStructureRecord(row.structure),
+          request: asStructureRecord(row.request),
+          mode: 'export',
+        });
+        return {
+          ...item,
+          html: composed.html,
+          canvas: composed.canvas,
+        };
+      }),
+    };
+  }
+
+  public async getById(worksheetId: string) {
+    const row = await this.prisma.worksheet.findUnique({
+      where: { id: worksheetId },
+      include: {
+        template: true,
+      },
+    });
+    if (!row) {
+      throw new WorksheetException(
+        'WORKSHEET_NOT_FOUND',
+        `Worksheet "${worksheetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return {
+      ...this.toListItem(row),
+      status: row.status,
+      request: asStructureRecord(row.request),
+      structure: this.assetService.persistableStructure(
+        asStructureRecord(row.structure),
+      ),
+      ...this.renderService.composeHtml({
+        template: row.template,
+        structure: asStructureRecord(row.structure),
+        request: asStructureRecord(row.request),
+        mode: 'editor',
+      }),
+    };
+  }
+
+  private toListItem(row: {
+    id: string;
+    status: string;
+    createdAt: Date;
+    request: unknown;
+    structure: unknown;
+    template: {
+      id: string;
+      name: string;
+      slug: string;
+      category: string;
+      sampleAssetId: string | null;
+    };
+  }) {
+    const request = asStructureRecord(row.request);
+    return {
+      id: row.id,
+      status: row.status,
+      createdAt: row.createdAt,
+      topic: typeof request.topic === 'string' ? request.topic : '',
+      ageGroup: typeof request.ageGroup === 'string' ? request.ageGroup : '',
+      template: {
+        id: row.template.id,
+        name: row.template.name,
+        slug: row.template.slug,
+        category: row.template.category,
+      },
+      thumbnailUrl: row.template.sampleAssetId
+        ? `${WORKSHEET_ASSET_IMAGE_PATH}/${row.template.sampleAssetId}/image`
+        : null,
+    };
   }
 }

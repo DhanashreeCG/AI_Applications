@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   Res,
   StreamableFile,
   UploadedFiles,
@@ -37,6 +38,11 @@ import {
   GenerateWorksheetResponseDto,
 } from './dto/generate-worksheet.dto';
 import { RenderWorksheetDto } from './dto/render-worksheet.dto';
+import { ReplaceWorksheetImageDto } from './dto/replace-worksheet-image.dto';
+import {
+  SearchWorksheetImagesQueryDto,
+  UpdateWorksheetFieldDto,
+} from './dto/update-worksheet-field.dto';
 import { WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES } from './constants/worksheet.constants';
 import { WorksheetEditService } from './services/worksheet-edit.service';
 import { WorksheetGenerationService } from './services/worksheet-generation.service';
@@ -74,6 +80,48 @@ export class WorksheetsController {
     return this.generationService.generate(dto, {
       correlationId: correlationId || traceId,
     });
+  }
+
+  @Post('generate-set')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Generate a set of worksheets for matching templates (topic + age group UI)',
+  })
+  async generateSet(
+    @Body() dto: GenerateWorksheetDto,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    return this.generationService.generateSet(dto, {
+      correlationId: correlationId || traceId,
+    });
+  }
+
+  @Get('settings')
+  @ApiOperation({
+    summary: 'UI settings including default generate count',
+  })
+  settings() {
+    return this.generationService.uiSettings();
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'List generated worksheets for the results grid' })
+  async list(
+    @Query('skip') skip?: string,
+    @Query('take') take?: string,
+  ) {
+    return this.generationService.list({
+      skip: skip != null ? Number(skip) : 0,
+      take: take != null ? Number(take) : 10,
+    });
+  }
+
+  @Get('templates')
+  @ApiOperation({ summary: 'List active worksheet templates for the catalog grid' })
+  async listTemplates() {
+    return this.templateService.listCatalog();
   }
 
   @Post('templates')
@@ -183,7 +231,63 @@ export class WorksheetsController {
   ) {
     return this.renderService.render(worksheetId, dto.format, {
       correlationId: correlationId || traceId,
+      mode: dto.mode,
     });
+  }
+
+  @Get(':worksheetId/preview')
+  @ApiOperation({
+    summary:
+      'Return resolved worksheet HTML plus editor metadata (same HTML as render)',
+  })
+  async preview(
+    @Param('worksheetId') worksheetId: string,
+    @Query('mode') mode: 'editor' | 'export' = 'editor',
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    return this.renderService.preview(worksheetId, mode, {
+      correlationId: correlationId || traceId,
+    });
+  }
+
+  @Get(':worksheetId/images/search')
+  @ApiOperation({
+    summary: 'Semantic asset search for replacing a worksheet image slot',
+  })
+  async searchImages(
+    @Param('worksheetId') worksheetId: string,
+    @Query() query: SearchWorksheetImagesQueryDto,
+  ) {
+    return this.editService.searchImages(worksheetId, {
+      query: query.query,
+      path: query.path,
+      limit: query.limit != null ? Number(query.limit) : undefined,
+    });
+  }
+
+  @Post(':worksheetId/images')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Replace an image slot assetId after the user picks a search result',
+  })
+  async replaceImage(
+    @Param('worksheetId') worksheetId: string,
+    @Body() dto: ReplaceWorksheetImageDto,
+  ) {
+    return this.editService.replaceImage(worksheetId, dto.path, dto.assetId);
+  }
+
+  @Post(':worksheetId/fields')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Set one editable field as text (no Gemini). HTML values are rejected.',
+  })
+  async updateField(
+    @Param('worksheetId') worksheetId: string,
+    @Body() dto: UpdateWorksheetFieldDto,
+  ) {
+    return this.editService.updateField(worksheetId, dto.path, dto.value);
   }
 
   @Get('assets/:assetId/image')
@@ -200,5 +304,11 @@ export class WorksheetsController {
       await this.assetImageService.loadImage(assetId);
     response.setHeader('Content-Type', mimeType);
     return new StreamableFile(buffer);
+  }
+
+  @Get(':worksheetId')
+  @ApiOperation({ summary: 'Load one generated worksheet' })
+  async getById(@Param('worksheetId') worksheetId: string) {
+    return this.generationService.getById(worksheetId);
   }
 }

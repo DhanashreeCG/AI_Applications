@@ -1,7 +1,10 @@
 import { HttpStatus } from '@nestjs/common';
 import { WorksheetException } from '../errors/worksheet.exception';
-import { ENRICHMENT_KEYS } from '../constants/worksheet.constants';
-import { JsonSchemaNode } from '../types/worksheet.types';
+import {
+  ENRICHMENT_KEYS,
+  TRANSIENT_ASSET_KEYS,
+} from '../constants/worksheet.constants';
+import { ImageSlotRef, JsonSchemaNode } from '../types/worksheet.types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -298,6 +301,70 @@ export function collectImageQueries(
     }
     const childPath = path ? `${path}.${key}` : key;
     found.push(...collectImageQueries(child, childPath));
+  }
+
+  return found;
+}
+
+export function stripTransientAssetFields(
+  value: unknown,
+): Record<string, unknown> {
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) {
+      return node.map((item) => walk(item));
+    }
+    if (!isRecord(node)) {
+      return node;
+    }
+    const next: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(node)) {
+      if ((TRANSIENT_ASSET_KEYS as readonly string[]).includes(key)) {
+        continue;
+      }
+      next[key] = walk(child);
+    }
+    return next;
+  };
+  return asStructureRecord(walk(value));
+}
+
+export function collectImageSlots(
+  value: unknown,
+  path = '',
+): ImageSlotRef[] {
+  const found: ImageSlotRef[] = [];
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      found.push(
+        ...collectImageSlots(item, path ? `${path}[${index}]` : `[${index}]`),
+      );
+    });
+    return found;
+  }
+
+  if (!isRecord(value)) {
+    return found;
+  }
+
+  if (typeof value.imageQuery === 'string' && value.imageQuery.trim()) {
+    const explicitId =
+      typeof value.id === 'string' && value.id.trim() ? value.id.trim() : null;
+    const key = path.split(/[.[\]]/).filter(Boolean).pop() ?? 'image';
+    found.push({
+      slotId: explicitId || key,
+      path,
+      assetId: typeof value.assetId === 'string' ? value.assetId : null,
+      imageQuery: value.imageQuery.trim(),
+    });
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'imageQuery') {
+      continue;
+    }
+    const childPath = path ? `${path}.${key}` : key;
+    found.push(...collectImageSlots(child, childPath));
   }
 
   return found;

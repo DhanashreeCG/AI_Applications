@@ -19,6 +19,9 @@ export type WorksheetErrorCode = (typeof WORKSHEET_ERROR_CODES)[number];
 export const WORKSHEET_RENDER_FORMATS = ['html', 'webp', 'pdf'] as const;
 export type WorksheetRenderFormat = (typeof WORKSHEET_RENDER_FORMATS)[number];
 
+export const WORKSHEET_RENDER_MODES = ['editor', 'export'] as const;
+export type WorksheetRenderMode = (typeof WORKSHEET_RENDER_MODES)[number];
+
 export interface WorksheetTemplateMeta {
   grades?: string[];
   subjects?: string[];
@@ -28,9 +31,27 @@ export interface WorksheetTemplateMeta {
   difficulty?: string[];
 }
 
+export type WorksheetEditableFieldType =
+  | 'text'
+  | 'number'
+  | 'array'
+  | 'image'
+  | 'object';
+
 export interface WorksheetAiConfig {
   editableFields?: string[];
+  aiEditable?: string[];
   linkedFields?: Record<string, string[]>;
+  /** Prototype-style map; normalized to EditableField before the editor sees it. */
+  editable_fields?: Record<string, Record<string, unknown>>;
+}
+
+export interface EditableField {
+  type: WorksheetEditableFieldType;
+  path: string;
+  editable: boolean;
+  aiEditable: boolean;
+  selector?: string;
 }
 
 export interface WorksheetFieldPrompts {
@@ -82,6 +103,8 @@ export interface GenerateWorksheetResponse {
   };
   request: GenerateWorksheetRequest;
   structure: Record<string, unknown>;
+  html?: string;
+  canvas?: { width: number; height: number };
 }
 
 export interface WorksheetRenderInput {
@@ -89,13 +112,27 @@ export interface WorksheetRenderInput {
   structure: Record<string, unknown>;
   rendererConfig?: WorksheetRendererConfig | null;
   backgroundAssetUrl?: string | null;
+  mode?: WorksheetRenderMode;
+  canvas?: { width: number; height: number };
+  topic?: string;
+  baseHref?: string;
 }
 
 export interface ResolvedAssetSlot {
   path: string;
   imageQuery: string;
   assetId: string | null;
-  imageUrl: string | null;
-  assetUrl: string | null;
+}
+
+export interface ResolvedAssetUrl {
+  assetId: string;
+  imageUrl: string;
   signedUrl: string | null;
+}
+
+export interface ImageSlotRef {
+  slotId: string;
+  path: string;
+  assetId: string | null;
+  imageQuery: string;
 }

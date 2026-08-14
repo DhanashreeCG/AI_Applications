@@ -40,6 +40,38 @@ export class WorksheetTemplateSelectionService {
     return eligible[0];
   }
 
+  public async listMatching(
+    request: GenerateWorksheetRequest,
+    limit = 10,
+  ): Promise<WorksheetTemplateRecord[]> {
+    const templates = await this.templateService.listActive();
+    const eligible = templates.filter((template) =>
+      this.isEligibleForSet(template, request),
+    );
+    eligible.sort((a, b) => this.score(b, request) - this.score(a, request));
+    return eligible.slice(0, Math.max(1, limit));
+  }
+
+  public isEligibleForSet(
+    template: WorksheetTemplateRecord,
+    request: GenerateWorksheetRequest,
+  ): boolean {
+    if (template.status !== 'ACTIVE') {
+      return false;
+    }
+    const meta = this.templateService.parseMeta(template);
+    const requestAge = this.resolveAge(request);
+    if (
+      requestAge != null &&
+      meta.ageMin != null &&
+      meta.ageMax != null &&
+      (requestAge < meta.ageMin || requestAge > meta.ageMax)
+    ) {
+      return false;
+    }
+    return true;
+  }
+
   public isEligible(
     template: WorksheetTemplateRecord,
     request: GenerateWorksheetRequest,

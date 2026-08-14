@@ -72,10 +72,19 @@ Useful JSON columns:
 
 Placeholders in `templateHtml` (generic renderer):
 
-- `{{instruction}}` — HTML-escaped text
+- `{{instruction}}` — HTML-escaped text (case-insensitive; `{{TOPIC}}` also matches `topic`)
 - `{{#items}} ... {{/items}}` — array loop
 - `{{@index}}` — 1-based index in a loop
-- `{{assetUrl}}` — same-origin proxy URL injected at render time from `assetId`
+- `{{assetUrl}}` — same-origin proxy URL injected at render time from `assetId` (never stored)
+- `{{IMAGE:main_image}}` or `<img data-image-slot="main_image" />` — generic image slot
+- `{{BACKGROUND_IMAGE}}` / `{{backgroundAssetUrl}}` — static template background
+- `{{BODY_CLASS}}` — `editor-mode` or `export-mode`
+
+Do not persist `signedUrl`, `imageUrl`, or `assetUrl` on `Worksheet.structure`. Persist `imageQuery` + `assetId`. URLs are resolved at preview/render.
+
+`GET /worksheets/:id/preview?mode=editor|export` returns the same HTML Playwright uses, plus `canvas` (`rendererConfig.width/height`, default 1016×1316), normalized `editableFields` (`type`, `path`, `editable`, `aiEditable`), and `fieldPrompts` separately.
+
+Editor page: `/worksheet-editor.html?id=<worksheetId>` loads template HTML in an iframe and scales the canvas visually. Image replacement uses `GET /worksheets/:id/images/search` and `POST /worksheets/:id/images`.
 
 ## Example template row
 
@@ -127,7 +136,7 @@ INSERT INTO "WorksheetTemplate" (
     "difficulty": ["easy", "medium"]
   }'::jsonb,
   'generic',
-  '{ "width": 794, "height": 1123 }'::jsonb,
+  '{ "width": 1016, "height": 1316 }'::jsonb,
   '{ "editableFields": ["instruction", "items"] }'::jsonb,
   '{ "instruction": "Keep the instruction to one short sentence." }'::jsonb,
   'You edit a single worksheet field. Return JSON {"value": ...} only. No HTML.',
@@ -160,7 +169,7 @@ Calls reuse `GEMINI_API_KEY`, `ai.geminiMaxRps`, and `AiUsageService`. No second
 
 Render uses `GET /worksheets/assets/:assetId/image` (same-origin, reuses flashcard `AssetImageService` + S3 download).
 
-The tracker UI (`/pipeline-tracker.html`) lists `worksheets`, `worksheets_edit`, and `worksheets_render` executions with every pipeline stage, AI invocation, and image search.
+The teacher UI is `/worksheets.html` (Toondemy LMS shell). Generate uses topic + age group, then a card grid with favourite / preview / download. Preview loads template HTML in an iframe (`GET /preview`) with Edit, AI Edit, and Playwright PNG/PDF download.
 
 ## APIs
 
@@ -169,7 +178,14 @@ The tracker UI (`/pipeline-tracker.html`) lists `worksheets`, `worksheets_edit`,
 | POST | `/worksheets/templates` | Create a template; upload `background` + `sample`/`example` images to S3 |
 | POST | `/worksheets/generate` | Create worksheet structure |
 | POST | `/worksheets/:worksheetId/edit` | Edit one editable field |
-| POST | `/worksheets/:worksheetId/render` | `html` / `webp` / `pdf` |
+| POST | `/worksheets/:worksheetId/render` | `html` / `webp` / `pdf` (`mode`: `editor` \| `export` for html) |
+| GET | `/worksheets` | Paginated generated worksheets for the results grid |
+| GET | `/worksheets/templates` | Active template catalog (sample thumbnail URLs) |
+| POST | `/worksheets/generate-set` | Generate one worksheet per matching template (max 10) |
+| GET | `/worksheets/:worksheetId/preview` | Resolved HTML + editor metadata |
+| GET | `/worksheets/:worksheetId/images/search` | Semantic image picker results |
+| POST | `/worksheets/:worksheetId/images` | Set `assetId` on an image slot |
+| POST | `/worksheets/:worksheetId/fields` | Direct text field update (no Gemini) |
 
 Swagger: `/api`.
 

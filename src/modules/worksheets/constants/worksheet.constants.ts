@@ -7,12 +7,17 @@ export const WORKSHEET_WORKFLOW_EDIT = 'worksheets_edit';
 export const WORKSHEET_WORKFLOW_RENDER = 'worksheets_render';
 export const GENERIC_RENDERER_TYPE = 'generic';
 export const WORKSHEET_ASSET_IMAGE_PATH = '/worksheets/assets';
-export const ENRICHMENT_KEYS = new Set([
-  'assetId',
+/** Keys allowed on persisted structure besides the template schema. */
+export const ENRICHMENT_KEYS = new Set(['assetId']);
+
+/** Resolved at preview/render only — never written to Worksheet.structure. */
+export const TRANSIENT_ASSET_KEYS = [
   'imageUrl',
   'assetUrl',
   'signedUrl',
-]);
+] as const;
+
+export const DEFAULT_WORKSHEET_CANVAS = { width: 1016, height: 1316 } as const;
 export const WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const WORKSHEET_TEMPLATE_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',

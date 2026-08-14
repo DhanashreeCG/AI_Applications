@@ -84,6 +84,9 @@ export interface AppConfig {
     imageConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
+    imagePickerLimit: number;
+    generateCountDefault: number;
+    generateCountMax: number;
     geminiModel: string;
     promptVersion: string;
     renderer: {
@@ -296,6 +299,18 @@ export default (): AppConfig => ({
       process.env.WORKSHEET_IMAGE_SEARCH_LIMIT || '1',
       10,
     ),
+    imagePickerLimit: parseInt(
+      process.env.WORKSHEET_IMAGE_PICKER_LIMIT || '12',
+      10,
+    ),
+    generateCountDefault: parseInt(
+      process.env.WORKSHEET_GENERATE_COUNT_DEFAULT || '1',
+      10,
+    ),
+    generateCountMax: parseInt(
+      process.env.WORKSHEET_GENERATE_COUNT_MAX || '10',
+      10,
+    ),
     geminiModel:
       process.env.WORKSHEET_GEMINI_MODEL ||
       process.env.FLASHCARD_GEMINI_MODEL ||
@@ -313,9 +328,12 @@ export default (): AppConfig => ({
       apiBaseUrl:
         process.env.WORKSHEET_RENDERER_API_BASE_URL ||
         process.env.FLASHCARD_RENDERER_API_BASE_URL ||
-        'http://localhost:3000',
-      defaultWidth: parseInt(process.env.WORKSHEET_RENDER_WIDTH || '794', 10),
-      defaultHeight: parseInt(process.env.WORKSHEET_RENDER_HEIGHT || '1123', 10),
+        `http://localhost:${process.env.PORT || '5000'}`,
+      defaultWidth: parseInt(process.env.WORKSHEET_RENDER_WIDTH || '1016', 10),
+      defaultHeight: parseInt(
+        process.env.WORKSHEET_RENDER_HEIGHT || '1316',
+        10,
+      ),
     },
   },
   pipelineTracking: {

@@ -5,6 +5,7 @@ import { WorksheetTemplateService } from './worksheet-template.service';
 import { WorksheetContentService } from './worksheet-content.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
 import { WorksheetAssetService } from './worksheet-asset.service';
+import { WorksheetRenderService } from './worksheet-render.service';
 import { WorksheetException } from '../errors/worksheet.exception';
 
 describe('WorksheetEditService', () => {
@@ -29,19 +30,18 @@ describe('WorksheetEditService', () => {
   const assetService = {
     resolveSlot: jest.fn(),
     applySlot: jest.fn(
-      (structure: Record<string, unknown>, slot: { assetId?: string; imageUrl?: string; assetUrl?: string; signedUrl?: string }) => ({
+      (structure: Record<string, unknown>, slot: { assetId?: string }) => ({
         ...structure,
         items: [
           {
             ...((structure.items as Array<Record<string, unknown>>)[0] ?? {}),
             assetId: slot.assetId,
-            imageUrl: slot.imageUrl,
-            assetUrl: slot.assetUrl,
-            signedUrl: slot.signedUrl,
           },
         ],
       }),
     ),
+    persistableStructure: (value: Record<string, unknown>) => value,
+    resolveAsset: jest.fn(),
   };
 
   const eventEmitter = { emit: jest.fn() };
@@ -69,6 +69,7 @@ describe('WorksheetEditService', () => {
       contentService as unknown as WorksheetContentService,
       validationService as unknown as WorksheetValidationService,
       assetService as unknown as WorksheetAssetService,
+      { composeHtml: () => ({ html: '<p>ok</p>', canvas: { width: 1016, height: 1316 } }) } as unknown as WorksheetRenderService,
       eventEmitter as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue(worksheet);
@@ -119,9 +120,6 @@ describe('WorksheetEditService', () => {
       path: 'items[0]',
       imageQuery: 'green grapes',
       assetId: 'asset-999',
-      imageUrl: 'http://localhost:3000/worksheets/assets/asset-999/image',
-      assetUrl: 'http://localhost:3000/worksheets/assets/asset-999/image',
-      signedUrl: 'https://signed.example/img',
     });
 
     const result = await service.edit('ws-1', {

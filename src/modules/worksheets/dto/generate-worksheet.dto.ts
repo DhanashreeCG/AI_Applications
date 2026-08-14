@@ -33,6 +33,13 @@ export class GenerateWorksheetDto {
     description: 'Template id or slug. When set, skips deterministic selection.',
   })
   templateId?: string;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'How many worksheets to generate. Defaults to WORKSHEET_GENERATE_COUNT_DEFAULT (1).',
+  })
+  count?: number;
 }
 
 export class GenerateWorksheetResponseDto {
@@ -64,7 +71,7 @@ export class GenerateWorksheetResponseDto {
     example: {
       instruction: 'Count the objects.',
       items: [
-        { count: 3, imageQuery: 'red apples', assetId: 'asset-id', imageUrl: 'http://localhost:3000/worksheets/assets/asset-id/image' },
+        { count: 3, imageQuery: 'red apples', assetId: 'asset-id' },
       ],
     },
   })

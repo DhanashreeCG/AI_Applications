@@ -7,10 +7,24 @@ import { WorksheetTemplateService } from './services/worksheet-template.service'
 import { AssetImageService } from '../flashcards/services/asset-image.service';
 
 describe('WorksheetsController', () => {
-  const generationService = { generate: jest.fn() };
-  const editService = { edit: jest.fn() };
-  const renderService = { render: jest.fn() };
-  const templateService = { create: jest.fn() };
+  const generationService = {
+    generate: jest.fn(),
+    generateSet: jest.fn(),
+    list: jest.fn(),
+    getById: jest.fn(),
+    uiSettings: jest.fn(),
+  };
+  const editService = {
+    edit: jest.fn(),
+    replaceImage: jest.fn(),
+    updateField: jest.fn(),
+    searchImages: jest.fn(),
+  };
+  const renderService = {
+    render: jest.fn(),
+    preview: jest.fn(),
+  };
+  const templateService = { create: jest.fn(), listCatalog: jest.fn() };
   const assetImageService = { loadImage: jest.fn() };
 
   let controller: WorksheetsController;
@@ -49,6 +63,13 @@ describe('WorksheetsController', () => {
     await expect(
       controller.render('ws-1', { format: 'pdf' }),
     ).resolves.toEqual({ format: 'pdf' });
+  });
+
+  it('GET /worksheets/:id/preview delegates to preview', async () => {
+    renderService.preview.mockResolvedValue({ html: '<p>ok</p>' });
+    await expect(controller.preview('ws-1', 'editor')).resolves.toEqual({
+      html: '<p>ok</p>',
+    });
   });
 
   it('POST /worksheets/templates delegates to template create', async () => {

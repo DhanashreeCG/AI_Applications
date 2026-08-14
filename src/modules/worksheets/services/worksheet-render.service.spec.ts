@@ -25,9 +25,9 @@ describe('WorksheetRenderService', () => {
   const configService = {
     get: (key: string) => {
       if (key === 'worksheets.renderer.enabled') return true;
-      if (key === 'worksheets.renderer.apiBaseUrl') return 'http://localhost:3000';
-      if (key === 'worksheets.renderer.defaultWidth') return 794;
-      if (key === 'worksheets.renderer.defaultHeight') return 1123;
+      if (key === 'worksheets.renderer.apiBaseUrl') return 'http://localhost:5000';
+      if (key === 'worksheets.renderer.defaultWidth') return 1016;
+      if (key === 'worksheets.renderer.defaultHeight') return 1316;
       return undefined;
     },
   };
@@ -44,6 +44,21 @@ describe('WorksheetRenderService', () => {
       registry,
       {} as BrowserPoolService,
       {} as S3StorageService,
+      {
+        persistableStructure: (value: Record<string, unknown>) => value,
+        enrichForRender: (value: Record<string, unknown>) => ({
+          ...value,
+          items: [
+            {
+              ...((value.items as Array<Record<string, unknown>>)[0] ?? {}),
+              assetUrl: 'http://localhost:5000/worksheets/assets/a1/image',
+            },
+          ],
+        }),
+        assetProxyUrl: (id: string) =>
+          `http://localhost:5000/worksheets/assets/${id}/image`,
+      } as never,
+      { normalize: jest.fn() } as never,
       { emit: jest.fn() } as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue({

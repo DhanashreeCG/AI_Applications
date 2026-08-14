@@ -103,7 +103,7 @@ describe('WorksheetValidationService', () => {
     ).toThrow(/must describe the image/);
   });
 
-  it('allows assetId and image URL enrichment after retrieval', () => {
+  it('allows assetId enrichment after retrieval but not signed URLs', () => {
     const enriched = {
       instruction: 'Count the objects.',
       items: [
@@ -111,8 +111,6 @@ describe('WorksheetValidationService', () => {
           count: 3,
           imageQuery: 'red apples',
           assetId: 'asset-1',
-          imageUrl: 'http://localhost:3000/worksheets/assets/asset-1/image',
-          assetUrl: 'http://localhost:3000/worksheets/assets/asset-1/image',
         },
         { count: 5, imageQuery: 'yellow bananas', assetId: 'asset-2' },
       ],

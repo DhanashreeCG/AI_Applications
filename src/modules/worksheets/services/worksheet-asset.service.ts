@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
 import { SearchService } from '../../search/search.service';
 import type { SearchAssetsResponse } from '../../search/interfaces/search-result.interface';
 import { S3StorageService } from '../../storage/s3-storage.service';
+import { PrismaService } from '../../database/prisma.service';
 import {
   PIPELINE_STAGES,
   PipelineTelemetryContext,
@@ -14,8 +15,16 @@ import {
   WORKSHEET_ASSET_IMAGE_PATH,
   WORKSHEET_IMAGE_SEARCH_EMBEDDING_PURPOSE,
 } from '../constants/worksheet.constants';
-import { ResolvedAssetSlot } from '../types/worksheet.types';
-import { collectImageQueries, setValueAtPath } from '../utils/structure.util';
+import { WorksheetException } from '../errors/worksheet.exception';
+import {
+  ResolvedAssetSlot,
+  ResolvedAssetUrl,
+} from '../types/worksheet.types';
+import {
+  collectImageQueries,
+  setValueAtPath,
+  stripTransientAssetFields,
+} from '../utils/structure.util';
 import {
   WorksheetPipelineEmitter,
   hashPayload,
@@ -26,6 +35,7 @@ export class WorksheetAssetService {
   private readonly logger = new Logger(WorksheetAssetService.name);
   private readonly concurrency: number;
   private readonly searchLimit: number;
+  private readonly pickerLimit: number;
   private readonly signedUrlTtlSeconds: number;
   private readonly apiBaseUrl: string;
   private readonly emitter: WorksheetPipelineEmitter;
@@ -33,6 +43,7 @@ export class WorksheetAssetService {
   constructor(
     private readonly searchService: SearchService,
     private readonly s3StorageService: S3StorageService,
+    private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     eventEmitter: EventEmitter2,
   ) {
@@ -40,13 +51,21 @@ export class WorksheetAssetService {
       this.configService.get<number>('worksheets.imageConcurrency') ?? 3;
     this.searchLimit =
       this.configService.get<number>('worksheets.imageSearchLimit') ?? 1;
+    this.pickerLimit =
+      this.configService.get<number>('worksheets.imagePickerLimit') ?? 12;
     this.signedUrlTtlSeconds =
       this.configService.get<number>('worksheets.signedUrlTtlSeconds') ?? 3600;
     this.apiBaseUrl = (
       this.configService.get<string>('worksheets.renderer.apiBaseUrl') ??
-      'http://localhost:3000'
+      'http://localhost:5000'
     ).replace(/\/$/, '');
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
+  }
+
+  public persistableStructure(
+    structure: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return stripTransientAssetFields(structure);
   }
 
   public async attachAssets(
@@ -74,31 +93,22 @@ export class WorksheetAssetService {
       next = this.applySlot(next, slot);
     }
 
-    return { structure: next, slots };
+    return { structure: this.persistableStructure(next), slots };
   }
 
   public applySlot(
     structure: Record<string, unknown>,
     slot: ResolvedAssetSlot,
   ): Record<string, unknown> {
-    const fields: Record<string, string> = {};
-    if (slot.assetId) fields.assetId = slot.assetId;
-    if (slot.imageUrl) fields.imageUrl = slot.imageUrl;
-    if (slot.assetUrl) fields.assetUrl = slot.assetUrl;
-    if (slot.signedUrl) fields.signedUrl = slot.signedUrl;
-    if (!Object.keys(fields).length) {
-      return structure;
+    if (!slot.assetId) {
+      return this.persistableStructure(structure);
     }
-
-    let next = structure;
-    for (const [key, value] of Object.entries(fields)) {
-      if (slot.path === '') {
-        next = { ...next, [key]: value };
-      } else {
-        next = setValueAtPath(next, `${slot.path}.${key}`, value);
-      }
+    if (slot.path === '') {
+      return this.persistableStructure({ ...structure, assetId: slot.assetId });
     }
-    return next;
+    return this.persistableStructure(
+      setValueAtPath(structure, `${slot.path}.assetId`, slot.assetId),
+    );
   }
 
   public async resolveSlot(
@@ -150,8 +160,8 @@ export class WorksheetAssetService {
       }
 
       const hit = response.results[0];
-      const slot = hit
-        ? await this.toResolvedSlot(path, query, hit)
+      const slot: ResolvedAssetSlot = hit
+        ? { path, imageQuery: query, assetId: hit.assetId }
         : this.emptySlot(path, query);
 
       if (!slot.assetId) {
@@ -195,34 +205,94 @@ export class WorksheetAssetService {
     }
   }
 
-  private async toResolvedSlot(
-    path: string,
-    imageQuery: string,
-    hit: { assetId: string; s3ObjectKey?: string },
-  ): Promise<ResolvedAssetSlot> {
-    const imageUrl = `${this.apiBaseUrl}${WORKSHEET_ASSET_IMAGE_PATH}/${hit.assetId}/image`;
+  public assetProxyUrl(assetId: string): string {
+    return `${WORKSHEET_ASSET_IMAGE_PATH}/${assetId}/image`;
+  }
+
+  public async resolveAsset(assetId: string): Promise<ResolvedAssetUrl> {
+    const asset = await this.prisma.asset.findUnique({
+      where: { id: assetId },
+      select: { id: true, s3ObjectKey: true, s3Bucket: true },
+    });
+    if (!asset) {
+      throw new WorksheetException(
+        'ASSET_NOT_FOUND',
+        `Asset "${assetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
     let signedUrl: string | null = null;
-    if (hit.s3ObjectKey) {
+    if (asset.s3ObjectKey) {
       try {
         signedUrl = await this.s3StorageService.getSignedUrl(
-          hit.s3ObjectKey,
+          asset.s3ObjectKey,
           this.signedUrlTtlSeconds,
+          asset.s3Bucket,
         );
-      } catch (error) {
-        this.logger.warn(
-          `Signed URL failed for worksheet asset ${hit.assetId}`,
-        );
+      } catch {
+        this.logger.warn(`Signed URL failed for worksheet asset ${asset.id}`);
       }
     }
 
     return {
-      path,
-      imageQuery,
-      assetId: hit.assetId,
-      imageUrl,
-      assetUrl: imageUrl,
+      assetId: asset.id,
+      imageUrl: `${this.apiBaseUrl}${this.assetProxyUrl(asset.id)}`,
       signedUrl,
     };
+  }
+
+  public enrichForRender(
+    structure: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const walk = (value: unknown): unknown => {
+      if (Array.isArray(value)) {
+        return value.map((item) => walk(item));
+      }
+      if (value && typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        const next: Record<string, unknown> = {};
+        for (const [key, child] of Object.entries(record)) {
+          if ((['imageUrl', 'assetUrl', 'signedUrl'] as string[]).includes(key)) {
+            continue;
+          }
+          next[key] = walk(child);
+        }
+        if (typeof record.assetId === 'string' && record.assetId.trim()) {
+          next.assetUrl = this.assetProxyUrl(record.assetId);
+        }
+        return next;
+      }
+      return value;
+    };
+    return walk(structure) as Record<string, unknown>;
+  }
+
+  public async searchCandidates(
+    query: string,
+    limit?: number,
+  ): Promise<
+    Array<{
+      assetId: string;
+      caption: string;
+      searchDescription: string;
+      imageUrl: string;
+    }>
+  > {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return [];
+    }
+    const response = await this.searchService.search({
+      query: trimmed,
+      limit: limit ?? this.pickerLimit,
+    });
+    return response.results.map((hit) => ({
+      assetId: hit.assetId,
+      caption: hit.caption,
+      searchDescription: hit.searchDescription,
+      imageUrl: this.assetProxyUrl(hit.assetId),
+    }));
   }
 
   private emptySlot(path: string, imageQuery: string): ResolvedAssetSlot {
@@ -230,9 +300,6 @@ export class WorksheetAssetService {
       path,
       imageQuery,
       assetId: null,
-      imageUrl: null,
-      assetUrl: null,
-      signedUrl: null,
     };
   }
 

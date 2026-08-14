@@ -10,30 +10,56 @@ import { PrismaService } from '../../database/prisma.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
 import { BrowserPoolService } from '../../flashcards/flashcard-renderer/browser/browser-pool.service';
 import {
-  WORKSHEET_ASSET_IMAGE_PATH,
+  DEFAULT_WORKSHEET_CANVAS,
   WORKSHEET_WORKFLOW_RENDER,
 } from '../constants/worksheet.constants';
 import { WorksheetException } from '../errors/worksheet.exception';
 import {
+  EditableField,
   WORKSHEET_RENDER_FORMATS,
+  WORKSHEET_RENDER_MODES,
   WorksheetRenderFormat,
+  WorksheetRenderMode,
 } from '../types/worksheet.types';
-import { asStructureRecord } from '../utils/structure.util';
+import { asStructureRecord, parseJsonObject } from '../utils/structure.util';
 import {
   WorksheetPipelineEmitter,
   createTelemetryContext,
   runTrackedStage,
 } from '../telemetry/worksheet-pipeline.events';
 import { WorksheetRendererRegistry } from '../renderers/worksheet-renderer.registry';
-import { WorksheetTemplateService } from './worksheet-template.service';
+import { WorksheetAssetService } from './worksheet-asset.service';
+import { WorksheetFieldMetadataService } from './worksheet-field-metadata.service';
+import {
+  WorksheetTemplateRecord,
+  WorksheetTemplateService,
+} from './worksheet-template.service';
 
 export interface RenderWorksheetResult {
   worksheetId: string;
   format: WorksheetRenderFormat;
+  mode: WorksheetRenderMode;
   html?: string;
+  canvas?: { width: number; height: number };
   storageKey?: string;
   uri?: string;
   outputId?: string;
+}
+
+export interface PreviewWorksheetResult {
+  worksheetId: string;
+  mode: WorksheetRenderMode;
+  html: string;
+  canvas: { width: number; height: number };
+  structure: Record<string, unknown>;
+  editableFields: EditableField[];
+  fieldPrompts: Record<string, string>;
+  template: {
+    id: string;
+    slug: string;
+    name: string;
+    rendererType: string;
+  };
 }
 
 @Injectable()
@@ -55,17 +81,22 @@ export class WorksheetRenderService {
     private readonly rendererRegistry: WorksheetRendererRegistry,
     private readonly browserPool: BrowserPoolService,
     private readonly s3StorageService: S3StorageService,
+    private readonly assetService: WorksheetAssetService,
+    private readonly fieldMetadataService: WorksheetFieldMetadataService,
     eventEmitter: EventEmitter2,
   ) {
     this.enabled =
       this.configService.get<boolean>('worksheets.renderer.enabled') !== false;
-    this.apiBaseUrl =
+    this.apiBaseUrl = (
       this.configService.get<string>('worksheets.renderer.apiBaseUrl') ??
-      'http://localhost:3000';
+      'http://localhost:5000'
+    ).replace(/\/$/, '');
     this.defaultWidth =
-      this.configService.get<number>('worksheets.renderer.defaultWidth') ?? 794;
+      this.configService.get<number>('worksheets.renderer.defaultWidth') ??
+      DEFAULT_WORKSHEET_CANVAS.width;
     this.defaultHeight =
-      this.configService.get<number>('worksheets.renderer.defaultHeight') ?? 1123;
+      this.configService.get<number>('worksheets.renderer.defaultHeight') ??
+      DEFAULT_WORKSHEET_CANVAS.height;
     this.keyPrefix =
       this.configService.get<string>('worksheets.renderer.s3KeyPrefix') ??
       'worksheets/rendered';
@@ -77,10 +108,43 @@ export class WorksheetRenderService {
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
   }
 
+  public composeHtml(input: {
+    template: WorksheetTemplateRecord;
+    structure: Record<string, unknown>;
+    request?: Record<string, unknown> | null;
+    mode?: WorksheetRenderMode;
+  }): { html: string; canvas: { width: number; height: number } } {
+    const rendererConfig = this.templateService.parseRendererConfig(input.template);
+    const canvas = {
+      width: rendererConfig.width ?? this.defaultWidth,
+      height: rendererConfig.height ?? this.defaultHeight,
+    };
+    const structure = this.assetService.enrichForRender(
+      this.assetService.persistableStructure(input.structure),
+    );
+    const topic =
+      (typeof input.request?.topic === 'string' && input.request.topic) ||
+      (typeof structure.topic === 'string' ? structure.topic : undefined);
+    const renderer = this.rendererRegistry.get(input.template.rendererType);
+    const html = renderer.render({
+      templateHtml: input.template.templateHtml,
+      structure,
+      rendererConfig: rendererConfig as Record<string, unknown>,
+      backgroundAssetUrl: input.template.backgroundAssetId
+        ? this.assetService.assetProxyUrl(input.template.backgroundAssetId)
+        : null,
+      mode: input.mode ?? 'editor',
+      canvas,
+      topic,
+      baseHref: this.apiBaseUrl,
+    });
+    return { html, canvas };
+  }
+
   public async render(
     worksheetId: string,
     format: string,
-    options: { correlationId?: string } = {},
+    options: { correlationId?: string; mode?: string } = {},
   ): Promise<RenderWorksheetResult> {
     const telemetry = createTelemetryContext({
       correlationId: options.correlationId,
@@ -95,7 +159,12 @@ export class WorksheetRenderService {
       },
     });
     try {
-      const result = await this.runRender(worksheetId, format, telemetry);
+      const result = await this.runRender(
+        worksheetId,
+        format,
+        options.mode,
+        telemetry,
+      );
       this.emitter.emitCompleted({
         ...telemetry,
         status: 'completed',
@@ -117,9 +186,53 @@ export class WorksheetRenderService {
     }
   }
 
+  public async preview(
+    worksheetId: string,
+    mode: string | undefined,
+    options: { correlationId?: string } = {},
+  ): Promise<PreviewWorksheetResult> {
+    const rendered = await this.render(worksheetId, 'html', {
+      ...options,
+      mode: mode || 'editor',
+    });
+    const worksheet = await this.prisma.worksheet.findUnique({
+      where: { id: worksheetId },
+    });
+    if (!worksheet) {
+      throw new WorksheetException(
+        'WORKSHEET_NOT_FOUND',
+        `Worksheet "${worksheetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const template = await this.templateService.getById(worksheet.templateId);
+    const structure = this.assetService.persistableStructure(
+      asStructureRecord(worksheet.structure),
+    );
+    return {
+      worksheetId,
+      mode: rendered.mode,
+      html: rendered.html ?? '',
+      canvas: rendered.canvas ?? {
+        width: this.defaultWidth,
+        height: this.defaultHeight,
+      },
+      structure,
+      editableFields: this.fieldMetadataService.normalize(template, structure),
+      fieldPrompts: this.templateService.parseFieldPrompts(template),
+      template: {
+        id: template.id,
+        slug: template.slug,
+        name: template.name,
+        rendererType: template.rendererType,
+      },
+    };
+  }
+
   private async runRender(
     worksheetId: string,
     format: string,
+    rawMode: string | undefined,
     telemetry: PipelineTelemetryContext,
   ): Promise<RenderWorksheetResult> {
     const normalized = await runTrackedStage(
@@ -180,28 +293,31 @@ export class WorksheetRenderService {
     );
 
     const rendererConfig = this.templateService.parseRendererConfig(template);
+    const canvas = {
+      width: rendererConfig.width ?? this.defaultWidth,
+      height: rendererConfig.height ?? this.defaultHeight,
+    };
+    const mode = this.resolveMode(rawMode, normalized);
     const html = await runTrackedStage(
       this.emitter,
       telemetry,
       PIPELINE_STAGES.HTML_GENERATION,
       () => {
-        const renderer = this.rendererRegistry.get(template.rendererType);
-        const structure = this.enrichAssetUrls(
-          asStructureRecord(worksheet.structure),
-        );
-        return renderer.render({
-          templateHtml: template.templateHtml,
-          structure,
-          rendererConfig: rendererConfig as Record<string, unknown>,
-          backgroundAssetUrl: template.backgroundAssetId
-            ? this.assetProxyUrl(template.backgroundAssetId)
-            : null,
+        const composed = this.composeHtml({
+          template,
+          structure: asStructureRecord(worksheet.structure),
+          request: parseJsonObject(worksheet.request),
+          mode,
         });
+        return composed.html;
       },
       {
         completeMetadata: (markup) => ({
           rendererType: template.rendererType,
           htmlLength: markup.length,
+          mode,
+          width: canvas.width,
+          height: canvas.height,
         }),
       },
     );
@@ -218,7 +334,13 @@ export class WorksheetRenderService {
         metadata: { reason: 'html_returned_inline' },
       });
       this.logger.log('render completed format=html');
-      const result = { worksheetId, format: normalized, html };
+      const result = {
+        worksheetId,
+        format: normalized,
+        mode,
+        html,
+        canvas,
+      };
       await runTrackedStage(
         this.emitter,
         telemetry,
@@ -243,8 +365,8 @@ export class WorksheetRenderService {
     });
 
     try {
-      const width = rendererConfig.width ?? this.defaultWidth;
-      const height = rendererConfig.height ?? this.defaultHeight;
+      const width = canvas.width;
+      const height = canvas.height;
       const buffer = await runTrackedStage(
         this.emitter,
         telemetry,
@@ -297,9 +419,11 @@ export class WorksheetRenderService {
           return {
             worksheetId,
             format: normalized,
+            mode,
             storageKey,
             uri,
             outputId: output.id,
+            canvas,
           };
         },
         {
@@ -335,31 +459,18 @@ export class WorksheetRenderService {
     }
   }
 
-  private enrichAssetUrls(
-    structure: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const walk = (value: unknown): unknown => {
-      if (Array.isArray(value)) {
-        return value.map((item) => walk(item));
-      }
-      if (value && typeof value === 'object') {
-        const record = value as Record<string, unknown>;
-        const next: Record<string, unknown> = {};
-        for (const [key, child] of Object.entries(record)) {
-          next[key] = walk(child);
-        }
-        if (typeof record.assetId === 'string' && record.assetId.trim()) {
-          next.assetUrl = this.assetProxyUrl(record.assetId);
-        }
-        return next;
-      }
-      return value;
-    };
-    return walk(structure) as Record<string, unknown>;
-  }
-
-  private assetProxyUrl(assetId: string): string {
-    return `${this.apiBaseUrl.replace(/\/$/, '')}${WORKSHEET_ASSET_IMAGE_PATH}/${assetId}/image`;
+  private resolveMode(
+    rawMode: string | undefined,
+    format: WorksheetRenderFormat,
+  ): WorksheetRenderMode {
+    if (format !== 'html') {
+      return 'export';
+    }
+    const value = rawMode?.trim().toLowerCase();
+    if (value && WORKSHEET_RENDER_MODES.includes(value as WorksheetRenderMode)) {
+      return value as WorksheetRenderMode;
+    }
+    return 'export';
   }
 
   private async renderWebp(

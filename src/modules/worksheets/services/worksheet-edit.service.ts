@@ -16,6 +16,7 @@ import {
   collectImageQueries,
   getValueAtPath,
   isEditableField,
+  looksLikeHtml,
   setValueAtPath,
 } from '../utils/structure.util';
 import {
@@ -25,7 +26,11 @@ import {
 } from '../telemetry/worksheet-pipeline.events';
 import { WorksheetAssetService } from './worksheet-asset.service';
 import { WorksheetContentService } from './worksheet-content.service';
-import { WorksheetTemplateService } from './worksheet-template.service';
+import { WorksheetRenderService } from './worksheet-render.service';
+import {
+  WorksheetTemplateRecord,
+  WorksheetTemplateService,
+} from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
 
 export interface EditWorksheetOptions {
@@ -43,6 +48,7 @@ export class WorksheetEditService {
     private readonly contentService: WorksheetContentService,
     private readonly validationService: WorksheetValidationService,
     private readonly assetService: WorksheetAssetService,
+    private readonly renderService: WorksheetRenderService,
     eventEmitter: EventEmitter2,
   ) {
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
@@ -209,9 +215,11 @@ export class WorksheetEditService {
       telemetry,
       PIPELINE_STAGES.STRUCTURE_VALIDATION,
       () =>
-        this.validationService.validateGeneratedStructure(next, template, {
-          allowEnrichmentKeys: true,
-        }),
+        this.validationService.validateGeneratedStructure(
+          this.assetService.persistableStructure(next),
+          template,
+          { allowEnrichmentKeys: true },
+        ),
     );
 
     const previousQueries = new Map(
@@ -265,25 +273,18 @@ export class WorksheetEditService {
       () =>
         this.prisma.worksheet.update({
           where: { id: worksheet.id },
-          data: { structure: next as Prisma.InputJsonValue },
+          data: {
+            structure: this.assetService.persistableStructure(
+              next,
+            ) as Prisma.InputJsonValue,
+          },
         }),
       {
         completeMetadata: (row) => ({ worksheetId: row.id }),
       },
     );
 
-    const response: GenerateWorksheetResponse = {
-      id: updated.id,
-      status: updated.status,
-      template: {
-        id: template.id,
-        slug: template.slug,
-        name: template.name,
-        rendererType: template.rendererType,
-      },
-      request: asStructureRecord(updated.request),
-      structure: asStructureRecord(updated.structure),
-    };
+    const response = this.toResponse(updated, template);
 
     await runTrackedStage(
       this.emitter,
@@ -296,6 +297,175 @@ export class WorksheetEditService {
     );
 
     return response;
+  }
+
+  public async replaceImage(
+    worksheetId: string,
+    path: string,
+    assetId: string,
+  ): Promise<GenerateWorksheetResponse> {
+    const worksheet = await this.requireWorksheet(worksheetId);
+    const template = await this.templateService.getById(worksheet.templateId);
+    await this.assetService.resolveAsset(assetId);
+
+    const structure = asStructureRecord(worksheet.structure);
+    const targetPath = path.trim();
+    if (!targetPath) {
+      throw new WorksheetException('INVALID_FIELD', 'path is required');
+    }
+
+    const parent = getValueAtPath(structure, targetPath);
+    if (!parent || typeof parent !== 'object' || Array.isArray(parent)) {
+      throw new WorksheetException(
+        'INVALID_FIELD',
+        `Field path "${targetPath}" is not an image slot`,
+      );
+    }
+
+    const next = this.assetService.persistableStructure(
+      setValueAtPath(structure, `${targetPath}.assetId`, assetId),
+    );
+    const updated = await this.prisma.worksheet.update({
+      where: { id: worksheet.id },
+      data: { structure: next as Prisma.InputJsonValue },
+    });
+    return this.toResponse(updated, template);
+  }
+
+  public async updateField(
+    worksheetId: string,
+    fieldPath: string,
+    value: unknown,
+  ): Promise<GenerateWorksheetResponse> {
+    const worksheet = await this.requireWorksheet(worksheetId);
+    const template = await this.templateService.getById(worksheet.templateId);
+    const aiConfig = this.templateService.parseAiConfig(template);
+    const path = fieldPath.trim();
+    if (!isEditableField(path, aiConfig.editableFields)) {
+      throw new WorksheetException(
+        'FIELD_NOT_EDITABLE',
+        `Field "${path}" is not editable for this template`,
+      );
+    }
+    if (typeof value === 'string' && looksLikeHtml(value)) {
+      throw new WorksheetException(
+        'INVALID_STRUCTURE',
+        `${path} must be inserted as text, not HTML`,
+      );
+    }
+
+    const structure = asStructureRecord(worksheet.structure);
+    let next = setValueAtPath(structure, path, value);
+    next = this.validationService.validateGeneratedStructure(next, template, {
+      allowEnrichmentKeys: true,
+    });
+
+    const previousQueries = new Map(
+      collectImageQueries(structure).map((item) => [item.path, item.query]),
+    );
+    const changed = collectImageQueries(next).filter(
+      (item) => previousQueries.get(item.path) !== item.query,
+    );
+    if (changed.length) {
+      const meta = this.templateService.parseMeta(template);
+      for (const item of changed) {
+        const slot = await this.assetService.resolveSlot(item.query, item.parentPath, {
+          grades: meta.grades,
+        });
+        next = this.assetService.applySlot(next, slot);
+      }
+    }
+
+    const updated = await this.prisma.worksheet.update({
+      where: { id: worksheet.id },
+      data: {
+        structure: this.assetService.persistableStructure(
+          next,
+        ) as Prisma.InputJsonValue,
+      },
+    });
+    return this.toResponse(updated, template);
+  }
+
+  public async searchImages(
+    worksheetId: string,
+    options: { query?: string; path?: string; limit?: number },
+  ): Promise<{
+    query: string;
+    results: Array<{
+      assetId: string;
+      caption: string;
+      searchDescription: string;
+      imageUrl: string;
+    }>;
+  }> {
+    const worksheet = await this.requireWorksheet(worksheetId);
+    let query = options.query?.trim() || '';
+    if (!query && options.path?.trim()) {
+      const node = getValueAtPath(
+        asStructureRecord(worksheet.structure),
+        options.path.trim(),
+      );
+      if (node && typeof node === 'object' && !Array.isArray(node)) {
+        const record = node as Record<string, unknown>;
+        if (typeof record.imageQuery === 'string') {
+          query = record.imageQuery;
+        }
+      }
+    }
+    if (!query) {
+      throw new WorksheetException(
+        'INVALID_REQUEST',
+        'Provide query or a path whose slot has imageQuery',
+      );
+    }
+    const results = await this.assetService.searchCandidates(query, options.limit);
+    return { query, results };
+  }
+
+  private async requireWorksheet(worksheetId: string) {
+    const row = await this.prisma.worksheet.findUnique({
+      where: { id: worksheetId },
+    });
+    if (!row) {
+      throw new WorksheetException(
+        'WORKSHEET_NOT_FOUND',
+        `Worksheet "${worksheetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return row;
+  }
+
+  private toResponse(
+    worksheet: {
+      id: string;
+      status: string;
+      request: unknown;
+      structure: unknown;
+    },
+    template: WorksheetTemplateRecord,
+  ): GenerateWorksheetResponse {
+    const composed = this.renderService.composeHtml({
+      template,
+      structure: asStructureRecord(worksheet.structure),
+      request: asStructureRecord(worksheet.request),
+      mode: 'editor',
+    });
+    return {
+      id: worksheet.id,
+      status: worksheet.status,
+      template: {
+        id: template.id,
+        slug: template.slug,
+        name: template.name,
+        rendererType: template.rendererType,
+      },
+      request: asStructureRecord(worksheet.request),
+      structure: asStructureRecord(worksheet.structure),
+      html: composed.html,
+      canvas: composed.canvas,
+    };
   }
 
   private resolveLinkedValues(

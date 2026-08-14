@@ -8,6 +8,7 @@ import { CreateWorksheetTemplateDto } from '../dto/create-worksheet-template.dto
 import { WorksheetException } from '../errors/worksheet.exception';
 import {
   GENERIC_RENDERER_TYPE,
+  WORKSHEET_ASSET_IMAGE_PATH,
   WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES,
   WORKSHEET_TEMPLATE_IMAGE_MIME_TYPES,
 } from '../constants/worksheet.constants';
@@ -212,6 +213,24 @@ export class WorksheetTemplateService {
     return this.prisma.worksheetTemplate.findMany({
       where: { status: 'ACTIVE' },
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+    });
+  }
+
+  public async listCatalog() {
+    const templates = await this.listActive();
+    return templates.map((template) => {
+      const meta = this.parseMeta(template);
+      return {
+        id: template.id,
+        name: template.name,
+        slug: template.slug,
+        category: template.category,
+        description: template.description,
+        meta,
+        sampleUrl: template.sampleAssetId
+          ? `${WORKSHEET_ASSET_IMAGE_PATH}/${template.sampleAssetId}/image`
+          : null,
+      };
     });
   }
 

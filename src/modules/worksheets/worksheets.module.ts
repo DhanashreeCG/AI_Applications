@@ -7,6 +7,7 @@ import { StorageModule } from '../storage/storage.module';
 import { GenericWorksheetRenderer } from './renderers/generic-worksheet.renderer';
 import { WorksheetRendererRegistry } from './renderers/worksheet-renderer.registry';
 import { WorksheetAssetService } from './services/worksheet-asset.service';
+import { WorksheetFieldMetadataService } from './services/worksheet-field-metadata.service';
 import { WorksheetContentService } from './services/worksheet-content.service';
 import { WorksheetEditService } from './services/worksheet-edit.service';
 import { WorksheetGenerationService } from './services/worksheet-generation.service';
@@ -30,6 +31,7 @@ import { WorksheetsController } from './worksheets.controller';
     GenericWorksheetRenderer,
     WorksheetRendererRegistry,
     WorksheetRenderService,
+    WorksheetFieldMetadataService,
   ],
 })
 export class WorksheetsModule {}

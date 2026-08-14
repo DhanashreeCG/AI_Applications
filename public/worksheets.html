@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Generate AI Worksheets</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --sidebar: #5b2d91;
+        --sidebar-deep: #4a2278;
+        --purple: #6b2fa0;
+        --purple-soft: #efe6f8;
+        --orange: #f08a3a;
+        --text: #2b2140;
+        --muted: #7a7190;
+        --line: #eadff4;
+        --white: #ffffff;
+        --danger: #e24b4b;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        font-family: Nunito, Segoe UI, sans-serif;
+        color: var(--text);
+        background: #f7f4fb;
+      }
+      .main { overflow: auto; min-width: 0; }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 22px 32px 8px;
+      }
+      h1 {
+        margin: 0;
+        color: var(--purple);
+        font-size: 32px;
+        font-weight: 800;
+      }
+      .userbox { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+      .avatar {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: var(--purple); color: #fff; display: grid; place-items: center; font-weight: 800;
+      }
+      .form-card, .preview-wrap {
+        background: var(--white);
+        margin: 12px 32px 20px;
+        padding: 22px 24px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+      }
+      label { display: block; font-weight: 800; margin-bottom: 8px; }
+      .topic-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 14px;
+        margin-bottom: 18px;
+      }
+      .topic-row input {
+        border: 0; outline: none; width: 100%; font: inherit; font-size: 15px;
+      }
+      .ages { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+      .form-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .count-field { min-width: 180px; }
+      .count-field select {
+        width: 100%;
+        border: 1.5px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+        font-weight: 700;
+        background: #fff;
+      }
+      .age {
+        border: 1.5px solid #d8cce8;
+        background: #fff;
+        border-radius: 999px;
+        padding: 10px 16px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .age input { display: none; }
+      .age.selected {
+        border-color: var(--purple);
+        background: var(--purple-soft);
+        color: var(--purple);
+      }
+      .actions { display: flex; justify-content: flex-end; gap: 12px; }
+      .btn {
+        border: 0; border-radius: 10px; padding: 11px 18px; font-weight: 800; cursor: pointer;
+      }
+      .btn-ghost { background: #fff; color: var(--purple); border: 1.5px solid var(--purple); }
+      .btn-gen {
+        color: #fff;
+        background: linear-gradient(90deg, var(--purple), var(--orange));
+      }
+      .btn:disabled { opacity: 0.55; cursor: wait; }
+      .grid-wrap { padding: 0 32px 40px; }
+      .worksheet-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 18px;
+      }
+      @media (max-width: 1200px) { .worksheet-grid { grid-template-columns: repeat(3, 1fr); } }
+      @media (max-width: 800px) {
+        .worksheet-grid { grid-template-columns: repeat(2, 1fr); }
+      }
+      .card {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 6px 18px rgba(91,45,145,0.06);
+        cursor: pointer;
+      }
+      .card:hover { box-shadow: 0 10px 24px rgba(91,45,145,0.14); }
+      .thumb-frame {
+        width: 100%;
+        height: 170px;
+        overflow: hidden;
+        background: #f3eef9;
+        pointer-events: none;
+      }
+      .thumb-frame iframe {
+        border: 0;
+        transform-origin: top left;
+        pointer-events: none;
+      }
+      .card-bar {
+        display: flex;
+        justify-content: space-around;
+        padding: 8px;
+        border-top: 1px solid var(--line);
+      }
+      .icon-btn {
+        width: 34px; height: 34px; border: 0; background: transparent; cursor: pointer; font-size: 16px;
+      }
+      .icon-btn.loved { color: var(--danger); }
+      .pager {
+        display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 18px; color: var(--muted);
+      }
+      .page {
+        min-width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; cursor: pointer; font-weight: 800;
+      }
+      .page.active { background: var(--purple); color: #fff; }
+      .hidden { display: none !important; }
+      .status { margin: 0 32px 8px; color: var(--muted); font-weight: 700; }
+      .preview-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 16px; }
+      .frame-shell {
+        overflow: auto;
+        background: #efeaf6;
+        border-radius: 12px;
+        padding: 16px;
+        min-height: 480px;
+      }
+      iframe.worksheet-frame {
+        border: 1.5px solid var(--line);
+        background: #fff;
+        display: block;
+        transform-origin: top left;
+        width: 1016px;
+        height: 1316px;
+      }
+      .modal {
+        position: fixed; inset: 0; background: rgba(30,16,50,0.45);
+        display: grid; place-items: center; z-index: 40;
+      }
+      .modal-card {
+        width: min(720px, 92vw); max-height: 86vh; overflow: auto;
+        background: #fff; border-radius: 16px; padding: 18px;
+      }
+      .image-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+      .image-grid img { width: 100%; height: 90px; object-fit: cover; border-radius: 8px; cursor: pointer; }
+      textarea, .modal input {
+        width: 100%; border: 1.5px solid var(--line); border-radius: 10px; padding: 10px; font: inherit;
+      }
+      .empty { text-align: center; color: var(--muted); padding: 40px 0; grid-column: 1 / -1; }
+    </style>
+  </head>
+  <body>
+    <div class="main">
+      <div class="topbar">
+        <h1>Generate AI Worksheets</h1>
+        <div class="userbox">
+          <div>Teacher workspace</div>
+          <div class="avatar">AI</div>
+        </div>
+      </div>
+
+      <section id="formSection" class="form-card">
+        <label>Today's learning topic</label>
+        <div class="topic-row">
+          <span>✦</span>
+          <input id="topicInput" placeholder="e.g My body Parts, Healthy Food, Animals" />
+        </div>
+        <label>Select age group*</label>
+        <div class="ages" id="ageGroup"></div>
+        <div class="form-row">
+          <div class="count-field">
+            <label for="countSelect">How many worksheets</label>
+            <select id="countSelect"></select>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost" id="cancelBtn" type="button">Cancel</button>
+          <button class="btn btn-gen" id="generateBtn" type="button">✦ Generate Worksheets</button>
+        </div>
+      </section>
+
+      <p class="status" id="status"></p>
+      <div class="grid-wrap" id="gridSection">
+        <div class="worksheet-grid" id="worksheetGrid"></div>
+        <div class="pager" id="pager"></div>
+      </div>
+
+      <section id="previewSection" class="preview-wrap hidden">
+        <button class="btn btn-ghost" id="backBtn" type="button">← Back</button>
+        <h2 id="worksheetTitle"></h2>
+        <div class="preview-toolbar">
+          <button class="btn btn-ghost" id="editBtn" type="button">Edit</button>
+          <button class="btn btn-gen" id="aiEditBtn" type="button">✦ AI Edit</button>
+          <button class="btn btn-ghost" id="downloadBtn" type="button">⬇ Download</button>
+          <button class="btn btn-ghost" id="downloadPdfBtn" type="button">⬇ Download PDF</button>
+        </div>
+        <div class="frame-shell"><iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe></div>
+      </section>
+    </div>
+
+    <div id="imagePickerModal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Select Image</h2>
+        <input id="imageQuery" placeholder="Search assets, e.g. two goats" />
+        <button class="btn btn-gen" id="searchImagesBtn" type="button">Search</button>
+        <div class="image-grid" id="imageBank"></div>
+        <button class="btn btn-ghost" id="imagePickerCloseBtn" type="button">Close</button>
+      </div>
+    </div>
+
+    <div id="fieldEditModal" class="modal hidden">
+      <div class="modal-card">
+        <h2 id="fieldEditTitle">AI Regenerate</h2>
+        <label>Current text</label>
+        <textarea id="fieldEditCurrent" rows="4"></textarea>
+        <label>Prompt</label>
+        <textarea id="fieldEditInstruction" rows="2" placeholder="Enter prompt to regenerate…"></textarea>
+        <p id="fieldEditError" class="status"></p>
+        <div class="actions">
+          <button class="btn btn-ghost" id="fieldEditCancelBtn" type="button">Cancel</button>
+          <button class="btn btn-gen" id="fieldEditRegenBtn" type="button">Re-Generate</button>
+          <button class="btn btn-gen" id="fieldEditSaveBtn" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const AGES = [
+        { id: '2-3', label: '2-3 years (FS 0)', age: 3, grade: 'FS0' },
+        { id: '3-4', label: '3-4 years (FS 1)', age: 4, grade: 'LKG' },
+        { id: '4-5', label: '4-5 years (FS 2)', age: 5, grade: 'UKG' },
+      ];
+      const FAVORITES_KEY = 'worksheet-favorites';
+      const state = {
+        ageGroup: '3-4',
+        page: 1,
+        pageSize: 10,
+        total: 0,
+        defaultCount: 1,
+        maxCount: 10,
+        worksheetId: null,
+        preview: null,
+        editMode: false,
+        selectedImagePath: null,
+        selectedFieldPath: null,
+      };
+
+      const els = {
+        topicInput: document.getElementById('topicInput'),
+        ageGroup: document.getElementById('ageGroup'),
+        generateBtn: document.getElementById('generateBtn'),
+        cancelBtn: document.getElementById('cancelBtn'),
+        countSelect: document.getElementById('countSelect'),
+        status: document.getElementById('status'),
+        worksheetGrid: document.getElementById('worksheetGrid'),
+        pager: document.getElementById('pager'),
+        formSection: document.getElementById('formSection'),
+        gridSection: document.getElementById('gridSection'),
+        previewSection: document.getElementById('previewSection'),
+        worksheetTitle: document.getElementById('worksheetTitle'),
+        worksheetFrame: document.getElementById('worksheetFrame'),
+        backBtn: document.getElementById('backBtn'),
+        editBtn: document.getElementById('editBtn'),
+        aiEditBtn: document.getElementById('aiEditBtn'),
+        downloadBtn: document.getElementById('downloadBtn'),
+        downloadPdfBtn: document.getElementById('downloadPdfBtn'),
+        imagePickerModal: document.getElementById('imagePickerModal'),
+        imageQuery: document.getElementById('imageQuery'),
+        searchImagesBtn: document.getElementById('searchImagesBtn'),
+        imageBank: document.getElementById('imageBank'),
+        imagePickerCloseBtn: document.getElementById('imagePickerCloseBtn'),
+        fieldEditModal: document.getElementById('fieldEditModal'),
+        fieldEditCurrent: document.getElementById('fieldEditCurrent'),
+        fieldEditInstruction: document.getElementById('fieldEditInstruction'),
+        fieldEditError: document.getElementById('fieldEditError'),
+        fieldEditCancelBtn: document.getElementById('fieldEditCancelBtn'),
+        fieldEditRegenBtn: document.getElementById('fieldEditRegenBtn'),
+        fieldEditSaveBtn: document.getElementById('fieldEditSaveBtn'),
+      };
+
+      function favorites() {
+        try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch { return []; }
+      }
+      function setFavorites(ids) {
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+      }
+      function selectedAge() {
+        return AGES.find((item) => item.id === state.ageGroup) || AGES[1];
+      }
+      function setStatus(text) { els.status.textContent = text || ''; }
+      async function readError(res) {
+        try {
+          const body = await res.json();
+          return body?.error?.message || body?.message || res.statusText;
+        } catch {
+          return res.statusText;
+        }
+      }
+
+      function renderAges() {
+        els.ageGroup.innerHTML = '';
+        AGES.forEach((age) => {
+          const label = document.createElement('label');
+          label.className = 'age' + (age.id === state.ageGroup ? ' selected' : '');
+          label.innerHTML = `<input type="radio" name="age" value="${age.id}"> ${age.label}`;
+          label.addEventListener('click', () => {
+            state.ageGroup = age.id;
+            renderAges();
+          });
+          els.ageGroup.appendChild(label);
+        });
+      }
+
+      function showGrid() {
+        els.formSection.classList.remove('hidden');
+        els.gridSection.classList.remove('hidden');
+        els.previewSection.classList.add('hidden');
+        state.worksheetId = null;
+        state.preview = null;
+        state.editMode = false;
+        els.editBtn.textContent = 'Edit';
+      }
+
+      function scaleThumb(iframe, canvas) {
+        const width = canvas?.width || 1016;
+        const height = canvas?.height || 1316;
+        iframe.style.width = width + 'px';
+        iframe.style.height = height + 'px';
+        const parent = iframe.parentElement;
+        if (!parent) return;
+        const scale = parent.clientWidth / width;
+        iframe.style.transform = 'scale(' + scale + ')';
+        parent.style.height = Math.round(height * scale) + 'px';
+      }
+
+      function appendCard(item) {
+        const loved = favorites().includes(item.id);
+        const card = document.createElement('div');
+        card.className = 'card';
+        const frameWrap = document.createElement('div');
+        frameWrap.className = 'thumb-frame';
+        if (item.html) {
+          const iframe = document.createElement('iframe');
+          iframe.title = item.template?.name || 'Worksheet';
+          iframe.srcdoc = item.html;
+          iframe.addEventListener('load', () => scaleThumb(iframe, item.canvas));
+          frameWrap.appendChild(iframe);
+        } else if (item.thumbnailUrl) {
+          frameWrap.style.background = `center/cover url('${item.thumbnailUrl}')`;
+        }
+        card.appendChild(frameWrap);
+        const bar = document.createElement('div');
+        bar.className = 'card-bar';
+        bar.innerHTML = `
+            <button class="icon-btn ${loved ? 'loved' : ''}" data-act="fav" data-id="${item.id}" title="Favourite">❤</button>
+            <button class="icon-btn" data-act="preview" data-id="${item.id}" title="Preview">🖥</button>
+            <button class="icon-btn" data-act="download" data-id="${item.id}" title="Download">⬇</button>`;
+        card.appendChild(bar);
+        card.addEventListener('click', (event) => {
+          const btn = event.target.closest('[data-act]');
+          if (btn?.dataset.act === 'fav') {
+            event.preventDefault();
+            toggleFav(item.id, btn);
+            return;
+          }
+          if (btn?.dataset.act === 'download') {
+            event.preventDefault();
+            download(item.id, 'pdf');
+            return;
+          }
+          openPreview(item.id, item.html);
+        });
+        els.worksheetGrid.appendChild(card);
+      }
+
+      async function loadGrid() {
+        const skip = (state.page - 1) * state.pageSize;
+        const res = await fetch(`/worksheets?skip=${skip}&take=${state.pageSize}`);
+        const body = await res.json();
+        if (!res.ok) {
+          setStatus(body?.error?.message || 'Could not load worksheets');
+          return;
+        }
+        state.total = body.total || 0;
+        els.worksheetGrid.innerHTML = '';
+        if (!body.items?.length) {
+          els.worksheetGrid.innerHTML = '<div class="empty">No worksheets yet. Enter a topic and generate.</div>';
+        } else {
+          body.items.forEach(appendCard);
+        }
+        renderPager();
+      }
+
+      function renderPager() {
+        const pages = Math.max(1, Math.ceil(state.total / state.pageSize));
+        els.pager.innerHTML = '';
+        for (let i = 1; i <= Math.min(pages, 8); i += 1) {
+          const btn = document.createElement('button');
+          btn.className = 'page' + (i === state.page ? ' active' : '');
+          btn.textContent = String(i);
+          btn.addEventListener('click', () => { state.page = i; loadGrid(); });
+          els.pager.appendChild(btn);
+        }
+      }
+
+      function toggleFav(id, btn) {
+        const ids = favorites();
+        const next = ids.includes(id) ? ids.filter((item) => item !== id) : ids.concat(id);
+        setFavorites(next);
+        btn.classList.toggle('loved', next.includes(id));
+      }
+
+      async function generateSet() {
+        const topic = els.topicInput.value.trim();
+        if (!topic) {
+          setStatus('Enter a learning topic');
+          return;
+        }
+        const age = selectedAge();
+        els.generateBtn.disabled = true;
+        setStatus('Generating worksheets…');
+        const res = await fetch('/worksheets/generate-set', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: topic,
+            topic,
+            age: age.age,
+            ageGroup: age.id,
+            grade: age.grade,
+            count: Number(els.countSelect.value) || state.defaultCount,
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        els.generateBtn.disabled = false;
+        if (!res.ok) {
+          setStatus(body?.error?.message || 'Generation failed');
+          return;
+        }
+        setStatus(`Created ${(body.items || []).length} worksheet(s)`);
+        state.page = 1;
+        await loadGrid();
+      }
+
+      function scaleFrame() {
+        const iframe = els.worksheetFrame;
+        const canvas = state.preview?.canvas || { width: 1016, height: 1316 };
+        iframe.style.width = canvas.width + 'px';
+        iframe.style.height = canvas.height + 'px';
+        const maxW = iframe.parentElement.clientWidth - 32;
+        const scale = Math.min(1, maxW / canvas.width);
+        iframe.style.transform = `scale(${scale})`;
+        iframe.parentElement.style.height = canvas.height * scale + 8 + 'px';
+      }
+
+      async function openPreview(id, html) {
+        state.worksheetId = id;
+        state.editMode = false;
+        els.editBtn.textContent = 'Edit';
+        setStatus('Loading preview…');
+        els.formSection.classList.add('hidden');
+        els.gridSection.classList.add('hidden');
+        els.previewSection.classList.remove('hidden');
+        const apply = (preview) => {
+          state.preview = preview;
+          els.worksheetTitle.textContent = preview.template?.name || 'Worksheet';
+          const iframe = els.worksheetFrame;
+          const onReady = () => {
+            scaleFrame();
+            wireFrame();
+          };
+          iframe.onload = onReady;
+          iframe.srcdoc = preview.html || html || '';
+          requestAnimationFrame(onReady);
+        };
+        if (html) {
+          apply({ html, template: { name: 'Worksheet' }, canvas: { width: 1016, height: 1316 }, structure: {}, editableFields: [], fieldPrompts: {} });
+        }
+        const res = await fetch(`/worksheets/${encodeURIComponent(id)}/preview?mode=editor`);
+        const preview = await res.json();
+        if (!res.ok) {
+          if (!html) setStatus(preview?.error?.message || 'Preview failed');
+          return;
+        }
+        apply(preview);
+        setStatus('');
+      }
+
+      function wireFrame() {
+        const doc = els.worksheetFrame.contentDocument;
+        if (!doc) return;
+        doc.querySelectorAll('[data-pencil-for]').forEach((btn) => {
+          btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openFieldEditor(btn.getAttribute('data-pencil-for'));
+          });
+        });
+        doc.querySelectorAll('[data-editable]').forEach((el) => {
+          el.addEventListener('click', () => {
+            state.selectedFieldPath = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
+          });
+        });
+        doc.addEventListener('click', (event) => {
+          const slot = event.target.closest?.('[data-image-slot], .worksheet-image');
+          if (slot && state.editMode) {
+            state.selectedImagePath = slot.getAttribute('data-field-path') || 'image';
+            els.imageQuery.value = '';
+            els.imagePickerModal.classList.remove('hidden');
+            searchImages();
+          }
+        });
+      }
+
+      function openFieldEditor(path) {
+        const fields = state.preview?.editableFields || [];
+        const resolved = path || state.selectedFieldPath || fields.find((field) => field.aiEditable)?.path;
+        if (!resolved) {
+          setStatus('Select a text field to AI edit');
+          return;
+        }
+        state.selectedFieldPath = resolved;
+        const node = resolved.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], state.preview.structure);
+        const iframeDoc = els.worksheetFrame.contentDocument;
+        const live = iframeDoc?.querySelector(`[data-editable='${resolved}']`);
+        els.fieldEditCurrent.value = live?.innerText?.trim() || (typeof node === 'string' ? node : JSON.stringify(node ?? ''));
+        els.fieldEditInstruction.value = '';
+        els.fieldEditError.textContent = '';
+        els.fieldEditModal.classList.remove('hidden');
+      }
+
+      window.addEventListener('message', (event) => {
+        const data = event.data || {};
+        if (data.type === 'worksheet-replace-image') {
+          state.selectedImagePath = data.path;
+          els.imagePickerModal.classList.remove('hidden');
+          searchImages();
+        }
+        if (data.type === 'worksheet-select-field') {
+          state.selectedFieldPath = data.path;
+        }
+      });
+
+      function enableInlineEditing(on) {
+        const doc = els.worksheetFrame.contentDocument;
+        if (!doc) return;
+        doc.body.classList.toggle('edit-mode', on);
+        doc.querySelectorAll('[data-editable]').forEach((el) => {
+          if (on) el.setAttribute('contenteditable', 'true');
+          else el.removeAttribute('contenteditable');
+        });
+      }
+
+      async function saveInlineEdits() {
+        const doc = els.worksheetFrame.contentDocument;
+        const fields = state.preview?.editableFields || [];
+        for (const field of fields) {
+          if (field.type === 'image' || field.type === 'array' || field.type === 'object') continue;
+          const el = doc.querySelector(`[data-editable='${field.path}'], [data-field-path='${field.path}']`);
+          if (!el) continue;
+          await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/fields`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: field.path, value: el.innerText.trim() }),
+          });
+        }
+        await openPreview(state.worksheetId);
+      }
+
+      async function download(id, format) {
+        setStatus('Preparing download…');
+        const res = await fetch(`/worksheets/${encodeURIComponent(id)}/render`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ format, mode: 'export' }),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          setStatus(body?.error?.message || 'Download failed');
+          return;
+        }
+        if (body.uri) window.open(body.uri, '_blank');
+        setStatus('');
+      }
+
+      async function searchImages() {
+        if (!state.worksheetId) return;
+        const params = new URLSearchParams();
+        if (els.imageQuery.value.trim()) params.set('query', els.imageQuery.value.trim());
+        if (state.selectedImagePath) params.set('path', state.selectedImagePath);
+        const res = await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/images/search?${params}`);
+        const body = await res.json();
+        els.imageBank.innerHTML = '';
+        (body.results || []).forEach((item) => {
+          const img = document.createElement('img');
+          img.src = item.imageUrl;
+          img.title = item.caption || item.searchDescription;
+          img.addEventListener('click', async () => {
+            await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/images`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path: state.selectedImagePath, assetId: item.assetId }),
+            });
+            els.imagePickerModal.classList.add('hidden');
+            await openPreview(state.worksheetId);
+          });
+          els.imageBank.appendChild(img);
+        });
+      }
+
+      els.generateBtn.addEventListener('click', generateSet);
+      els.cancelBtn.addEventListener('click', () => { els.topicInput.value = ''; setStatus(''); });
+      els.backBtn.addEventListener('click', () => { showGrid(); loadGrid(); });
+      els.editBtn.addEventListener('click', async () => {
+        if (!state.editMode) {
+          state.editMode = true;
+          enableInlineEditing(true);
+          els.editBtn.textContent = 'Save';
+          return;
+        }
+        await saveInlineEdits();
+        state.editMode = false;
+        els.editBtn.textContent = 'Edit';
+      });
+      els.aiEditBtn.addEventListener('click', () => openFieldEditor());
+      els.downloadBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'webp'));
+      els.downloadPdfBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'pdf'));
+      els.imagePickerCloseBtn.addEventListener('click', () => els.imagePickerModal.classList.add('hidden'));
+      els.searchImagesBtn.addEventListener('click', searchImages);
+      els.fieldEditCancelBtn.addEventListener('click', () => els.fieldEditModal.classList.add('hidden'));
+      els.fieldEditRegenBtn.addEventListener('click', async () => {
+        els.fieldEditError.textContent = '';
+        const res = await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/edit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fieldPath: state.selectedFieldPath,
+            instruction: els.fieldEditInstruction.value || 'Rewrite this field for the same age group.',
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          els.fieldEditError.textContent = body?.error?.message || 'AI edit failed';
+          return;
+        }
+        const next = state.selectedFieldPath.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
+        els.fieldEditCurrent.value = typeof next === 'string' ? next : JSON.stringify(next ?? '');
+      });
+      els.fieldEditSaveBtn.addEventListener('click', async () => {
+        await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/fields`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: state.selectedFieldPath, value: els.fieldEditCurrent.value }),
+        });
+        els.fieldEditModal.classList.add('hidden');
+        await openPreview(state.worksheetId);
+      });
+      window.addEventListener('resize', scaleFrame);
+
+      function fillCountOptions(defaultCount, maxCount) {
+        state.defaultCount = defaultCount;
+        state.maxCount = maxCount;
+        const options = [...new Set([1, defaultCount, 2, 3, 4, 5, 8, 10].filter((n) => n >= 1 && n <= maxCount))].sort((a, b) => a - b);
+        els.countSelect.innerHTML = options.map((n) => `<option value="${n}">${n}</option>`).join('');
+        els.countSelect.value = String(defaultCount);
+      }
+
+      renderAges();
+      fillCountOptions(1, 10);
+      fetch('/worksheets/settings')
+        .then((res) => res.json())
+        .then((settings) => fillCountOptions(settings.defaultCount || 1, settings.maxCount || 10))
+        .catch(() => {});
+      const params = new URLSearchParams(location.search);
+      if (params.get('id')) openPreview(params.get('id'));
+      else loadGrid();
+    </script>
+  </body>
+</html>

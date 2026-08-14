@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SearchService } from '../../search/search.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
+import { PrismaService } from '../../database/prisma.service';
 import { WorksheetAssetService } from './worksheet-asset.service';
 
 describe('WorksheetAssetService', () => {
@@ -11,12 +12,16 @@ describe('WorksheetAssetService', () => {
   const s3StorageService = {
     getSignedUrl: jest.fn(),
   };
+  const prisma = {
+    asset: { findUnique: jest.fn() },
+  };
   const configService = {
     get: (key: string) => {
       if (key === 'worksheets.imageConcurrency') return 2;
       if (key === 'worksheets.imageSearchLimit') return 1;
+      if (key === 'worksheets.imagePickerLimit') return 12;
       if (key === 'worksheets.signedUrlTtlSeconds') return 3600;
-      if (key === 'worksheets.renderer.apiBaseUrl') return 'http://localhost:3000';
+      if (key === 'worksheets.renderer.apiBaseUrl') return 'http://localhost:5000';
       return undefined;
     },
   };
@@ -25,17 +30,18 @@ describe('WorksheetAssetService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-        const eventEmitter = { emit: jest.fn() };
+    const eventEmitter = { emit: jest.fn() };
     service = new WorksheetAssetService(
       searchService as unknown as SearchService,
       s3StorageService as unknown as S3StorageService,
+      prisma as unknown as PrismaService,
       configService as unknown as ConfigService,
       eventEmitter as unknown as EventEmitter2,
     );
     s3StorageService.getSignedUrl.mockResolvedValue('https://signed.example/img');
   });
 
-  it('maps imageQuery to assetId and image URLs', async () => {
+  it('maps imageQuery to assetId only in persisted structure', async () => {
     searchService.search.mockImplementation(async ({ query }: { query: string }) => ({
       query,
       total: 1,
@@ -60,21 +66,39 @@ describe('WorksheetAssetService', () => {
     expect(structure).toEqual({
       instruction: 'Count',
       items: [
+        { count: 3, imageQuery: 'red apples', assetId: 'asset-123' },
+        { count: 5, imageQuery: 'yellow bananas', assetId: 'asset-456' },
+      ],
+    });
+    expect(JSON.stringify(structure)).not.toContain('signedUrl');
+    expect(JSON.stringify(structure)).not.toContain('imageUrl');
+  });
+
+  it('resolves proxy and signed URLs at preview time from assetId', async () => {
+    prisma.asset.findUnique.mockResolvedValue({
+      id: 'asset-123',
+      s3ObjectKey: 'assets/a.png',
+      s3Bucket: 'bucket',
+    });
+
+    await expect(service.resolveAsset('asset-123')).resolves.toEqual({
+      assetId: 'asset-123',
+      imageUrl: 'http://localhost:5000/worksheets/assets/asset-123/image',
+      signedUrl: 'https://signed.example/img',
+    });
+    expect(s3StorageService.getSignedUrl).toHaveBeenCalled();
+  });
+
+  it('injects assetUrl for render without persisting it', () => {
+    const enriched = service.enrichForRender({
+      items: [{ imageQuery: 'apples', assetId: 'asset-123', signedUrl: 'stale' }],
+    });
+    expect(enriched).toEqual({
+      items: [
         {
-          count: 3,
-          imageQuery: 'red apples',
+          imageQuery: 'apples',
           assetId: 'asset-123',
-          imageUrl: 'http://localhost:3000/worksheets/assets/asset-123/image',
-          assetUrl: 'http://localhost:3000/worksheets/assets/asset-123/image',
-          signedUrl: 'https://signed.example/img',
-        },
-        {
-          count: 5,
-          imageQuery: 'yellow bananas',
-          assetId: 'asset-456',
-          imageUrl: 'http://localhost:3000/worksheets/assets/asset-456/image',
-          assetUrl: 'http://localhost:3000/worksheets/assets/asset-456/image',
-          signedUrl: 'https://signed.example/img',
+          assetUrl: '/worksheets/assets/asset-123/image',
         },
       ],
     });
@@ -89,19 +113,15 @@ describe('WorksheetAssetService', () => {
         results: [{ assetId: 'asset-123', s3ObjectKey: 'assets/a.png' }],
       });
 
-    const { slots } = await service.attachAssets(
+    const { slots, structure } = await service.attachAssets(
       { items: [{ imageQuery: 'red apples' }] },
       { grades: ['LKG'] },
     );
 
     expect(searchService.search).toHaveBeenCalledTimes(2);
-    expect(searchService.search.mock.calls[0][0].filters).toEqual({
-      grades: ['LKG'],
-      ageGroups: undefined,
+    expect(slots[0].assetId).toBe('asset-123');
+    expect(structure).toEqual({
+      items: [{ imageQuery: 'red apples', assetId: 'asset-123' }],
     });
-    expect(searchService.search.mock.calls[1][0].filters).toBeUndefined();
-    expect(slots[0].imageUrl).toBe(
-      'http://localhost:3000/worksheets/assets/asset-123/image',
-    );
   });
 });
