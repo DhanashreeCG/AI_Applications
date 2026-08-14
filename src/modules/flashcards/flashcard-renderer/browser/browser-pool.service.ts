@@ -16,15 +16,16 @@ export class BrowserPoolService implements OnModuleInit, OnModuleDestroy {
   private launchPromise: Promise<Browser> | null = null;
 
   constructor(private readonly configService: ConfigService) {
-    this.enabled =
+    const flashcardsEnabled =
       this.configService.get<boolean>('flashcards.renderer.enabled') !== false;
+    const worksheetsEnabled =
+      this.configService.get<boolean>('worksheets.renderer.enabled') !== false;
+    this.enabled = flashcardsEnabled || worksheetsEnabled;
   }
 
   async onModuleInit(): Promise<void> {
     if (!this.enabled) {
-      this.logger.log(
-        'Flashcard renderer disabled (FLASHCARD_RENDERER_ENABLED=false); skipping Playwright browser launch',
-      );
+      this.logger.log('Playwright renderer disabled; skipping browser launch');
       return;
     }
     await this.getBrowser();
@@ -41,9 +42,7 @@ export class BrowserPoolService implements OnModuleInit, OnModuleDestroy {
 
   async getBrowser(): Promise<Browser> {
     if (!this.enabled) {
-      throw new ServiceUnavailableException(
-        'Flashcard renderer is disabled (FLASHCARD_RENDERER_ENABLED=false)',
-      );
+      throw new ServiceUnavailableException('Playwright renderer is disabled');
     }
 
     if (this.browser?.isConnected()) {

@@ -80,6 +80,22 @@ export interface AppConfig {
       apiBaseUrl: string;
     };
   };
+  worksheets: {
+    imageConcurrency: number;
+    signedUrlTtlSeconds: number;
+    imageSearchLimit: number;
+    geminiModel: string;
+    promptVersion: string;
+    renderer: {
+      enabled: boolean;
+      s3KeyPrefix: string;
+      s3Bucket?: string;
+      signedUrlTtlSeconds: number;
+      apiBaseUrl: string;
+      defaultWidth: number;
+      defaultHeight: number;
+    };
+  };
   pipelineTracking: {
     enabled: boolean;
     storeAiPayload: boolean;
@@ -261,6 +277,45 @@ export default (): AppConfig => ({
       ),
       apiBaseUrl:
         process.env.FLASHCARD_RENDERER_API_BASE_URL || 'http://localhost:3000',
+    },
+  },
+  worksheets: {
+    imageConcurrency: parseInt(
+      process.env.WORKSHEET_IMAGE_CONCURRENCY ||
+        process.env.FLASHCARD_IMAGE_CONCURRENCY ||
+        '3',
+      10,
+    ),
+    signedUrlTtlSeconds: parseInt(
+      process.env.WORKSHEET_SIGNED_URL_TTL_SECONDS ||
+        process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS ||
+        '3600',
+      10,
+    ),
+    imageSearchLimit: parseInt(
+      process.env.WORKSHEET_IMAGE_SEARCH_LIMIT || '1',
+      10,
+    ),
+    geminiModel:
+      process.env.WORKSHEET_GEMINI_MODEL ||
+      process.env.FLASHCARD_GEMINI_MODEL ||
+      'gemini-2.5-flash',
+    promptVersion: process.env.WORKSHEET_PROMPT_VERSION || 'v1',
+    renderer: {
+      enabled: process.env.WORKSHEET_RENDERER_ENABLED !== 'false',
+      s3KeyPrefix:
+        process.env.WORKSHEET_RENDERER_S3_KEY_PREFIX || 'worksheets/rendered',
+      s3Bucket: process.env.WORKSHEET_RENDERER_S3_BUCKET || undefined,
+      signedUrlTtlSeconds: parseInt(
+        process.env.WORKSHEET_RENDERER_SIGNED_URL_TTL_SECONDS || '3600',
+        10,
+      ),
+      apiBaseUrl:
+        process.env.WORKSHEET_RENDERER_API_BASE_URL ||
+        process.env.FLASHCARD_RENDERER_API_BASE_URL ||
+        'http://localhost:3000',
+      defaultWidth: parseInt(process.env.WORKSHEET_RENDER_WIDTH || '794', 10),
+      defaultHeight: parseInt(process.env.WORKSHEET_RENDER_HEIGHT || '1123', 10),
     },
   },
   pipelineTracking: {
