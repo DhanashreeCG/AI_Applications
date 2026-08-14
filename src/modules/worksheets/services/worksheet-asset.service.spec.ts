@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SearchService } from '../../search/search.service';
 import { WorksheetAssetService } from './worksheet-asset.service';
 
@@ -18,9 +19,11 @@ describe('WorksheetAssetService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new WorksheetAssetService(
+        const eventEmitter = { emit: jest.fn() };
+        service = new WorksheetAssetService(
       searchService as unknown as SearchService,
       configService as unknown as ConfigService,
+      eventEmitter as unknown as EventEmitter2,
     );
   });
 

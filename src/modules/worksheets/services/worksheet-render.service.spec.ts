@@ -1,3 +1,4 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
@@ -43,6 +44,7 @@ describe('WorksheetRenderService', () => {
       registry,
       {} as BrowserPoolService,
       {} as S3StorageService,
+      { emit: jest.fn() } as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue({
       id: 'ws-1',

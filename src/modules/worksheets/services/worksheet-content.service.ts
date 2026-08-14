@@ -1,10 +1,16 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GoogleGenAI } from '@google/genai';
+import { randomUUID } from 'node:crypto';
 import { AiUsageService } from '../../ai/services/ai-usage.service';
 import { CircuitBreaker } from '../../ai/utils/circuit-breaker.util';
 import { RateLimiter } from '../../ai/utils/rate-limiter.util';
 import { getErrorMessage } from '../../../common/utils/error-message';
+import {
+  PIPELINE_STAGES,
+  PipelineTelemetryContext,
+} from '../../../common/events/pipeline-tracker.events';
 import {
   WORKSHEET_CONTENT_STAGE,
   WORKSHEET_EDIT_STAGE,
@@ -15,6 +21,11 @@ import {
 } from '../constants/worksheet-prompt.constants';
 import { WorksheetException } from '../errors/worksheet.exception';
 import { GenerateWorksheetRequest } from '../types/worksheet.types';
+import {
+  WorksheetPipelineEmitter,
+  hashPayload,
+  maybeRunTrackedStage,
+} from '../telemetry/worksheet-pipeline.events';
 import { WorksheetTemplateRecord } from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
 
@@ -25,11 +36,13 @@ export class WorksheetContentService {
   private readonly modelName: string;
   private readonly rateLimiter: RateLimiter;
   private readonly circuitBreaker: CircuitBreaker;
+  private readonly emitter: WorksheetPipelineEmitter;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly aiUsageService: AiUsageService,
     private readonly validationService: WorksheetValidationService,
+    eventEmitter: EventEmitter2,
   ) {
     const apiKey = this.configService.get<string>('ai.geminiApiKey');
     this.modelName =
@@ -44,6 +57,7 @@ export class WorksheetContentService {
       this.configService.get<number>('ai.circuitCooldownMs') ?? 60000,
     );
     this.client = apiKey ? new GoogleGenAI({ apiKey }) : null;
+    this.emitter = new WorksheetPipelineEmitter(eventEmitter);
     if (!apiKey) {
       this.logger.warn(
         'GEMINI_API_KEY not provided. WorksheetContentService is unavailable.',
@@ -58,17 +72,67 @@ export class WorksheetContentService {
   public async generateStructure(
     template: WorksheetTemplateRecord,
     request: GenerateWorksheetRequest,
+    telemetry?: PipelineTelemetryContext,
   ): Promise<Record<string, unknown>> {
-    const prompt = buildWorksheetContentPrompt({
-      request,
-      templateName: template.name,
-      templateSlug: template.slug,
-      templateDescription: template.description,
-      structureDefinition: template.structureDefinition,
-      meta: template.meta,
-    });
-    const parsed = await this.generateJson(prompt, WORKSHEET_CONTENT_STAGE);
-    return this.validationService.validateGeneratedStructure(parsed, template);
+    const run = async () => {
+      const prompt = await maybeRunTrackedStage(
+        this.emitter,
+        telemetry,
+        PIPELINE_STAGES.PROMPT_GENERATION,
+        () =>
+          buildWorksheetContentPrompt({
+            request,
+            templateName: template.name,
+            templateSlug: template.slug,
+            templateDescription: template.description,
+            structureDefinition: template.structureDefinition,
+            meta: template.meta,
+          }),
+        {
+          completeMetadata: {
+            templateId: template.id,
+            templateSlug: template.slug,
+          },
+        },
+      );
+
+      const parsed = await this.generateJson(
+        prompt,
+        WORKSHEET_CONTENT_STAGE,
+        telemetry,
+      );
+
+      return maybeRunTrackedStage(
+        this.emitter,
+        telemetry,
+        PIPELINE_STAGES.CONTENT_VALIDATION,
+        () =>
+          this.validationService.validateGeneratedStructure(parsed, template),
+        {
+          completeMetadata: {
+            templateId: template.id,
+            templateSlug: template.slug,
+          },
+        },
+      );
+    };
+
+    return maybeRunTrackedStage(
+      this.emitter,
+      telemetry,
+      PIPELINE_STAGES.LLM_CONTENT_GENERATION,
+      run,
+      {
+        startMetadata: {
+          templateId: template.id,
+          templateSlug: template.slug,
+        },
+        completeMetadata: {
+          templateId: template.id,
+          templateSlug: template.slug,
+        },
+      },
+    );
   }
 
   public async generateFieldReplacement(input: {
@@ -79,23 +143,60 @@ export class WorksheetContentService {
     currentValue: unknown;
     worksheetStructure: unknown;
     linkedValues: Record<string, unknown>;
+    telemetry?: PipelineTelemetryContext;
   }): Promise<unknown> {
-    const prompt = buildWorksheetEditPrompt(input);
-    const parsed = await this.generateJson(prompt, WORKSHEET_EDIT_STAGE);
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed) &&
-      Object.prototype.hasOwnProperty.call(parsed, 'value')
-    ) {
-      return (parsed as { value: unknown }).value;
-    }
-    return parsed;
+    const telemetry = input.telemetry;
+    const run = async () => {
+      const prompt = await maybeRunTrackedStage(
+        this.emitter,
+        telemetry,
+        PIPELINE_STAGES.PROMPT_GENERATION,
+        () =>
+          buildWorksheetEditPrompt({
+            systemPrompt: input.systemPrompt,
+            fieldPath: input.fieldPath,
+            fieldPrompt: input.fieldPrompt,
+            instruction: input.instruction,
+            currentValue: input.currentValue,
+            worksheetStructure: input.worksheetStructure,
+            linkedValues: input.linkedValues,
+          }),
+        {
+          completeMetadata: { fieldPath: input.fieldPath },
+        },
+      );
+      const parsed = await this.generateJson(
+        prompt,
+        WORKSHEET_EDIT_STAGE,
+        telemetry,
+      );
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        Object.prototype.hasOwnProperty.call(parsed, 'value')
+      ) {
+        return (parsed as { value: unknown }).value;
+      }
+      return parsed;
+    };
+
+    return maybeRunTrackedStage(
+      this.emitter,
+      telemetry,
+      PIPELINE_STAGES.LLM_CONTENT_GENERATION,
+      run,
+      {
+        startMetadata: { fieldPath: input.fieldPath },
+        completeMetadata: { fieldPath: input.fieldPath },
+      },
+    );
   }
 
   private async generateJson(
     prompt: string,
     stage: string,
+    telemetry?: PipelineTelemetryContext,
   ): Promise<unknown> {
     if (!this.client) {
       throw new WorksheetException(
@@ -103,6 +204,25 @@ export class WorksheetContentService {
         'Gemini content client is not initialized',
         HttpStatus.SERVICE_UNAVAILABLE,
       );
+    }
+
+    const invocationId = randomUUID();
+    if (telemetry) {
+      this.emitter.emitStageStarted({
+        ...telemetry,
+        stageName: PIPELINE_STAGES.LLM_REQUEST,
+        metadata: { purpose: stage },
+      });
+      this.emitter.emitAiStarted({
+        ...telemetry,
+        invocationId,
+        stageName: PIPELINE_STAGES.LLM_REQUEST,
+        provider: 'google-gemini',
+        model: this.modelName,
+        purpose: stage,
+        promptHash: hashPayload(prompt),
+        promptPayload: prompt,
+      });
     }
 
     this.circuitBreaker.beforeRequest();
@@ -122,6 +242,9 @@ export class WorksheetContentService {
       const usage = (
         response as { usageMetadata?: Record<string, number> }
       ).usageMetadata;
+      const inputTokens = usage?.promptTokenCount;
+      const outputTokens = usage?.candidatesTokenCount;
+      const totalTokens = usage?.totalTokenCount;
 
       await this.aiUsageService.record({
         stage,
@@ -131,9 +254,9 @@ export class WorksheetContentService {
         startedAt,
         completedAt: new Date(),
         latencyMs,
-        inputTokens: usage?.promptTokenCount,
-        outputTokens: usage?.candidatesTokenCount,
-        totalTokens: usage?.totalTokenCount,
+        inputTokens,
+        outputTokens,
+        totalTokens,
         status: 'success',
       });
       this.circuitBreaker.recordSuccess();
@@ -145,15 +268,59 @@ export class WorksheetContentService {
         );
       }
 
+      let parsed: unknown;
       try {
-        return JSON.parse(text);
+        parsed = JSON.parse(text);
       } catch {
         throw new WorksheetException(
           'INVALID_LLM_OUTPUT',
           'Gemini worksheet response was not valid JSON',
         );
       }
+
+      if (telemetry) {
+        this.emitter.emitAiCompleted({
+          ...telemetry,
+          invocationId,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+          status: 'success',
+          responseHash: hashPayload(text),
+          responsePayload: parsed,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          durationMs: latencyMs,
+        });
+        this.emitter.emitStageCompleted({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+          metadata: {
+            purpose: stage,
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            durationMs: latencyMs,
+          },
+        });
+      }
+
+      return parsed;
     } catch (error) {
+      if (telemetry) {
+        this.emitter.emitAiCompleted({
+          ...telemetry,
+          invocationId,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+          status: 'failed',
+          errorMessage: getErrorMessage(error),
+          durationMs: Date.now() - startedAt.getTime(),
+        });
+        this.emitter.emitStageFailed({
+          ...telemetry,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+          errorMessage: getErrorMessage(error),
+        });
+      }
       if (!(error instanceof WorksheetException)) {
         this.circuitBreaker.recordFailure();
         await this.aiUsageService.record({

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -65,8 +66,14 @@ export class WorksheetsController {
   @ApiOkResponse({ type: GenerateWorksheetResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid request or generated structure' })
   @ApiNotFoundResponse({ description: 'No matching worksheet template' })
-  async generate(@Body() dto: GenerateWorksheetDto) {
-    return this.generationService.generate(dto);
+  async generate(
+    @Body() dto: GenerateWorksheetDto,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    return this.generationService.generate(dto, {
+      correlationId: correlationId || traceId,
+    });
   }
 
   @Post('templates')
@@ -153,8 +160,12 @@ export class WorksheetsController {
   async edit(
     @Param('worksheetId') worksheetId: string,
     @Body() dto: EditWorksheetDto,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
   ) {
-    return this.editService.edit(worksheetId, dto);
+    return this.editService.edit(worksheetId, dto, {
+      correlationId: correlationId || traceId,
+    });
   }
 
   @Post(':worksheetId/render')
@@ -167,8 +178,12 @@ export class WorksheetsController {
   async render(
     @Param('worksheetId') worksheetId: string,
     @Body() dto: RenderWorksheetDto,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
   ) {
-    return this.renderService.render(worksheetId, dto.format);
+    return this.renderService.render(worksheetId, dto.format, {
+      correlationId: correlationId || traceId,
+    });
   }
 
   @Get('assets/:assetId/image')

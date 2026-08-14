@@ -160,6 +160,8 @@ Calls reuse `GEMINI_API_KEY`, `ai.geminiMaxRps`, and `AiUsageService`. No second
 
 Render uses `GET /worksheets/assets/:assetId/image` (same-origin, reuses flashcard `AssetImageService` + S3 download).
 
+The tracker UI (`/pipeline-tracker.html`) lists `worksheets`, `worksheets_edit`, and `worksheets_render` executions with every pipeline stage, AI invocation, and image search.
+
 ## APIs
 
 | Method | Path | Purpose |

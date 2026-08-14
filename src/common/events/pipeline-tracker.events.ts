@@ -46,6 +46,11 @@ export const PIPELINE_STAGES = {
   IMAGE_MAPPING: 'image_mapping',
   RESPONSE_ASSEMBLY: 'response_assembly',
   FLASHCARD_RENDERING: 'flashcard_rendering',
+  STRUCTURE_VALIDATION: 'structure_validation',
+  PERSISTENCE: 'persistence',
+  FIELD_RESOLUTION: 'field_resolution',
+  HTML_GENERATION: 'html_generation',
+  WORKSHEET_RENDERING: 'worksheet_rendering',
   /** @deprecated Prefer FINAL_VALIDATION */
   RESPONSE_VALIDATION: 'response_validation',
   FINAL_VALIDATION: 'final_validation',

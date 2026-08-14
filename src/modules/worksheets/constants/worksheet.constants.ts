@@ -1,5 +1,10 @@
 export const WORKSHEET_CONTENT_STAGE = 'worksheet_content';
 export const WORKSHEET_EDIT_STAGE = 'worksheet_edit';
+export const WORKSHEET_IMAGE_SEARCH_EMBEDDING_PURPOSE =
+  'worksheet_image_search_embedding';
+export const WORKSHEET_WORKFLOW_GENERATE = 'worksheets';
+export const WORKSHEET_WORKFLOW_EDIT = 'worksheets_edit';
+export const WORKSHEET_WORKFLOW_RENDER = 'worksheets_render';
 export const GENERIC_RENDERER_TYPE = 'generic';
 export const WORKSHEET_ASSET_IMAGE_PATH = '/worksheets/assets';
 export const ENRICHMENT_KEYS = new Set(['assetId']);

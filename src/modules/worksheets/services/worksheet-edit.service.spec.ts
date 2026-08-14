@@ -1,3 +1,4 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { WorksheetEditService } from './worksheet-edit.service';
 import { PrismaService } from '../../database/prisma.service';
 import { WorksheetTemplateService } from './worksheet-template.service';
@@ -29,6 +30,8 @@ describe('WorksheetEditService', () => {
     resolveSlot: jest.fn(),
   };
 
+  const eventEmitter = { emit: jest.fn() };
+
   let service: WorksheetEditService;
 
   const worksheet = {
@@ -52,6 +55,7 @@ describe('WorksheetEditService', () => {
       contentService as unknown as WorksheetContentService,
       validationService as unknown as WorksheetValidationService,
       assetService as unknown as WorksheetAssetService,
+      eventEmitter as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue(worksheet);
     templateService.getById.mockResolvedValue(template);
@@ -112,6 +116,7 @@ describe('WorksheetEditService', () => {
       'green grapes',
       'items[0]',
       expect.any(Object),
+      expect.objectContaining({ workflowType: 'worksheets_edit' }),
     );
     expect((result.structure.items as Array<Record<string, unknown>>)[0].assetId).toBe(
       'asset-999',
