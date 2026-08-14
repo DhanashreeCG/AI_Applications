@@ -1,6 +1,11 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PipelineTelemetryContext } from '../../../common/events/pipeline-tracker.events';
 import { FlashcardException } from '../errors/flashcard.exception';
+import {
+  TemplateSelectionAiFallbackReason,
+  TemplateSelectionAiResult,
+} from '../interfaces/template-selection-ai.interfaces';
 import { SelectedTemplatePayload } from '../interfaces/flashcard.interfaces';
 import { ObjectiveConfidence } from '../utils/user-request.resolver';
 import {
@@ -9,6 +14,7 @@ import {
   rankTemplateCandidates,
 } from '../utils/template-selection.engine';
 import { TemplateRepository } from './template.repository';
+import { TemplateSelectionAiService } from './template-selection-ai.service';
 
 export interface SelectTemplateInput {
   ageMin: number;
@@ -21,6 +27,7 @@ export interface SelectTemplateInput {
   subject?: string | null;
   difficulty?: string | null;
   query?: string;
+  telemetry?: PipelineTelemetryContext;
 }
 
 export interface SelectTemplateResult {
@@ -31,6 +38,13 @@ export interface SelectTemplateResult {
   selection: NonNullable<ReturnType<typeof selectBestTemplate>>;
   template: SelectedTemplatePayload;
   ranking?: RankedTemplateCandidate[];
+  aiSelection?: {
+    usedFallback: boolean;
+    fallbackReason?: TemplateSelectionAiFallbackReason;
+    result?: TemplateSelectionAiResult | null;
+    catalogHash?: string;
+    selectionMode: 'ai' | 'deterministic';
+  };
 }
 
 export interface SelectTemplateByIdInput {
@@ -46,6 +60,7 @@ export class TemplateSelectionService {
   constructor(
     private readonly templateRepository: TemplateRepository,
     private readonly configService: ConfigService,
+    private readonly templateSelectionAi: TemplateSelectionAiService,
   ) {}
 
   public async select(input: SelectTemplateInput): Promise<SelectTemplateResult> {
@@ -68,7 +83,8 @@ export class TemplateSelectionService {
       );
     }
 
-    // Topic is intentionally omitted — content only, never template selection.
+    // Topic is intentionally omitted from hard-filter criteria — content only.
+    // Topic is passed to the AI selector for semantic ranking among survivors.
     const criteria = {
       ageMin: input.ageMin,
       ageMax: input.ageMax,
@@ -80,15 +96,10 @@ export class TemplateSelectionService {
       difficulty: input.difficulty ?? undefined,
     };
 
-    const storeRankingBreakdown =
-      this.configService.get<boolean>('pipelineTracking.storeAiPayload') ===
-      true;
-    const ranking = storeRankingBreakdown
-      ? rankTemplateCandidates(rules, criteria)
-      : undefined;
-    const match = selectBestTemplate(rules, criteria);
+    const ranked = rankTemplateCandidates(rules, criteria);
+    const deterministic = ranked[0] ?? null;
 
-    if (!match) {
+    if (!deterministic) {
       throw new FlashcardException(
         'NO_TEMPLATE_FOUND',
         'No template matched the request criteria',
@@ -104,6 +115,40 @@ export class TemplateSelectionService {
         },
       );
     }
+
+    const allowedTemplateIds = [
+      ...new Set(ranked.map((candidate) => candidate.templateId)),
+    ];
+
+    const aiOutcome = await this.templateSelectionAi.select({
+      topic: input.topic,
+      ageGroup: input.ageGroup,
+      grade: input.grade,
+      subject: input.subject,
+      difficulty: input.difficulty,
+      learningObjective: input.learningObjective,
+      objectiveConfidence: input.objectiveConfidence,
+      allowedTemplateIds,
+      telemetry: input.telemetry,
+    });
+
+    let match = deterministic;
+    let selectionMode: 'ai' | 'deterministic' = 'deterministic';
+
+    if (!aiOutcome.usedFallback && aiOutcome.result) {
+      const aiMatch = ranked.find(
+        (candidate) =>
+          candidate.templateId === aiOutcome.result!.selectedTemplateId,
+      );
+      if (aiMatch) {
+        match = aiMatch;
+        selectionMode = 'ai';
+      }
+    }
+
+    const storeRankingBreakdown =
+      this.configService.get<boolean>('pipelineTracking.storeAiPayload') ===
+      true;
 
     const template = await this.templateRepository.getTemplateById(
       match.templateId,
@@ -130,9 +175,23 @@ export class TemplateSelectionService {
       ageMin: input.ageMin,
       ageMax: input.ageMax,
       ageGroup: input.ageGroup,
-      selection: match,
+      selection: {
+        ruleId: match.ruleId,
+        ruleName: match.ruleName,
+        templateId: match.templateId,
+        priority: match.priority,
+        score: match.score,
+        templateVersion: match.templateVersion,
+      },
       template,
-      ranking: ranking?.slice(0, 10),
+      ranking: storeRankingBreakdown ? ranked.slice(0, 10) : undefined,
+      aiSelection: {
+        usedFallback: aiOutcome.usedFallback || selectionMode !== 'ai',
+        fallbackReason: aiOutcome.fallbackReason,
+        result: aiOutcome.result,
+        catalogHash: aiOutcome.catalogHash ?? aiOutcome.result?.catalogHash,
+        selectionMode,
+      },
     };
   }
 

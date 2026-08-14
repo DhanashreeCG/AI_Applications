@@ -317,6 +317,7 @@ export class PipelineTrackerService implements PipelineTrackerPort {
           | Prisma.InputJsonValue
           | undefined,
         inputTokens: payload.inputTokens,
+        cachedInputTokens: payload.cachedInputTokens,
         outputTokens: payload.outputTokens,
         totalTokens: payload.totalTokens,
         estimatedCost: payload.estimatedCost,

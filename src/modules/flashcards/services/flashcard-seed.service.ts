@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { buildRegionLayout } from '../utils/template-layout.util';
+import { TemplateCatalogCacheService } from './template-catalog-cache.service';
 import { TemplateRepository } from './template.repository';
 
 export const TEMPLATE_SEEDS: Array<{
@@ -322,6 +323,7 @@ export class FlashcardSeedService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly templateRepository: TemplateRepository,
+    private readonly templateCatalogCache: TemplateCatalogCacheService,
   ) {}
 
   public async onModuleInit(): Promise<void> {
@@ -358,5 +360,6 @@ export class FlashcardSeedService implements OnModuleInit {
         });
       }
     });
+    this.templateCatalogCache.invalidate();
   }
 }

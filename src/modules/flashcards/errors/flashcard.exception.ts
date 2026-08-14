@@ -18,5 +18,10 @@ export class FlashcardException extends HttpException {
       },
       status,
     );
+    // Nest HttpException.initMessage() only reads a top-level `message`
+    // field; without it, Error.message becomes the class name
+    // ("Flashcard Exception"). Keep the HTTP body shape unchanged while
+    // making logs / getErrorMessage() show the real diagnostic text.
+    this.message = message;
   }
 }

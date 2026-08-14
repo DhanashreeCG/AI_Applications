@@ -99,6 +99,7 @@ export interface AiInvocationCompletedPayload extends PipelineTelemetryContext {
   responseHash?: string;
   responsePayload?: unknown;
   inputTokens?: number;
+  cachedInputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
   estimatedCost?: number;

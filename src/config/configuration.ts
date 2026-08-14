@@ -57,6 +57,18 @@ export interface AppConfig {
     imageConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
+    templateSelectionAi: {
+      enabled: boolean;
+      provider: string;
+      openaiModel: string;
+      geminiModel: string;
+      minConfidence: number;
+      timeoutMs: number;
+      catalogTtlMs: number;
+      costPerMInputUsd: number;
+      costPerMCachedInputUsd: number;
+      costPerMOutputUsd: number;
+    };
     renderer: {
       enabled: boolean;
       storageBackend: 'local' | 's3';
@@ -195,6 +207,38 @@ export default (): AppConfig => ({
       process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '1',
       10,
     ),
+    templateSelectionAi: {
+      enabled: process.env.FLASHCARD_TEMPLATE_SELECTION_AI_ENABLED !== 'false',
+      provider:
+        process.env.FLASHCARD_TEMPLATE_SELECTION_PROVIDER || 'openai',
+      openaiModel:
+        process.env.FLASHCARD_TEMPLATE_SELECTION_OPENAI_MODEL ||
+        'gpt-4.1-mini',
+      geminiModel:
+        process.env.FLASHCARD_TEMPLATE_SELECTION_GEMINI_MODEL ||
+        'gemini-2.5-flash',
+      minConfidence: parseFloat(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_MIN_CONFIDENCE || '0.5',
+      ),
+      timeoutMs: parseInt(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_TIMEOUT_MS || '6000',
+        10,
+      ),
+      catalogTtlMs: parseInt(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_CATALOG_TTL_MS || '600000',
+        10,
+      ),
+      costPerMInputUsd: parseFloat(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_INPUT_USD || '0.4',
+      ),
+      costPerMCachedInputUsd: parseFloat(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_CACHED_INPUT_USD ||
+          '0.1',
+      ),
+      costPerMOutputUsd: parseFloat(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_OUTPUT_USD || '1.6',
+      ),
+    },
     renderer: {
       enabled: process.env.FLASHCARD_RENDERER_ENABLED !== 'false',
       storageBackend:

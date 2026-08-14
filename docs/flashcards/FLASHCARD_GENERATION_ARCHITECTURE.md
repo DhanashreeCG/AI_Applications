@@ -9,12 +9,12 @@ Template-driven pipeline: understand the request → select a layout template �
 | Owns | Does not own |
 |---|---|
 | Request analysis (deterministic) | Layout / styling / positioning |
-| Template selection (deterministic) | LLM choosing templates or UI |
+| Template selection hard filter (deterministic) + LLM semantic rank among eligible templates | Inventing layouts / choosing ineligible templates |
 | LLM educational content only | Image generation |
 | Asset Library search (existing) | Duplicating search/embedding logic |
 | Merge: template + content + assets | Frontend rendering (optional renderer is separate) |
 
-The LLM never invents components. The selected template’s `layoutDefinition` is the output contract.
+The LLM never invents components. The selected template’s `layoutDefinition` is the output contract. Template *eligibility* (age/grade/subject/difficulty) stays deterministic; the LLM only ranks topical/pedagogical fit among already-eligible candidates, with deterministic fallback.
 
 ---
 
@@ -57,7 +57,8 @@ External dependencies (unchanged by this module): Asset Library, Semantic Search
 | `FlashcardsController` | HTTP: generate, list/upload templates, render, asset proxy |
 | `FlashcardOrchestratorService` | End-to-end stage orchestration + telemetry |
 | `user-request.resolver` | Deterministic topic / age / grade / subject / difficulty / objective |
-| `TemplateSelectionService` + `template-selection.engine` | Hard filter + rank → one template |
+| `TemplateSelectionService` + `template-selection.engine` | Hard filter + rank → one template (deterministic fallback) |
+| `TemplateSelectionAiService` + `TemplateCatalogCacheService` | LLM semantic pick among hard-filtered candidates (cached catalog prefix) |
 | `TemplateRepository` / `FlashcardTemplateService` | Persist & load templates and selection rules |
 | `FlashcardContentService` | Prompt build → LLM → content validation |
 | `FlashcardImageRetrievalService` | Per-slot search cascade → top-1 asset |
@@ -140,12 +141,15 @@ Objective comes from keyword rules (with multi-match tie-break), else age-midpoi
 
 ### 2. Template selection
 
-Deterministic (no LLM).
+Hard filter is deterministic; semantic ranking may use an LLM.
 
 1. Load active rules (joined to active templates) + active templates without rules (synthetic candidates)
 2. **Hard filter:** active; age-group overlap with `supportedAgeGroups`; rule `grades` / `subjects` / `difficulties` if non-empty
-3. **Rank** (best → fallback), weighted primarily by objective relevance, then exact objective / age / grade / subject / difficulty, then `templateVersion`, rule `priority`, score, stable rule id
-4. Return exactly one template; parse `layoutDefinition` → editable text + image component contracts
+3. **AI semantic rank** (when `templateId` is omitted and AI is enabled): pass the full active template catalog as a **cached static prompt prefix**, plus a small dynamic suffix with `topic` / learner context / `allowedTemplateIds` (survivors of the hard filter). The model returns one id from `allowedTemplateIds` + confidence + reasoning. Prompt caching (OpenAI automatic prefix cache / Gemini implicit) keeps token cost low across requests. Selection-rule rows are **not** sent to the LLM — they already shaped `allowedTemplateIds`.
+4. **Deterministic fallback:** if AI is disabled, returns an invalid/low-confidence id, times out, or errors, use the existing weighted rank (objective relevance → exact objective / age / grade / subject / difficulty → `templateVersion` → rule `priority` → score → stable rule id)
+5. Return exactly one template; parse `layoutDefinition` → editable text + image component contracts
+
+Telemetry: `TEMPLATE_SELECTION` stage metadata includes `selectionMode` (`ai` | `deterministic`), confidence/reasoning/fallback reason, `catalogHash`, and `cachedTokens`. Each AI call also writes an `AiUsage` row (`stage: flashcard_template_selection`) including `cachedInputTokens`.
 
 ### 3. Content generation
 
@@ -189,6 +193,8 @@ Assets         → Existing search + library (referenced, not generated)
 | Orchestration | `src/modules/flashcards/services/flashcard-orchestrator.service.ts` |
 | Request analysis | `src/modules/flashcards/utils/user-request.resolver.ts` |
 | Template selection | `src/modules/flashcards/utils/template-selection.engine.ts` |
+| AI template selection | `src/modules/flashcards/services/template-selection-ai.service.ts` |
+| Template catalog cache | `src/modules/flashcards/services/template-catalog-cache.service.ts` |
 | Templates / rules | `src/modules/flashcards/services/template.repository.ts` |
 | Template upload | `src/modules/flashcards/services/flashcard-template.service.ts` |
 | Prompt | `src/modules/flashcards/constants/flashcard-prompt.constants.ts` |

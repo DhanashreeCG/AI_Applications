@@ -17,6 +17,8 @@ import {
   TemplateComponentDefinition,
 } from '../interfaces/flashcard.interfaces';
 import { parseEditableComponentsFromLayout } from '../utils/template-layout.util';
+import { expandDefinitionsForAvailableIds } from '../utils/repeat-component.util';
+import { assertAssembledCardComponents } from '../utils/assembled-card.validator';
 import { resolveUserRequest } from '../utils/user-request.resolver';
 import {
   FlashcardPipelineEmitter,
@@ -228,9 +230,15 @@ export class FlashcardOrchestratorService {
     const cards = await this.imageRetrievalService.mapWithConcurrency(
       llmPayload.cards,
       async (card): Promise<FlashcardCardPayload> => {
+        // Expand any `{x}` image placeholders into the concrete ids the LLM
+        // returned (image-1..image-N) before retrieval + merge.
+        const expandedImageDefinitions = expandDefinitionsForAvailableIds(
+          imageComponents,
+          Object.keys(card.imageComponents),
+        );
         const retrievedImages =
           await this.imageRetrievalService.mapWithConcurrency(
-          imageComponents,
+          expandedImageDefinitions,
           async (imageDefinition) => {
             const query =
               card.imageComponents[imageDefinition.componentId];
@@ -253,14 +261,24 @@ export class FlashcardOrchestratorService {
         );
         const imageRefs = Object.fromEntries(retrievedImages);
 
-        const components: EditableComponentPayload[] = editableComponents.map(
-          (definition) =>
+        // Expand `{x}` text/image placeholders using the concrete keys present
+        // on this card so FINAL_VALIDATION sees num-1..num-N, not "num-{x}".
+        const expandedEditableComponents = expandDefinitionsForAvailableIds(
+          editableComponents,
+          [
+            ...Object.keys(card.textComponents),
+            ...Object.keys(card.imageComponents),
+          ],
+        );
+
+        const components: EditableComponentPayload[] =
+          expandedEditableComponents.map((definition) =>
             this.mergeComponent(
               definition,
               card.textComponents,
               imageRefs,
             ),
-        );
+          );
 
         return {
           cardId: `card-${card.cardIndex}`,
@@ -549,29 +567,42 @@ export class FlashcardOrchestratorService {
         subject: resolved.subject,
         difficulty: resolved.difficulty,
         query: resolved.query,
+        telemetry,
       });
+
+    const buildSelectionMetadata = (
+      selected: SelectTemplateResult,
+      extra?: Record<string, unknown>,
+    ) => ({
+      templateId: selected.template.id,
+      ruleId: selected.selection.ruleId,
+      templateVersion: selected.template.templateVersion,
+      requestedAgeGroup: resolved.ageGroup,
+      templateAgeGroups: selected.template.supportedAgeGroups,
+      learningObjective: resolved.learningObjective,
+      objectiveConfidence: resolved.objectiveConfidence,
+      selectionScore: selected.selection.score,
+      selectionMode: selected.aiSelection?.selectionMode ?? 'deterministic',
+      aiConfidence: selected.aiSelection?.result?.confidenceScore,
+      aiReasoning: selected.aiSelection?.result?.reasoning,
+      aiFallbackReason: selected.aiSelection?.fallbackReason,
+      catalogHash: selected.aiSelection?.catalogHash,
+      cachedTokens: selected.aiSelection?.result?.cachedInputTokens,
+      rankingBreakdown: selected.ranking?.map((candidate) => ({
+        templateId: candidate.templateId,
+        ruleId: candidate.ruleId,
+        score: candidate.score,
+        breakdown: candidate.breakdown,
+      })),
+      ...extra,
+    });
 
     try {
       const selected = await selectOnce();
       this.emitter.emitStageCompleted({
         ...telemetry,
         stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
-        metadata: {
-          templateId: selected.template.id,
-          ruleId: selected.selection.ruleId,
-          templateVersion: selected.template.templateVersion,
-          requestedAgeGroup: resolved.ageGroup,
-          templateAgeGroups: selected.template.supportedAgeGroups,
-          learningObjective: resolved.learningObjective,
-          objectiveConfidence: resolved.objectiveConfidence,
-          selectionScore: selected.selection.score,
-          rankingBreakdown: selected.ranking?.map((candidate) => ({
-            templateId: candidate.templateId,
-            ruleId: candidate.ruleId,
-            score: candidate.score,
-            breakdown: candidate.breakdown,
-          })),
-        },
+        metadata: buildSelectionMetadata(selected),
       });
       return selected;
     } catch (error) {
@@ -587,11 +618,9 @@ export class FlashcardOrchestratorService {
           this.emitter.emitStageCompleted({
             ...telemetry,
             stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
-            metadata: {
-              templateId: selected.template.id,
-              ruleId: selected.selection.ruleId,
+            metadata: buildSelectionMetadata(selected, {
               retriedAfterInactive: true,
-            },
+            }),
           });
           return selected;
         } catch (retryError) {
@@ -621,22 +650,10 @@ export class FlashcardOrchestratorService {
     if (!Array.isArray(response.cards) || response.cards.length !== count) {
       throw new FlashcardException(
         'INVALID_LLM_OUTPUT',
-        'Assembled flashcard response failed validation',
+        `Assembled flashcard response failed validation: expected ${count} cards, received ${Array.isArray(response.cards) ? response.cards.length : 'non-array'}`,
       );
     }
 
-    const allowedIds = new Set(
-      editableComponents.map((component) => component.componentId),
-    );
-    const expectedIds = editableComponents.map(
-      (component) => component.componentId,
-    );
-    const definitionById = new Map(
-      editableComponents.map((component) => [
-        component.componentId,
-        component,
-      ]),
-    );
     const seenCardIds = new Set<string>();
 
     for (const card of response.cards) {
@@ -648,62 +665,11 @@ export class FlashcardOrchestratorService {
       }
       seenCardIds.add(card.cardId);
 
-      const actualIds = card.components.map(
-        (component) => component.componentId,
+      assertAssembledCardComponents(
+        card.cardId,
+        card.components,
+        editableComponents,
       );
-      if (
-        actualIds.length !== expectedIds.length ||
-        actualIds.some((componentId, index) => componentId !== expectedIds[index])
-      ) {
-        throw new FlashcardException(
-          'INVALID_LLM_OUTPUT',
-          `Card "${card.cardId}" components do not match selected template order`,
-          undefined,
-          { expectedIds, actualIds },
-        );
-      }
-
-      for (const component of card.components) {
-        if (!allowedIds.has(component.componentId)) {
-          throw new FlashcardException(
-            'INVALID_LLM_OUTPUT',
-            `Assembled card has unsupported component "${component.componentId}"`,
-          );
-        }
-        const definition = definitionById.get(component.componentId)!;
-        if (
-          component.type !== definition.componentType ||
-          component.componentType !== definition.componentType ||
-          component.editable !== definition.editable
-        ) {
-          throw new FlashcardException(
-            'INVALID_LLM_OUTPUT',
-            `Component "${component.componentId}" does not match its selected template definition`,
-          );
-        }
-
-        if (
-          definition.componentType !== 'image' &&
-          definition.required &&
-          !component.content?.trim()
-        ) {
-          throw new FlashcardException(
-            'INVALID_LLM_OUTPUT',
-            `Required text component "${component.componentId}" has no content`,
-          );
-        }
-
-        if (
-          definition.componentType === 'image' &&
-          definition.required &&
-          component.assetReference === undefined
-        ) {
-          throw new FlashcardException(
-            'INVALID_LLM_OUTPUT',
-            `Required image component "${component.componentId}" has no retrieval result`,
-          );
-        }
-      }
     }
   }
 

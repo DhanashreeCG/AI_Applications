@@ -9,9 +9,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IngestionJobService } from './ingestion-job.service';
 import { CreateIngestionJobDto } from './dto/create-ingestion-job.dto';
+import { CleanupByFolderDto } from './dto/cleanup-by-folder.dto';
 import { getErrorMessage } from '../../common/utils/error-message';
 
 @ApiTags('asset-ingestion')
@@ -43,6 +44,17 @@ export class IngestionController {
           ? 'Dry-run ingestion job started'
           : 'Ingestion job started',
     };
+  }
+
+  @Post('cleanup/by-folder')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Delete DB assets ingested from a Drive rootFolderId (keeps AiUsage + S3)',
+  })
+  @ApiBody({ type: CleanupByFolderDto })
+  async cleanupByFolder(@Body() dto: CleanupByFolderDto) {
+    return this.ingestionJobService.cleanupByFolder(dto);
   }
 
   @Get('jobs')
