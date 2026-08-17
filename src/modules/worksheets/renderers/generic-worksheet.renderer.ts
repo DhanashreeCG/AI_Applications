@@ -21,7 +21,9 @@ const FIELD_ALIASES: Record<string, string> = {
 
 const EDITOR_CHROME = `
 <style data-editor-chrome="true">
-body.editor-mode [data-editable] {
+body.editor-mode.edit-mode [data-editable],
+body.editor-mode.edit-mode img[data-image-slot],
+body.editor-mode.edit-mode .worksheet-image {
   cursor: pointer;
   outline: 2px dashed rgba(106, 13, 173, 0.45);
 }
@@ -48,6 +50,7 @@ const EDITOR_BRIDGE = `
     if (!(target instanceof Element)) return;
     var slot = target.closest('[data-image-slot], [data-editor-control][data-image-slot]');
     if (slot) {
+      if (!document.body.classList.contains('edit-mode')) return;
       emit('worksheet-replace-image', {
         slotId: slot.getAttribute('data-image-slot'),
         path: slot.getAttribute('data-field-path') || undefined
@@ -180,15 +183,13 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
 
   return withNamed.replace(
     /<img\b([^>]*\bdata-image-slot=["']([^"']+)["'][^>]*)>/gi,
-    (full, attrs: string, slotId: string) => {
-      const existingSrc = attrs.match(/\bsrc=(["'])(.*?)\1/i)?.[2] ?? '';
-      if (isUsableSrc(existingSrc)) {
-        return full;
-      }
+    (_full, attrs: string, slotId: string) => {
       const resolved = slotUrl(structure, slotId);
+      const existingSrc = attrs.match(/\bsrc=(["'])(.*?)\1/i)?.[2] ?? '';
       let next = attrs.replace(/\s*\bsrc=(["']).*?\1/i, '');
-      if (isUsableSrc(resolved.src)) {
-        next += ` src="${escapeHtml(resolved.src)}"`;
+      const src = isUsableSrc(existingSrc) ? existingSrc : resolved.src;
+      if (isUsableSrc(src)) {
+        next += ` src="${escapeHtml(src)}"`;
       }
       if (!/\balt=/i.test(next)) {
         next += ` alt="${escapeHtml(resolved.alt)}"`;

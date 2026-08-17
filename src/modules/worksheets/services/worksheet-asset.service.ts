@@ -13,6 +13,8 @@ import {
 import {
   mapWithConcurrency,
   WORKSHEET_IMAGE_SEARCH_EMBEDDING_PURPOSE,
+  WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES,
+  WORKSHEET_TEMPLATE_IMAGE_MIME_TYPES,
 } from '../constants/worksheet.constants';
 import { WorksheetException } from '../errors/worksheet.exception';
 import {
@@ -22,6 +24,8 @@ import {
 import {
   collectImageQueries,
   normalizeImageQueryFields,
+  patchImageSlot,
+  setUserUploadedImageIndex,
   setValueAtPath,
   stripTransientAssetFields,
 } from '../utils/structure.util';
@@ -38,6 +42,7 @@ export class WorksheetAssetService {
   private readonly pickerLimit: number;
   private readonly signedUrlTtlSeconds: number;
   private readonly assetImagePath: string;
+  private readonly userUploadS3Prefix: string;
   private readonly emitter: WorksheetPipelineEmitter;
 
   constructor(
@@ -52,12 +57,16 @@ export class WorksheetAssetService {
     this.searchLimit =
       this.configService.get<number>('worksheets.imageSearchLimit') ?? 1;
     this.pickerLimit =
-      this.configService.get<number>('worksheets.imagePickerLimit') ?? 12;
+      this.configService.get<number>('worksheets.imagePickerLimit') ?? 10;
     this.signedUrlTtlSeconds =
       this.configService.get<number>('worksheets.signedUrlTtlSeconds') ?? 3600;
     this.assetImagePath = (
       this.configService.get<string>('worksheets.assetImagePath') ??
       '/worksheets/assets'
+    ).replace(/\/$/, '');
+    this.userUploadS3Prefix = (
+      this.configService.get<string>('worksheets.userUploadS3Prefix') ??
+      'worksheets/uploads'
     ).replace(/\/$/, '');
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
   }
@@ -277,6 +286,17 @@ export class WorksheetAssetService {
         }
         if (typeof record.assetId === 'string' && record.assetId.trim()) {
           next.assetUrl = this.assetProxyUrl(record.assetId);
+        } else if (
+          typeof record.userUploadedKey === 'string' &&
+          record.userUploadedKey.trim()
+        ) {
+          const parsed = this.parseUserUploadKey(record.userUploadedKey);
+          if (parsed) {
+            next.assetUrl = this.userUploadProxyUrl(
+              parsed.worksheetId,
+              parsed.uploadId,
+            );
+          }
         }
         return next;
       }
@@ -310,6 +330,134 @@ export class WorksheetAssetService {
       searchDescription: hit.searchDescription,
       imageUrl: this.assetProxyUrl(hit.assetId),
     }));
+  }
+
+  public applyLibraryImage(
+    structure: Record<string, unknown>,
+    path: string,
+    assetId: string,
+  ): Record<string, unknown> {
+    const withSlot = patchImageSlot(structure, path, {
+      assetId,
+      userUploadedKey: '',
+    });
+    return this.persistableStructure(
+      setUserUploadedImageIndex(withSlot, path, null),
+    );
+  }
+
+  public applyUserUploadedImage(
+    structure: Record<string, unknown>,
+    path: string,
+    upload: { key: string; contentType?: string },
+  ): Record<string, unknown> {
+    const withSlot = patchImageSlot(structure, path, {
+      assetId: null,
+      userUploadedKey: upload.key,
+    });
+    return this.persistableStructure(
+      setUserUploadedImageIndex(withSlot, path, {
+        key: upload.key,
+        contentType: upload.contentType,
+      }),
+    );
+  }
+
+  public userUploadProxyUrl(worksheetId: string, uploadId: string): string {
+    return `/worksheets/${worksheetId}/uploads/${uploadId}/image`;
+  }
+
+  public parseUserUploadKey(
+    key: string,
+  ): { worksheetId: string; uploadId: string } | null {
+    const prefix = `${this.userUploadS3Prefix}/`;
+    if (!key.startsWith(prefix)) {
+      return null;
+    }
+    const rest = key.slice(prefix.length);
+    const slash = rest.indexOf('/');
+    if (slash <= 0 || slash === rest.length - 1) {
+      return null;
+    }
+    const worksheetId = rest.slice(0, slash);
+    const uploadId = rest.slice(slash + 1);
+    if (!/^[A-Za-z0-9._-]+$/.test(uploadId)) {
+      return null;
+    }
+    return { worksheetId, uploadId };
+  }
+
+  public async uploadUserImage(
+    worksheetId: string,
+    file: { buffer: Buffer; mimetype?: string; originalname?: string; size?: number },
+  ): Promise<{ key: string; uploadId: string; imageUrl: string; contentType: string }> {
+    const contentType = (file.mimetype || '').toLowerCase();
+    if (!WORKSHEET_TEMPLATE_IMAGE_MIME_TYPES.has(contentType)) {
+      throw new WorksheetException(
+        'INVALID_REQUEST',
+        'Upload a JPEG, PNG, WebP, or GIF image',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if ((file.size ?? file.buffer.length) > WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES) {
+      throw new WorksheetException(
+        'INVALID_REQUEST',
+        'Image is too large',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const ext =
+      contentType === 'image/png'
+        ? '.png'
+        : contentType === 'image/webp'
+          ? '.webp'
+          : contentType === 'image/gif'
+            ? '.gif'
+            : '.jpg';
+    const uploadId = `${randomUUID()}${ext}`;
+    const key = `${this.userUploadS3Prefix}/${worksheetId}/${uploadId}`;
+    await this.s3StorageService.uploadFile(file.buffer, {
+      key,
+      contentType,
+      metadata: { worksheetId, originalname: file.originalname || uploadId },
+    });
+    return {
+      key,
+      uploadId,
+      imageUrl: this.userUploadProxyUrl(worksheetId, uploadId),
+      contentType,
+    };
+  }
+
+  public async loadUserUpload(
+    worksheetId: string,
+    uploadId: string,
+  ): Promise<{ buffer: Buffer; mimeType: string }> {
+    if (!/^[A-Za-z0-9._-]+$/.test(uploadId)) {
+      throw new WorksheetException(
+        'INVALID_REQUEST',
+        'Invalid upload id',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const key = `${this.userUploadS3Prefix}/${worksheetId}/${uploadId}`;
+    try {
+      const buffer = await this.s3StorageService.downloadBuffer(key);
+      const mimeType = uploadId.endsWith('.png')
+        ? 'image/png'
+        : uploadId.endsWith('.webp')
+          ? 'image/webp'
+          : uploadId.endsWith('.gif')
+            ? 'image/gif'
+            : 'image/jpeg';
+      return { buffer, mimeType };
+    } catch {
+      throw new WorksheetException(
+        'ASSET_NOT_FOUND',
+        'Uploaded image was not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
   }
 
   private emptySlot(path: string, imageQuery: string): ResolvedAssetSlot {

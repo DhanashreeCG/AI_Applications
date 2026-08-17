@@ -11,6 +11,8 @@ describe('WorksheetAssetService', () => {
   };
   const s3StorageService = {
     getSignedUrl: jest.fn(),
+    uploadFile: jest.fn(),
+    downloadBuffer: jest.fn(),
   };
   const prisma = {
     asset: { findUnique: jest.fn() },
@@ -19,9 +21,10 @@ describe('WorksheetAssetService', () => {
     get: (key: string) => {
       if (key === 'worksheets.imageConcurrency') return 2;
       if (key === 'worksheets.imageSearchLimit') return 1;
-      if (key === 'worksheets.imagePickerLimit') return 12;
+      if (key === 'worksheets.imagePickerLimit') return 10;
       if (key === 'worksheets.signedUrlTtlSeconds') return 3600;
       if (key === 'worksheets.assetImagePath') return '/worksheets/assets';
+      if (key === 'worksheets.userUploadS3Prefix') return 'worksheets/uploads';
       return undefined;
     },
   };
@@ -137,6 +140,43 @@ describe('WorksheetAssetService', () => {
           assetUrl: '/worksheets/assets/asset-123/image',
         },
       ],
+    });
+  });
+
+  it('injects user-uploaded assetUrl when assetId is null', () => {
+    const enriched = service.enrichForRender({
+      image: {
+        imageQuery: 'custom',
+        assetId: null,
+        userUploadedKey: 'worksheets/uploads/ws-1/pic.png',
+      },
+      userUploadedImages: {
+        image: { key: 'worksheets/uploads/ws-1/pic.png', contentType: 'image/png' },
+      },
+    });
+    expect(enriched.image).toEqual({
+      imageQuery: 'custom',
+      assetId: null,
+      userUploadedKey: 'worksheets/uploads/ws-1/pic.png',
+      assetUrl: '/worksheets/ws-1/uploads/pic.png/image',
+    });
+  });
+
+  it('persists user uploads on the slot and userUploadedImages index', () => {
+    const next = service.applyUserUploadedImage(
+      { image: { imageQuery: 'goat', assetId: 'old' } },
+      'image',
+      { key: 'worksheets/uploads/ws-1/pic.png', contentType: 'image/png' },
+    );
+    expect(next).toEqual({
+      image: {
+        imageQuery: 'goat',
+        assetId: null,
+        userUploadedKey: 'worksheets/uploads/ws-1/pic.png',
+      },
+      userUploadedImages: {
+        image: { key: 'worksheets/uploads/ws-1/pic.png', contentType: 'image/png' },
+      },
     });
   });
 

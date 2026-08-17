@@ -18,6 +18,6 @@ export class SearchWorksheetImagesQueryDto {
   })
   path?: string;
 
-  @ApiPropertyOptional({ example: 12 })
+  @ApiPropertyOptional({ example: 10 })
   limit?: number;
 }

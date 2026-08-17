@@ -19,6 +19,9 @@ describe('WorksheetsController', () => {
     replaceImage: jest.fn(),
     updateField: jest.fn(),
     searchImages: jest.fn(),
+    saveEdits: jest.fn(),
+    uploadImage: jest.fn(),
+    loadUserUpload: jest.fn(),
   };
   const renderService = {
     render: jest.fn(),
@@ -86,5 +89,15 @@ describe('WorksheetsController', () => {
       expect.objectContaining({ slug: 'counting_objects_v1' }),
       { background, sample },
     );
+  });
+
+  it('POST /worksheets/:id/save delegates to saveEdits', async () => {
+    editService.saveEdits.mockResolvedValue({ id: 'ws-1' });
+    await expect(
+      controller.saveEdits('ws-1', {
+        fields: [{ path: 'instruction', value: 'Count.' }],
+        images: [{ path: 'image', assetId: 'asset-1' }],
+      }),
+    ).resolves.toEqual({ id: 'ws-1' });
   });
 });

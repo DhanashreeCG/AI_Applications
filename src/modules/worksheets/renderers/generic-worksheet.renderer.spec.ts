@@ -44,6 +44,24 @@ describe('GenericWorksheetRenderer', () => {
     expect(html).toContain('export-mode');
   });
 
+  it('adds data-field-path even when the template image already has a src', () => {
+    const html = renderer.render({
+      templateHtml:
+        '<img data-image-slot="main_image" src="/already.png" alt="goat" />',
+      structure: {
+        image: {
+          id: 'main_image',
+          imageQuery: 'two goats',
+          assetId: 'asset-9',
+          assetUrl: '/worksheets/assets/asset-9/image',
+        },
+      },
+      mode: 'editor',
+    });
+    expect(html).toContain('src="/already.png"');
+    expect(html).toContain('data-field-path="image"');
+  });
+
   it('fills prototype-style numbered fields and named image tokens', () => {
     const html = renderer.render({
       templateHtml:
@@ -113,7 +131,9 @@ describe('GenericWorksheetRenderer', () => {
       canvas: { width: 1016, height: 1316 },
     });
     expect(editor).toContain('editor-mode');
-    expect(editor).toContain('data-editor-bridge');
+    expect(editor).toContain('body.editor-mode.edit-mode [data-editable]');
+    expect(editor).not.toMatch(/body\.editor-mode \[data-editable\] \{/);
+    expect(editor).toContain("document.body.classList.contains('edit-mode')");
     expect(editor).toContain('1016px');
 
     const exported = renderer.render({

@@ -11,10 +11,12 @@ import {
   Query,
   Res,
   StreamableFile,
+  UploadedFile,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import {
   ApiBadRequestResponse,
@@ -39,6 +41,7 @@ import {
 } from './dto/generate-worksheet.dto';
 import { RenderWorksheetDto } from './dto/render-worksheet.dto';
 import { ReplaceWorksheetImageDto } from './dto/replace-worksheet-image.dto';
+import { SaveWorksheetDto } from './dto/save-worksheet.dto';
 import {
   SearchWorksheetImagesQueryDto,
   UpdateWorksheetFieldDto,
@@ -304,6 +307,62 @@ export class WorksheetsController {
       path: query.path,
       limit: query.limit != null ? Number(query.limit) : undefined,
     });
+  }
+
+  @Post(':worksheetId/images/upload')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload a user image to S3 for a worksheet image slot (persisted on save)',
+  })
+  async uploadImage(
+    @Param('worksheetId') worksheetId: string,
+    @UploadedFile() file: { buffer: Buffer; mimetype?: string; originalname?: string; size?: number },
+    @Body() body: { path?: string },
+  ) {
+    if (!file?.buffer?.length) {
+      throw new WorksheetException(
+        'INVALID_REQUEST',
+        'Choose an image file to upload',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return this.editService.uploadImage(worksheetId, body.path || '', file);
+  }
+
+  @Get(':worksheetId/uploads/:uploadId/image')
+  @Header('Cache-Control', 'private, max-age=3600')
+  @ApiOperation({ summary: 'Stream a user-uploaded worksheet image from S3' })
+  async getUploadedImage(
+    @Param('worksheetId') worksheetId: string,
+    @Param('uploadId') uploadId: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, mimeType } = await this.editService.loadUserUpload(
+      worksheetId,
+      uploadId,
+    );
+    response.setHeader('Content-Type', mimeType);
+    return new StreamableFile(buffer);
+  }
+
+  @Post(':worksheetId/save')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Persist inline text edits and image replacements (library or user upload) in one write',
+  })
+  async saveEdits(
+    @Param('worksheetId') worksheetId: string,
+    @Body() dto: SaveWorksheetDto,
+  ) {
+    return this.editService.saveEdits(worksheetId, dto);
   }
 
   @Post(':worksheetId/images')

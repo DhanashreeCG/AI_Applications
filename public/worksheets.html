@@ -185,8 +185,97 @@
         width: min(720px, 92vw); max-height: 86vh; overflow: auto;
         background: #fff; border-radius: 16px; padding: 18px;
       }
-      .image-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
-      .image-grid img { width: 100%; height: 90px; object-fit: cover; border-radius: 8px; cursor: pointer; }
+      .image-picker {
+        width: min(980px, 94vw);
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        padding: 22px 24px 18px;
+      }
+      .image-picker-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .image-picker-head h2 {
+        margin: 0;
+        font-family: 'Baloo 2', cursive;
+        font-size: 28px;
+        color: #2b2140;
+      }
+      .modal-x {
+        width: 36px; height: 36px; border: 0; background: transparent;
+        font-size: 22px; cursor: pointer; color: #6b6280;
+      }
+      .image-picker-tabs {
+        display: flex; gap: 28px; margin: 10px 0 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .image-tab {
+        border: 0; background: transparent; padding: 10px 0 12px;
+        font: inherit; font-weight: 800; color: var(--muted); cursor: pointer;
+      }
+      .image-tab.active {
+        color: var(--text);
+        box-shadow: inset 0 -3px 0 var(--orange);
+      }
+      .image-search-row {
+        display: flex; gap: 10px; align-items: stretch;
+      }
+      .image-search-row input {
+        flex: 1; margin: 0;
+      }
+      .btn-search {
+        display: inline-flex; align-items: center; gap: 8px;
+        background: var(--orange); color: #fff; white-space: nowrap;
+      }
+      .image-results-meta {
+        display: flex; justify-content: space-between; align-items: baseline;
+        margin: 16px 0 10px; font-weight: 800;
+      }
+      .image-results-meta span { color: var(--muted); font-weight: 700; font-size: 13px; }
+      .image-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        min-height: 220px;
+      }
+      @media (max-width: 900px) {
+        .image-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+      .image-tile {
+        position: relative;
+        border: 2px solid transparent;
+        border-radius: 12px;
+        overflow: hidden;
+        cursor: pointer;
+        background: #f3eef9;
+        aspect-ratio: 1;
+      }
+      .image-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .image-tile .pick {
+        position: absolute; top: 8px; right: 8px;
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid #fff; background: rgba(255,255,255,0.35);
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+      }
+      .image-tile.selected { border-color: var(--orange); }
+      .image-tile.selected .pick { background: var(--orange); border-color: #fff; }
+      .image-picker-foot {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; margin-top: 18px; flex-wrap: wrap;
+      }
+      .image-tip { color: var(--muted); font-size: 13px; font-weight: 700; }
+      .image-picker-actions { display: flex; gap: 10px; }
+      .upload-pane {
+        border: 1.5px dashed #d8cce8;
+        border-radius: 14px;
+        padding: 36px 20px;
+        text-align: center;
+        color: var(--muted);
+        font-weight: 700;
+      }
       textarea, .modal input {
         width: 100%; border: 1.5px solid var(--line); border-radius: 10px; padding: 10px; font: inherit;
       }
@@ -243,12 +332,39 @@
     </div>
 
     <div id="imagePickerModal" class="modal hidden">
-      <div class="modal-card">
-        <h2>Select Image</h2>
-        <input id="imageQuery" placeholder="Search assets, e.g. two goats" />
-        <button class="btn btn-gen" id="searchImagesBtn" type="button">Search</button>
-        <div class="image-grid" id="imageBank"></div>
-        <button class="btn btn-ghost" id="imagePickerCloseBtn" type="button">Close</button>
+      <div class="modal-card image-picker">
+        <div class="image-picker-head">
+          <h2>Select Image</h2>
+          <button class="modal-x" id="imagePickerCloseBtn" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="image-picker-tabs">
+          <button class="image-tab active" id="searchTabBtn" type="button" data-tab="search">Search Images</button>
+          <button class="image-tab" id="uploadTabBtn" type="button" data-tab="upload">Upload From Computer</button>
+        </div>
+        <div id="searchPane">
+          <div class="image-search-row">
+            <input id="imageQuery" placeholder='Search for images (e.g., "airplane", "happy child", "red apple")' />
+            <button class="btn btn-search" id="searchImagesBtn" type="button">🔍 Search</button>
+          </div>
+          <div class="image-results-meta">
+            <strong>Search Results</strong>
+            <span id="imageResultsCount">No search yet</span>
+          </div>
+          <div class="image-grid" id="imageBank"></div>
+        </div>
+        <div id="uploadPane" class="hidden">
+          <div class="upload-pane">
+            <p>Choose a JPEG, PNG, WebP, or GIF. It is stored on S3 and used for this image slot instead of a library asset.</p>
+            <input id="imageUploadInput" type="file" accept="image/*" />
+          </div>
+        </div>
+        <div class="image-picker-foot">
+          <div class="image-tip">Can't find what you're looking for? Try different keywords or upload your own image.</div>
+          <div class="image-picker-actions">
+            <button class="btn btn-ghost" id="imagePickerCancelBtn" type="button">Cancel</button>
+            <button class="btn btn-search" id="selectImageBtn" type="button">Select Image</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -286,7 +402,15 @@
         preview: null,
         editMode: false,
         selectedImagePath: null,
+        selectedImageSlotId: null,
         selectedFieldPath: null,
+        selectedSearchItem: null,
+        pendingImageReplacements: {},
+        imageSearchCache: new Map(),
+        imageBlobCache: new Map(),
+        lastImageSearch: { query: '', results: [], path: null },
+        imagePickerTab: 'search',
+        imagePickerLimit: 10,
       };
 
       const els = {
@@ -312,7 +436,15 @@
         imageQuery: document.getElementById('imageQuery'),
         searchImagesBtn: document.getElementById('searchImagesBtn'),
         imageBank: document.getElementById('imageBank'),
+        imageResultsCount: document.getElementById('imageResultsCount'),
         imagePickerCloseBtn: document.getElementById('imagePickerCloseBtn'),
+        imagePickerCancelBtn: document.getElementById('imagePickerCancelBtn'),
+        selectImageBtn: document.getElementById('selectImageBtn'),
+        searchTabBtn: document.getElementById('searchTabBtn'),
+        uploadTabBtn: document.getElementById('uploadTabBtn'),
+        searchPane: document.getElementById('searchPane'),
+        uploadPane: document.getElementById('uploadPane'),
+        imageUploadInput: document.getElementById('imageUploadInput'),
         fieldEditModal: document.getElementById('fieldEditModal'),
         fieldEditCurrent: document.getElementById('fieldEditCurrent'),
         fieldEditInstruction: document.getElementById('fieldEditInstruction'),
@@ -381,6 +513,7 @@
         state.worksheetId = null;
         state.preview = null;
         state.editMode = false;
+        state.pendingImageReplacements = {};
         els.editBtn.textContent = 'Edit';
       }
 
@@ -564,23 +697,182 @@
           btn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (!state.editMode) return;
             openFieldEditor(btn.getAttribute('data-pencil-for'));
           });
         });
         doc.querySelectorAll('[data-editable]').forEach((el) => {
           el.addEventListener('click', () => {
+            if (!state.editMode) return;
             state.selectedFieldPath = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
           });
         });
-        doc.addEventListener('click', (event) => {
-          const slot = event.target.closest?.('[data-image-slot], .worksheet-image');
-          if (slot && state.editMode) {
-            state.selectedImagePath = slot.getAttribute('data-field-path') || 'image';
-            els.imageQuery.value = '';
-            els.imagePickerModal.classList.remove('hidden');
-            searchImages();
+        enableInlineEditing(state.editMode);
+        applyPendingImages(doc);
+      }
+
+      function openImagePicker(path, slotId) {
+        state.selectedImageSlotId = slotId || state.selectedImageSlotId;
+        state.selectedImagePath = resolveImagePath(path, slotId);
+        state.selectedSearchItem = null;
+        setImagePickerTab('search');
+        els.imagePickerModal.classList.remove('hidden');
+        const cached = state.lastImageSearch;
+        if (cached.results?.length) {
+          els.imageQuery.value = cached.query || '';
+          renderImageResults(cached.results, cached.query);
+          return;
+        }
+        els.imageQuery.value = '';
+        renderImageResults([], '');
+      }
+
+      function resolveImagePath(path, slotId) {
+        if (path && path !== 'undefined' && path !== 'null') return path;
+        const structure = state.preview?.structure;
+        if (slotId && structure) {
+          const found = findStructurePathBySlotId(structure, slotId);
+          if (found) return found;
+        }
+        return slotId || state.selectedImagePath || '';
+      }
+
+      function findStructurePathBySlotId(node, slotId, prefix) {
+        if (Array.isArray(node)) {
+          for (let i = 0; i < node.length; i += 1) {
+            const found = findStructurePathBySlotId(node[i], slotId, `${prefix}[${i}]`);
+            if (found) return found;
           }
+          return null;
+        }
+        if (!node || typeof node !== 'object') return null;
+        if (node.id === slotId && prefix) return prefix;
+        for (const [key, child] of Object.entries(node)) {
+          const childPath = prefix ? `${prefix}.${key}` : key;
+          if (key === slotId && child && typeof child === 'object' && !Array.isArray(child)) {
+            return childPath;
+          }
+          const found = findStructurePathBySlotId(child, slotId, childPath);
+          if (found) return found;
+        }
+        return null;
+      }
+
+      function cssAttr(name, value) {
+        return `[${name}="${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`;
+      }
+
+      function findImageSlot(doc, path, slotId) {
+        if (!doc) return null;
+        const selectors = [];
+        if (path) selectors.push('img' + cssAttr('data-field-path', path), cssAttr('data-field-path', path));
+        if (slotId) selectors.push('img' + cssAttr('data-image-slot', slotId), cssAttr('data-image-slot', slotId));
+        for (const selector of selectors) {
+          const el = doc.querySelector(selector);
+          if (!el) continue;
+          if (el.tagName === 'IMG') return el;
+          const nested = el.querySelector('img');
+          if (nested) return nested;
+        }
+        const imgs = doc.querySelectorAll('img[data-image-slot], img.worksheet-image');
+        return imgs.length === 1 ? imgs[0] : null;
+      }
+
+      function closeImagePicker() {
+        els.imagePickerModal.classList.add('hidden');
+        state.selectedSearchItem = null;
+      }
+
+      function setImagePickerTab(tab) {
+        state.imagePickerTab = tab;
+        els.searchTabBtn.classList.toggle('active', tab === 'search');
+        els.uploadTabBtn.classList.toggle('active', tab === 'upload');
+        els.searchPane.classList.toggle('hidden', tab !== 'search');
+        els.uploadPane.classList.toggle('hidden', tab !== 'upload');
+      }
+
+      function cacheKey(query, path) {
+        return `${(query || '').trim().toLowerCase()}::${path || ''}`;
+      }
+
+      async function cachedImageSrc(url) {
+        const resolved = resolveUrl(url);
+        if (!resolved) return '';
+        if (state.imageBlobCache.has(resolved)) return state.imageBlobCache.get(resolved);
+        try {
+          const res = await fetch(resolved);
+          if (!res.ok) throw new Error(String(res.status));
+          const blob = await res.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          state.imageBlobCache.set(resolved, objectUrl);
+          return objectUrl;
+        } catch {
+          state.imageBlobCache.set(resolved, resolved);
+          return resolved;
+        }
+      }
+
+      function renderImageResults(results, query) {
+        const items = Array.isArray(results) ? results.filter((item) => item?.imageUrl && item.imageUrl !== 'null') : [];
+        els.imageBank.innerHTML = '';
+        if (!items.length) {
+          els.imageResultsCount.textContent = query ? 'Showing 0 results' : 'No search yet';
+          els.imageBank.innerHTML = '<div class="empty">Search for images to see results here.</div>';
+          return;
+        }
+        els.imageResultsCount.textContent = `Showing ${items.length} result${items.length === 1 ? '' : 's'}`;
+        items.forEach((item) => {
+          const tile = document.createElement('button');
+          tile.type = 'button';
+          tile.className = 'image-tile' + (state.selectedSearchItem?.assetId === item.assetId ? ' selected' : '');
+          tile.title = item.caption || item.searchDescription || '';
+          const img = document.createElement('img');
+          img.alt = item.caption || item.searchDescription || 'Search result';
+          const resolved = resolveUrl(item.imageUrl);
+          img.src = state.imageBlobCache.get(resolved) || resolved;
+          cachedImageSrc(item.imageUrl).then((src) => {
+            if (img.isConnected) img.src = src;
+          });
+          const pick = document.createElement('span');
+          pick.className = 'pick';
+          tile.appendChild(img);
+          tile.appendChild(pick);
+          tile.addEventListener('click', () => {
+            state.selectedSearchItem = item;
+            els.imageBank.querySelectorAll('.image-tile').forEach((node) => node.classList.remove('selected'));
+            tile.classList.add('selected');
+          });
+          els.imageBank.appendChild(tile);
         });
+      }
+
+      function applyPendingImages(doc) {
+        if (!doc) return;
+        Object.entries(state.pendingImageReplacements).forEach(([path, item]) => {
+          const slot = findImageSlot(doc, path, item.slotId || state.selectedImageSlotId);
+          if (!slot || !item?.imageUrl) return;
+          const resolved = item.imageUrl.startsWith('blob:') ? item.imageUrl : resolveUrl(item.imageUrl);
+          slot.src = state.imageBlobCache.get(resolved) || resolved;
+        });
+      }
+
+      function applySelectedImageToPreview() {
+        const item = state.selectedSearchItem;
+        const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId);
+        if (!item || (!item.assetId && !item.imageUrl) || !path) {
+          setStatus('Select an image first');
+          return false;
+        }
+        state.selectedImagePath = path;
+        state.pendingImageReplacements[path] = {
+          assetId: item.assetId || null,
+          userUploadedKey: item.userUploadedKey || null,
+          imageUrl: item.imageUrl,
+          slotId: state.selectedImageSlotId,
+          file: item.file || null,
+        };
+        applyPendingImages(els.worksheetFrame.contentDocument);
+        return true;
       }
 
       function openFieldEditor(path) {
@@ -603,11 +895,11 @@
       window.addEventListener('message', (event) => {
         const data = event.data || {};
         if (data.type === 'worksheet-replace-image') {
-          state.selectedImagePath = data.path;
-          els.imagePickerModal.classList.remove('hidden');
-          searchImages();
+          if (!state.editMode) return;
+          openImagePicker(data.path, data.slotId);
         }
         if (data.type === 'worksheet-select-field') {
+          if (!state.editMode) return;
           state.selectedFieldPath = data.path;
         }
       });
@@ -624,17 +916,51 @@
 
       async function saveInlineEdits() {
         const doc = els.worksheetFrame.contentDocument;
-        const fields = state.preview?.editableFields || [];
-        for (const field of fields) {
-          if (field.type === 'image' || field.type === 'array' || field.type === 'object') continue;
-          const el = doc.querySelector(`[data-editable='${field.path}'], [data-field-path='${field.path}']`);
-          if (!el) continue;
-          await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: field.path, value: el.innerText.trim() }),
-          });
+        const fields = [];
+        doc?.querySelectorAll('[data-editable]').forEach((el) => {
+          const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
+          if (!path) return;
+          fields.push({ path, value: el.innerText.trim() });
+        });
+        const images = [];
+        for (const [path, item] of Object.entries(state.pendingImageReplacements)) {
+          if (item?.file) {
+            const form = new FormData();
+            form.append('file', item.file);
+            form.append('path', path);
+            const uploaded = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/upload`, {
+              method: 'POST',
+              body: form,
+            });
+            const body = await uploaded.json().catch(() => ({}));
+            if (!uploaded.ok) {
+              throw new Error(body?.error?.message || 'Image upload failed');
+            }
+            images.push({
+              path,
+              assetId: null,
+              userUploadedKey: body.userUploadedKey,
+            });
+            continue;
+          }
+          if (item?.userUploadedKey) {
+            images.push({ path, assetId: null, userUploadedKey: item.userUploadedKey });
+            continue;
+          }
+          if (item?.assetId) {
+            images.push({ path, assetId: item.assetId });
+          }
         }
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields, images }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(body?.error?.message || 'Could not save worksheet edits');
+        }
+        state.pendingImageReplacements = {};
         await openPreview(state.worksheetId);
       }
 
@@ -669,27 +995,40 @@
 
       async function searchImages() {
         if (!state.worksheetId) return;
+        const query = els.imageQuery.value.trim();
+        const path = state.selectedImagePath;
+        const key = cacheKey(query, query ? '' : path);
+        if (state.imageSearchCache.has(key)) {
+          const cached = state.imageSearchCache.get(key);
+          state.lastImageSearch = cached;
+          renderImageResults(cached.results, cached.query);
+          return;
+        }
+        els.searchImagesBtn.disabled = true;
+        els.imageResultsCount.textContent = 'Searching…';
         const params = new URLSearchParams();
-        if (els.imageQuery.value.trim()) params.set('query', els.imageQuery.value.trim());
-        if (state.selectedImagePath) params.set('path', state.selectedImagePath);
+        if (query) params.set('query', query);
+        if (path) params.set('path', path);
+        params.set('limit', String(state.imagePickerLimit || 10));
         const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/search?${params}`);
-        const body = await res.json();
-        els.imageBank.innerHTML = '';
-        (body.results || []).forEach((item) => {
-          if (!item.imageUrl || item.imageUrl === 'null') return;
-          const img = document.createElement('img');
-          img.src = resolveUrl(item.imageUrl);
-          img.title = item.caption || item.searchDescription;
-          img.addEventListener('click', async () => {
-            await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ path: state.selectedImagePath, assetId: item.assetId }),
-            });
-            els.imagePickerModal.classList.add('hidden');
-            await openPreview(state.worksheetId);
-          });
-          els.imageBank.appendChild(img);
+        const body = await res.json().catch(() => ({}));
+        els.searchImagesBtn.disabled = false;
+        if (!res.ok) {
+          setStatus(body?.error?.message || 'Image search failed');
+          els.imageResultsCount.textContent = 'Search failed';
+          return;
+        }
+        const payload = {
+          query: body.query || query,
+          results: body.results || [],
+          path,
+        };
+        state.imageSearchCache.set(key, payload);
+        if (payload.query) state.imageSearchCache.set(cacheKey(payload.query, ''), payload);
+        state.lastImageSearch = payload;
+        renderImageResults(payload.results, payload.query);
+        payload.results.forEach((item) => {
+          if (item?.imageUrl) cachedImageSrc(item.imageUrl);
         });
       }
 
@@ -703,15 +1042,63 @@
           els.editBtn.textContent = 'Save';
           return;
         }
-        await saveInlineEdits();
-        state.editMode = false;
-        els.editBtn.textContent = 'Edit';
+        els.editBtn.disabled = true;
+        setStatus('Saving worksheet…');
+        try {
+          await saveInlineEdits();
+          state.editMode = false;
+          els.editBtn.textContent = 'Edit';
+          setStatus('Worksheet saved');
+        } catch (error) {
+          setStatus(error.message || 'Could not save worksheet edits');
+        } finally {
+          els.editBtn.disabled = false;
+        }
       });
       els.aiEditBtn.addEventListener('click', () => openFieldEditor());
       els.downloadBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'webp'));
       els.downloadPdfBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'pdf'));
-      els.imagePickerCloseBtn.addEventListener('click', () => els.imagePickerModal.classList.add('hidden'));
+      els.imagePickerCloseBtn.addEventListener('click', closeImagePicker);
+      els.imagePickerCancelBtn.addEventListener('click', closeImagePicker);
+      els.searchTabBtn.addEventListener('click', () => setImagePickerTab('search'));
+      els.uploadTabBtn.addEventListener('click', () => setImagePickerTab('upload'));
       els.searchImagesBtn.addEventListener('click', searchImages);
+      els.imageQuery.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          searchImages();
+        }
+      });
+      els.selectImageBtn.addEventListener('click', async () => {
+        if (state.imagePickerTab === 'upload') {
+          const file = els.imageUploadInput.files?.[0];
+          if (!file) {
+            setStatus('Choose an image to upload');
+            return;
+          }
+          const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId);
+          if (!path) {
+            setStatus('Image slot is missing');
+            return;
+          }
+          const previewUrl = URL.createObjectURL(file);
+          state.imageBlobCache.set(previewUrl, previewUrl);
+          state.selectedImagePath = path;
+          state.selectedSearchItem = {
+            assetId: null,
+            imageUrl: previewUrl,
+            file,
+            caption: file.name,
+          };
+          if (!applySelectedImageToPreview()) return;
+          closeImagePicker();
+          setStatus('Uploaded image applied. Click Save to keep the change.');
+          return;
+        }
+        if (!applySelectedImageToPreview()) return;
+        closeImagePicker();
+        setStatus('Image updated. Click Save to keep the change.');
+      });
       els.fieldEditCancelBtn.addEventListener('click', () => els.fieldEditModal.classList.add('hidden'));
       els.fieldEditRegenBtn.addEventListener('click', async () => {
         els.fieldEditError.textContent = '';
@@ -758,6 +1145,7 @@
         if (settings.pageSize) state.pageSize = Number(settings.pageSize) || state.pageSize;
         if (settings.pagerMaxButtons) state.pagerMaxButtons = Number(settings.pagerMaxButtons) || state.pagerMaxButtons;
         if (settings.canvas?.width && settings.canvas?.height) state.canvas = settings.canvas;
+        if (settings.imagePickerLimit) state.imagePickerLimit = Number(settings.imagePickerLimit) || 10;
         if (Array.isArray(settings.ageGroups) && settings.ageGroups.length) {
           state.ages = settings.ageGroups;
           state.ageGroup = settings.defaultAgeGroup && state.ages.some((age) => age.id === settings.defaultAgeGroup)

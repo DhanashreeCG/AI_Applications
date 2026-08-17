@@ -46,6 +46,7 @@ export class WorksheetGenerationService {
   private readonly apiPrefix: string;
   private readonly assetImagePath: string;
   private readonly pencilIconUrl: string;
+  private readonly imagePickerLimit: number;
   private readonly defaultAgeGroup: string;
   private readonly ageGroups: Array<{
     id: string;
@@ -100,6 +101,10 @@ export class WorksheetGenerationService {
     ).replace(/\/$/, '');
     this.pencilIconUrl =
       this.configService.get<string>('worksheets.pencilIconUrl') ?? '/pencil.png';
+    this.imagePickerLimit = Math.max(
+      1,
+      this.configService.get<number>('worksheets.imagePickerLimit') ?? 10,
+    );
     this.defaultAgeGroup =
       this.configService.get<string>('worksheets.defaultAgeGroup') ?? '';
     this.ageGroups =
@@ -118,6 +123,7 @@ export class WorksheetGenerationService {
       apiPrefix: this.apiPrefix,
       assetImagePath: this.assetImagePath,
       pencilIconUrl: this.pencilIconUrl,
+      imagePickerLimit: this.imagePickerLimit,
       defaultCount: this.defaultCount,
       maxCount: this.maxCount,
       pageSize: this.pageSize,

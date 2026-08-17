@@ -9,15 +9,18 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { WORKSHEET_WORKFLOW_EDIT } from '../constants/worksheet.constants';
 import { EditWorksheetDto } from '../dto/edit-worksheet.dto';
+import { SaveWorksheetDto } from '../dto/save-worksheet.dto';
 import { WorksheetException } from '../errors/worksheet.exception';
 import { GenerateWorksheetResponse } from '../types/worksheet.types';
 import {
   asStructureRecord,
   collectImageQueries,
+  collectImageSlots,
   getValueAtPath,
   isEditableField,
   looksLikeHtml,
   setValueAtPath,
+  visualQueryFromImageRecord,
 } from '../utils/structure.util';
 import {
   WorksheetPipelineEmitter,
@@ -322,9 +325,7 @@ export class WorksheetEditService {
       );
     }
 
-    const next = this.assetService.persistableStructure(
-      setValueAtPath(structure, `${targetPath}.assetId`, assetId),
-    );
+    const next = this.assetService.applyLibraryImage(structure, targetPath, assetId);
     const updated = await this.prisma.worksheet.update({
       where: { id: worksheet.id },
       data: { structure: next as Prisma.InputJsonValue },
@@ -402,15 +403,17 @@ export class WorksheetEditService {
     const worksheet = await this.requireWorksheet(worksheetId);
     let query = options.query?.trim() || '';
     if (!query && options.path?.trim()) {
-      const node = getValueAtPath(
-        asStructureRecord(worksheet.structure),
-        options.path.trim(),
-      );
+      const structure = asStructureRecord(worksheet.structure);
+      const requested = options.path.trim();
+      const node = getValueAtPath(structure, requested);
       if (node && typeof node === 'object' && !Array.isArray(node)) {
-        const record = node as Record<string, unknown>;
-        if (typeof record.imageQuery === 'string') {
-          query = record.imageQuery;
-        }
+        query = visualQueryFromImageRecord(node as Record<string, unknown>) || '';
+      }
+      if (!query) {
+        const match = collectImageSlots(structure).find(
+          (slot) => slot.path === requested || slot.slotId === requested,
+        );
+        query = match?.imageQuery || '';
       }
     }
     if (!query) {
@@ -421,6 +424,103 @@ export class WorksheetEditService {
     }
     const results = await this.assetService.searchCandidates(query, options.limit);
     return { query, results };
+  }
+
+  public async uploadImage(
+    worksheetId: string,
+    path: string,
+    file: { buffer: Buffer; mimetype?: string; originalname?: string; size?: number },
+  ): Promise<{
+    path: string;
+    userUploadedKey: string;
+    imageUrl: string;
+    contentType: string;
+  }> {
+    const worksheet = await this.requireWorksheet(worksheetId);
+    const targetPath = path.trim();
+    if (!targetPath) {
+      throw new WorksheetException('INVALID_FIELD', 'path is required');
+    }
+    const parent = getValueAtPath(asStructureRecord(worksheet.structure), targetPath);
+    if (!parent || typeof parent !== 'object' || Array.isArray(parent)) {
+      throw new WorksheetException(
+        'INVALID_FIELD',
+        `Field path "${targetPath}" is not an image slot`,
+      );
+    }
+    const uploaded = await this.assetService.uploadUserImage(worksheetId, file);
+    return {
+      path: targetPath,
+      userUploadedKey: uploaded.key,
+      imageUrl: uploaded.imageUrl,
+      contentType: uploaded.contentType,
+    };
+  }
+
+  public async loadUserUpload(worksheetId: string, uploadId: string) {
+    await this.requireWorksheet(worksheetId);
+    return this.assetService.loadUserUpload(worksheetId, uploadId);
+  }
+
+  public async saveEdits(
+    worksheetId: string,
+    dto: SaveWorksheetDto,
+  ): Promise<GenerateWorksheetResponse> {
+    const worksheet = await this.requireWorksheet(worksheetId);
+    const template = await this.templateService.getById(worksheet.templateId);
+    const aiConfig = this.templateService.parseAiConfig(template);
+    let next = asStructureRecord(worksheet.structure);
+
+    for (const field of dto.fields ?? []) {
+      const path = field.path?.trim();
+      if (!path) continue;
+      if (typeof field.value === 'string' && looksLikeHtml(field.value)) {
+        throw new WorksheetException(
+          'INVALID_STRUCTURE',
+          `${path} must be inserted as text, not HTML`,
+        );
+      }
+      if (
+        aiConfig.editableFields?.length &&
+        !isEditableField(path, aiConfig.editableFields)
+      ) {
+        this.logger.debug(`save skipped non-editable field ${path}`);
+        continue;
+      }
+      try {
+        next = setValueAtPath(next, path, field.value);
+      } catch (error) {
+        this.logger.debug(
+          `save skipped missing field ${path}: ${getErrorMessage(error)}`,
+        );
+      }
+    }
+
+    for (const image of dto.images ?? []) {
+      const path = image.path?.trim();
+      if (!path) continue;
+      if (image.userUploadedKey?.trim()) {
+        next = this.assetService.applyUserUploadedImage(next, path, {
+          key: image.userUploadedKey.trim(),
+        });
+        continue;
+      }
+      if (image.assetId?.trim()) {
+        await this.assetService.resolveAsset(image.assetId.trim());
+        next = this.assetService.applyLibraryImage(next, path, image.assetId.trim());
+      }
+    }
+
+    next = this.validationService.validateGeneratedStructure(next, template, {
+      allowEnrichmentKeys: true,
+    });
+    next = this.assetService.persistableStructure(next);
+
+    const updated = await this.prisma.worksheet.update({
+      where: { id: worksheet.id },
+      data: { structure: next as Prisma.InputJsonValue },
+    });
+    return this.toResponse(updated, template);
   }
 
   private async requireWorksheet(worksheetId: string) {

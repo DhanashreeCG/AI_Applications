@@ -42,6 +42,28 @@ describe('WorksheetEditService', () => {
     ),
     persistableStructure: (value: Record<string, unknown>) => value,
     resolveAsset: jest.fn(),
+    applyLibraryImage: jest.fn(
+      (structure: Record<string, unknown>, path: string, assetId: string) => {
+        const items = [...((structure.items as Array<Record<string, unknown>>) ?? [])];
+        if (path.startsWith('items')) {
+          items[0] = { ...(items[0] ?? {}), assetId };
+          return { ...structure, items };
+        }
+        return { ...structure, [path]: { ...((structure[path] as object) ?? {}), assetId } };
+      },
+    ),
+    applyUserUploadedImage: jest.fn(
+      (structure: Record<string, unknown>, path: string, upload: { key: string }) => ({
+        ...structure,
+        [path]: {
+          ...((structure[path] as object) ?? {}),
+          assetId: null,
+          userUploadedKey: upload.key,
+        },
+        userUploadedImages: { [path]: { key: upload.key } },
+      }),
+    ),
+    uploadUserImage: jest.fn(),
   };
 
   const eventEmitter = { emit: jest.fn() };
@@ -136,5 +158,22 @@ describe('WorksheetEditService', () => {
     expect(
       (result.structure.items as Array<Record<string, unknown>>)[0].assetId,
     ).toBe('asset-999');
+  });
+
+  it('saves text and image replacements in one write', async () => {
+    assetService.resolveAsset.mockResolvedValue({ assetId: 'new-asset' });
+
+    const result = await service.saveEdits('ws-1', {
+      fields: [{ path: 'instruction', value: 'Count the fruit.' }],
+      images: [{ path: 'items[0]', assetId: 'new-asset' }],
+    });
+
+    expect(assetService.applyLibraryImage).toHaveBeenCalledWith(
+      expect.objectContaining({ instruction: 'Count the fruit.' }),
+      'items[0]',
+      'new-asset',
+    );
+    expect(prisma.worksheet.update).toHaveBeenCalled();
+    expect(result.structure.instruction).toBe('Count the fruit.');
   });
 });

@@ -89,6 +89,7 @@ export interface AppConfig {
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
     imagePickerLimit: number;
+    userUploadS3Prefix: string;
     generateCountDefault: number;
     generateCountMax: number;
     listPageSize: number;
@@ -346,9 +347,13 @@ export default (): AppConfig => ({
       10,
     ),
     imagePickerLimit: parseInt(
-      process.env.WORKSHEET_IMAGE_PICKER_LIMIT || '12',
+      process.env.WORKSHEET_IMAGE_PICKER_LIMIT || '10',
       10,
     ),
+    userUploadS3Prefix: envTrim(
+      'WORKSHEET_USER_UPLOAD_S3_PREFIX',
+      'worksheets/uploads',
+    ).replace(/\/$/, '') || 'worksheets/uploads',
     generateCountDefault: parseInt(
       process.env.WORKSHEET_GENERATE_COUNT_DEFAULT || '1',
       10,

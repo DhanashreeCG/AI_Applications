@@ -3,6 +3,7 @@ import { WorksheetException } from '../errors/worksheet.exception';
 import {
   ENRICHMENT_KEYS,
   TRANSIENT_ASSET_KEYS,
+  USER_UPLOADED_IMAGES_KEY,
 } from '../constants/worksheet.constants';
 import { ImageSlotRef, JsonSchemaNode } from '../types/worksheet.types';
 
@@ -265,6 +266,7 @@ const SKIP_IMAGE_WALK_KEYS = new Set([
   'ai_config',
   'aiConfig',
   'meta',
+  USER_UPLOADED_IMAGES_KEY,
 ]);
 
 export function looksLikeHtml(value: string): boolean {
@@ -598,4 +600,51 @@ export function isEditableField(
   }
   const first = parseFieldPath(normalized)[0];
   return typeof first === 'string' && editableFields.includes(first);
+}
+
+export function patchImageSlot(
+  structure: Record<string, unknown>,
+  path: string,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const current = getValueAtPath(structure, path);
+  if (!current || typeof current !== 'object' || Array.isArray(current)) {
+    throw new WorksheetException(
+      'INVALID_FIELD',
+      `Field path "${path}" is not an image slot`,
+    );
+  }
+  const nextSlot: Record<string, unknown> = {
+    ...(current as Record<string, unknown>),
+    ...patch,
+  };
+  if (patch.assetId === null) {
+    nextSlot.assetId = null;
+  }
+  if (!patch.userUploadedKey) {
+    delete nextSlot.userUploadedKey;
+  }
+  return setValueAtPath(structure, path, nextSlot);
+}
+
+export function setUserUploadedImageIndex(
+  structure: Record<string, unknown>,
+  path: string,
+  entry: { key: string; contentType?: string } | null,
+): Record<string, unknown> {
+  const current = isRecord(structure[USER_UPLOADED_IMAGES_KEY])
+    ? { ...(structure[USER_UPLOADED_IMAGES_KEY] as Record<string, unknown>) }
+    : {};
+  if (entry) {
+    current[path] = entry;
+  } else {
+    delete current[path];
+  }
+  const next = { ...structure };
+  if (Object.keys(current).length) {
+    next[USER_UPLOADED_IMAGES_KEY] = current;
+  } else {
+    delete next[USER_UPLOADED_IMAGES_KEY];
+  }
+  return next;
 }

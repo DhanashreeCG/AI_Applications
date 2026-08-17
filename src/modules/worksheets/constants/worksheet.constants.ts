@@ -7,7 +7,13 @@ export const WORKSHEET_WORKFLOW_EDIT = 'worksheets_edit';
 export const WORKSHEET_WORKFLOW_RENDER = 'worksheets_render';
 export const GENERIC_RENDERER_TYPE = 'generic';
 /** Keys allowed on persisted structure besides the template schema. */
-export const ENRICHMENT_KEYS = new Set(['assetId']);
+export const ENRICHMENT_KEYS = new Set([
+  'assetId',
+  'userUploadedKey',
+  'userUploadedImages',
+]);
+
+export const USER_UPLOADED_IMAGES_KEY = 'userUploadedImages';
 
 /** Resolved at preview/render only — never written to Worksheet.structure. */
 export const TRANSIENT_ASSET_KEYS = [
