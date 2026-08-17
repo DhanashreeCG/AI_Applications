@@ -44,6 +44,7 @@ import {
   UpdateWorksheetFieldDto,
 } from './dto/update-worksheet-field.dto';
 import { WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES } from './constants/worksheet.constants';
+import { WorksheetException } from './errors/worksheet.exception';
 import { WorksheetEditService } from './services/worksheet-edit.service';
 import { WorksheetGenerationService } from './services/worksheet-generation.service';
 import { WorksheetRenderService } from './services/worksheet-render.service';
@@ -229,10 +230,49 @@ export class WorksheetsController {
     @Headers('x-trace-id') traceId?: string,
     @Headers('x-correlation-id') correlationId?: string,
   ) {
-    return this.renderService.render(worksheetId, dto.format, {
+    const { buffer: _buffer, ...result } = await this.renderService.render(
+      worksheetId,
+      dto.format,
+      {
+        correlationId: correlationId || traceId,
+        mode: dto.mode,
+      },
+    );
+    return result;
+  }
+
+  @Post(':worksheetId/download')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Render a worksheet and download the webp or pdf as an attachment',
+  })
+  async download(
+    @Param('worksheetId') worksheetId: string,
+    @Body() dto: RenderWorksheetDto,
+    @Res({ passthrough: true }) response: Response,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ): Promise<StreamableFile> {
+    const result = await this.renderService.render(worksheetId, dto.format, {
       correlationId: correlationId || traceId,
-      mode: dto.mode,
+      mode: dto.mode ?? 'export',
     });
+    if (!result.buffer || (dto.format !== 'webp' && dto.format !== 'pdf')) {
+      throw new WorksheetException(
+        'UNSUPPORTED_FORMAT',
+        'Download is only available for webp and pdf',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const fileName = `worksheet-${worksheetId}.${result.format}`;
+    const contentType =
+      result.format === 'pdf' ? 'application/pdf' : 'image/webp';
+    response.setHeader('Content-Type', contentType);
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fileName}"`,
+    );
+    return new StreamableFile(result.buffer);
   }
 
   @Get(':worksheetId/preview')

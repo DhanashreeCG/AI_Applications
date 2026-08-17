@@ -640,17 +640,30 @@
 
       async function download(id, format) {
         setStatus('Preparing download…');
-        const res = await apiFetch(`/${encodeURIComponent(id)}/render`, {
+        const res = await apiFetch(`/${encodeURIComponent(id)}/download`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ format, mode: 'export' }),
         });
-        const body = await res.json();
-        if (!res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || contentType.includes('application/json')) {
+          const body = await res.json().catch(() => ({}));
           setStatus(body?.error?.message || 'Download failed');
           return;
         }
-        if (body.uri) window.open(body.uri, '_blank');
+        const blob = await res.blob();
+        let filename = format === 'pdf' ? 'worksheet.pdf' : 'worksheet.webp';
+        const disposition = res.headers.get('content-disposition') || '';
+        const named = /filename="?([^"]+)"?/i.exec(disposition);
+        if (named?.[1]) filename = named[1];
+        const href = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = href;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(href);
         setStatus('');
       }
 

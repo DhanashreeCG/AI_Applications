@@ -49,6 +49,7 @@ export interface RenderWorksheetResult {
   storageKey?: string;
   uri?: string;
   outputId?: string;
+  buffer?: Buffer;
 }
 
 export interface PreviewWorksheetResult {
@@ -431,6 +432,7 @@ export class WorksheetRenderService {
             uri,
             outputId: output.id,
             canvas,
+            buffer,
           };
         },
         {
