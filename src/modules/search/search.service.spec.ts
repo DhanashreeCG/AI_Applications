@@ -5,6 +5,7 @@ import { OpenAiEmbeddingProvider } from '../ai/providers/openai-embedding.provid
 import { RedisCacheService } from '../cache/redis-cache.service';
 import { VectorStorageService } from './vector-storage.service';
 import { SearchService } from './search.service';
+import { LetterQueryDetectorService } from './letter-query-detector.service';
 import { OPENAI_EMBEDDING_DIMENSIONS } from '../ai/constants/embedding.constants';
 
 describe('SearchService', () => {
@@ -17,6 +18,9 @@ describe('SearchService', () => {
 
   const mockPrisma = {
     asset: {
+      findMany: jest.fn(),
+    },
+    assetMetadata: {
       findMany: jest.fn(),
     },
   };
@@ -55,6 +59,7 @@ describe('SearchService', () => {
         { provide: OpenAiEmbeddingProvider, useValue: mockEmbeddingProvider },
         { provide: VectorStorageService, useValue: mockVectorStorage },
         { provide: RedisCacheService, useValue: mockRedisCache },
+        LetterQueryDetectorService,
       ],
     }).compile();
 
@@ -204,5 +209,127 @@ describe('SearchService', () => {
     const result = await service.flushCache('search');
 
     expect(result).toEqual({ deleted: 3, scope: 'search' });
+  });
+
+  function letterAsset(id: string, objects: string[]) {
+    return {
+      id,
+      s3ObjectKey: `assets/${id}/original.png`,
+      mimeType: 'image/png',
+      metadata: {
+        caption: objects.join(', '),
+        orientation: 'portrait',
+        colors: ['black'],
+        styles: ['line-art'],
+        objects,
+        actions: ['tracing'],
+        ageGroups: ['3-5'],
+        grades: ['LKG'],
+        searchDescription: objects.join(', '),
+      },
+    };
+  }
+
+  it('should keep only capital-letter-a assets for "Letter A"', async () => {
+    mockEmbeddingProvider.generateEmbedding.mockResolvedValue({
+      embedding: sampleEmbedding,
+      dimensions: 1536,
+      provider: 'openai',
+      model: 'text-embedding-3-small',
+      sourceTextHash: 'query-hash',
+    });
+    mockVectorStorage.searchSimilar.mockResolvedValue([
+      { assetId: 'letter-l', embeddingId: 'e1', distance: 0.05, similarity: 0.95 },
+      { assetId: 'letter-a', embeddingId: 'e2', distance: 0.2, similarity: 0.8 },
+    ]);
+    mockPrisma.asset.findMany.mockResolvedValue([
+      letterAsset('letter-l', ['capital letter l']),
+      letterAsset('letter-a', ['capital letter a']),
+    ]);
+
+    const response = await service.search({ query: 'Letter A', limit: 5 });
+
+    expect(response.total).toBe(1);
+    expect(response.results[0].assetId).toBe('letter-a');
+    expect(response.results[0].objects).toContain('capital letter a');
+  });
+
+  it('should keep only lowercase-letter-a assets for "letter a"', async () => {
+    mockEmbeddingProvider.generateEmbedding.mockResolvedValue({
+      embedding: sampleEmbedding,
+      dimensions: 1536,
+      provider: 'openai',
+      model: 'text-embedding-3-small',
+      sourceTextHash: 'query-hash',
+    });
+    mockVectorStorage.searchSimilar.mockResolvedValue([
+      { assetId: 'upper-a', embeddingId: 'e1', distance: 0.1, similarity: 0.9 },
+      { assetId: 'lower-a', embeddingId: 'e2', distance: 0.2, similarity: 0.8 },
+    ]);
+    mockPrisma.asset.findMany.mockResolvedValue([
+      letterAsset('upper-a', ['capital letter a']),
+      letterAsset('lower-a', ['lowercase letter a']),
+    ]);
+
+    const response = await service.search({ query: 'letter a', limit: 5 });
+
+    expect(response.results.map((r) => r.assetId)).toEqual(['lower-a']);
+  });
+
+  it('should not apply letter filtering for "A cat"', async () => {
+    mockEmbeddingProvider.generateEmbedding.mockResolvedValue({
+      embedding: sampleEmbedding,
+      dimensions: 1536,
+      provider: 'openai',
+      model: 'text-embedding-3-small',
+      sourceTextHash: 'query-hash',
+    });
+    mockVectorStorage.searchSimilar.mockResolvedValue([
+      { assetId: 'cat', embeddingId: 'e1', distance: 0.1, similarity: 0.9 },
+    ]);
+    mockPrisma.asset.findMany.mockResolvedValue([
+      letterAsset('cat', ['cat']),
+    ]);
+
+    const response = await service.search({ query: 'A cat', limit: 5 });
+
+    expect(response.results[0].assetId).toBe('cat');
+  });
+
+  it('should fall back to objects lookup when the letter asset is outside the vector window', async () => {
+    mockEmbeddingProvider.generateEmbedding.mockResolvedValue({
+      embedding: sampleEmbedding,
+      dimensions: 1536,
+      provider: 'openai',
+      model: 'text-embedding-3-small',
+      sourceTextHash: 'query-hash',
+    });
+    mockVectorStorage.searchSimilar.mockResolvedValue([
+      { assetId: 'wrong-1', embeddingId: 'e1', distance: 0.1, similarity: 0.9 },
+      { assetId: 'wrong-2', embeddingId: 'e2', distance: 0.2, similarity: 0.8 },
+      { assetId: 'wrong-3', embeddingId: 'e3', distance: 0.3, similarity: 0.7 },
+    ]);
+    mockPrisma.asset.findMany.mockResolvedValueOnce([
+      letterAsset('wrong-1', ['capital letter l']),
+      letterAsset('wrong-2', ['capital letter m']),
+      letterAsset('wrong-3', ['capital letter n']),
+    ]);
+    const fallback = letterAsset('letter-b', ['capital letter b']);
+    mockPrisma.assetMetadata.findMany.mockResolvedValueOnce([
+      { ...fallback.metadata, asset: fallback },
+    ]);
+
+    const response = await service.search({
+      query: 'capital B worksheet',
+      limit: 5,
+    });
+
+    expect(mockPrisma.asset.findMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.assetMetadata.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { objects: { hasSome: ['capital letter b'] } },
+      }),
+    );
+    expect(response.results[0].assetId).toBe('letter-b');
   });
 });
