@@ -73,6 +73,7 @@ describe('WorksheetRenderService', () => {
           `http://localhost:5000/worksheets/assets/${id}/image`,
       } as never,
       { normalize: jest.fn() } as never,
+      { loadImage: jest.fn() } as never,
       { emit: jest.fn() } as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue({

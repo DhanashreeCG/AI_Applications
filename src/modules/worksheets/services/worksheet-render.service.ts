@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
 import { BrowserPoolService } from '../../flashcards/flashcard-renderer/browser/browser-pool.service';
+import { AssetImageService } from '../../flashcards/services/asset-image.service';
 import {
   WORKSHEET_WORKFLOW_RENDER,
 } from '../constants/worksheet.constants';
@@ -27,9 +28,13 @@ import {
   runTrackedStage,
 } from '../telemetry/worksheet-pipeline.events';
 import { WorksheetRendererRegistry } from '../renderers/worksheet-renderer.registry';
-import { injectBaseHref } from '../renderers/generic-worksheet.renderer';
 import { WorksheetAssetService } from './worksheet-asset.service';
 import { WorksheetFieldMetadataService } from './worksheet-field-metadata.service';
+import {
+  collectAssetIdsFromHtml,
+  injectCaptureCss,
+  replaceAssetUrlsWithDataUris,
+} from '../utils/inline-worksheet-assets.util';
 import {
   WorksheetTemplateRecord,
   WorksheetTemplateService,
@@ -73,6 +78,7 @@ export class WorksheetRenderService {
   private readonly keyPrefix: string;
   private readonly bucket?: string;
   private readonly signedUrlTtlSeconds: number;
+  private readonly assetImagePath: string;
   private readonly emitter: WorksheetPipelineEmitter;
 
   constructor(
@@ -84,6 +90,7 @@ export class WorksheetRenderService {
     private readonly s3StorageService: S3StorageService,
     private readonly assetService: WorksheetAssetService,
     private readonly fieldMetadataService: WorksheetFieldMetadataService,
+    private readonly assetImageService: AssetImageService,
     eventEmitter: EventEmitter2,
   ) {
     this.enabled =
@@ -105,6 +112,10 @@ export class WorksheetRenderService {
     this.signedUrlTtlSeconds =
       this.configService.get<number>('worksheets.renderer.signedUrlTtlSeconds') ??
       3600;
+    this.assetImagePath = (
+      this.configService.get<string>('worksheets.assetImagePath') ??
+      '/worksheets/assets'
+    ).replace(/\/$/, '');
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
   }
 
@@ -469,6 +480,47 @@ export class WorksheetRenderService {
     return 'export';
   }
 
+  private async prepareHtmlForCapture(html: string): Promise<string> {
+    const ids = collectAssetIdsFromHtml(html, this.assetImagePath);
+    const dataUris = new Map<string, string>();
+    for (const assetId of ids) {
+      try {
+        const { buffer, mimeType } = await this.assetImageService.loadImage(assetId);
+        const type = mimeType?.trim() || 'image/png';
+        dataUris.set(assetId, `data:${type};base64,${buffer.toString('base64')}`);
+        this.logger.log(
+          `inlined worksheet asset ${assetId} bytes=${buffer.length} mime=${type}`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Could not inline worksheet asset ${assetId}: ${getErrorMessage(error)}`,
+        );
+      }
+    }
+    return injectCaptureCss(
+      replaceAssetUrlsWithDataUris(html, dataUris, this.assetImagePath),
+    );
+  }
+
+  private async waitForPaint(page: {
+    evaluate: (fn: () => Promise<void> | void) => Promise<unknown>;
+  }): Promise<void> {
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await Promise.all(
+        Array.from(document.images).map(
+          (img) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise<void>((resolve) => {
+                  img.addEventListener('load', () => resolve(), { once: true });
+                  img.addEventListener('error', () => resolve(), { once: true });
+                }),
+        ),
+      );
+    });
+  }
+
   private async renderWebp(
     html: string,
     width: number,
@@ -478,10 +530,14 @@ export class WorksheetRenderService {
     const page = await browser.newPage();
     try {
       await page.setViewportSize({ width, height });
-      await page.setContent(injectBaseHref(html, this.apiBaseUrl), {
-        waitUntil: 'networkidle',
+      const markup = await this.prepareHtmlForCapture(html);
+      await page.setContent(markup, { waitUntil: 'load', timeout: 30000 });
+      await this.waitForPaint(page);
+      const screenshot = await page.screenshot({
+        type: 'webp',
+        fullPage: false,
+        omitBackground: false,
       });
-      const screenshot = await page.screenshot({ type: 'webp', fullPage: false });
       return screenshot;
     } finally {
       await page.close();
@@ -496,13 +552,15 @@ export class WorksheetRenderService {
     const browser = await this.browserPool.getBrowser();
     const page = await browser.newPage();
     try {
-      await page.setContent(injectBaseHref(html, this.apiBaseUrl), {
-        waitUntil: 'networkidle',
-      });
+      await page.setViewportSize({ width, height });
+      const markup = await this.prepareHtmlForCapture(html);
+      await page.setContent(markup, { waitUntil: 'load', timeout: 30000 });
+      await this.waitForPaint(page);
       const pdf = await page.pdf({
         width: `${width}px`,
         height: `${height}px`,
         printBackground: true,
+        preferCSSPageSize: false,
         margin: { top: '0', right: '0', bottom: '0', left: '0' },
       });
       return Buffer.from(pdf);
