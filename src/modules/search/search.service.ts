@@ -14,8 +14,11 @@ import {
   SearchResultItem,
 } from './interfaces/search-result.interface';
 import { matchesMetadataFilters } from './utils/metadata-filter.util';
-import { LetterQueryDetectorService } from './letter-query-detector.service';
-import { canonicalObjectStrings } from './letter-object-mapper';
+import { LetterEntity, LetterQueryDetectorService } from './letter-query-detector.service';
+import {
+  canonicalObjectStrings,
+  matchesCanonicalLetterObjects,
+} from './letter-object-mapper';
 
 /** Vector window used before in-memory `objects` letter filtering. */
 export const LETTER_CANDIDATE_K = 75;
@@ -162,10 +165,9 @@ export class SearchService {
 
     if (entity) {
       const targets = canonicalObjectStrings(entity).map((s) => s.toLowerCase());
-      const letterFiltered = rankedResults.filter((item) => {
-        const objs = (item.objects ?? []).map((o) => o.toLowerCase());
-        return targets.some((t) => objs.includes(t));
-      });
+      const letterFiltered = rankedResults.filter((item) =>
+        matchesCanonicalLetterObjects(item.objects, entity),
+      );
 
       if (letterFiltered.length > 0) {
         finalResults = letterFiltered;
@@ -173,7 +175,7 @@ export class SearchService {
         this.logger.warn(
           `Letter filter empty for "${query}" (${targets.join(', ')}); falling back to objects lookup`,
         );
-        finalResults = await this.findByCanonicalObjects(targets, dto, limit);
+        finalResults = await this.findByCanonicalObjects(entity, dto, limit);
       }
     }
 
@@ -188,13 +190,17 @@ export class SearchService {
   }
 
   private async findByCanonicalObjects(
-    targets: string[],
+    entity: LetterEntity,
     dto: SearchAssetsDto,
     limit: number,
   ): Promise<SearchResultItem[]> {
+    const targets = canonicalObjectStrings(entity).map((s) => s.toLowerCase());
     const rows = await this.prisma.assetMetadata.findMany({
       where: {
-        objects: { hasSome: targets },
+        objects:
+          entity.case === 'both'
+            ? { hasEvery: targets }
+            : { hasSome: targets },
       },
       include: { asset: true },
       take: Math.max(limit * 5, 20),
@@ -205,8 +211,7 @@ export class SearchService {
       if (!matchesMetadataFilters(row, dto.filters)) {
         continue;
       }
-      const objs = row.objects.map((o) => o.toLowerCase());
-      if (!targets.some((t) => objs.includes(t))) {
+      if (!matchesCanonicalLetterObjects(row.objects, entity)) {
         continue;
       }
       results.push(

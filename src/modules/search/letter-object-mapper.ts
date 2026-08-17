@@ -12,3 +12,26 @@ export function canonicalObjectStrings(entity: LetterEntity): string[] {
       return [`capital letter ${l}`, `lowercase letter ${l}`];
   }
 }
+
+/** Combined (Aa) assets carry both labels; single-case assets carry exactly one. */
+export function matchesCanonicalLetterObjects(
+  objects: string[] | undefined,
+  entity: LetterEntity,
+): boolean {
+  const objs = (objects ?? []).map((o) => o.toLowerCase());
+  const letter = entity.letter.toLowerCase();
+  const capital = `capital letter ${letter}`;
+  const lower = `lowercase letter ${letter}`;
+  const hasCapital = objs.includes(capital);
+  const hasLower = objs.includes(lower);
+
+  switch (entity.case) {
+    case 'upper':
+      return hasCapital && !hasLower;
+    case 'lower':
+      return hasLower && !hasCapital;
+    case 'both':
+    default:
+      return hasCapital && hasLower;
+  }
+}

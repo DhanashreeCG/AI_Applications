@@ -230,7 +230,7 @@ describe('SearchService', () => {
     };
   }
 
-  it('should keep only capital-letter-a assets for "Letter A"', async () => {
+  it('should keep only combined Aa assets for "Letter A"', async () => {
     mockEmbeddingProvider.generateEmbedding.mockResolvedValue({
       embedding: sampleEmbedding,
       dimensions: 1536,
@@ -240,21 +240,46 @@ describe('SearchService', () => {
     });
     mockVectorStorage.searchSimilar.mockResolvedValue([
       { assetId: 'letter-l', embeddingId: 'e1', distance: 0.05, similarity: 0.95 },
-      { assetId: 'letter-a', embeddingId: 'e2', distance: 0.2, similarity: 0.8 },
+      { assetId: 'capital-a', embeddingId: 'e2', distance: 0.1, similarity: 0.9 },
+      { assetId: 'combined-a', embeddingId: 'e3', distance: 0.2, similarity: 0.8 },
     ]);
     mockPrisma.asset.findMany.mockResolvedValue([
       letterAsset('letter-l', ['capital letter l']),
-      letterAsset('letter-a', ['capital letter a']),
+      letterAsset('capital-a', ['capital letter a']),
+      letterAsset('combined-a', ['capital letter a', 'lowercase letter a']),
     ]);
 
     const response = await service.search({ query: 'Letter A', limit: 5 });
 
-    expect(response.total).toBe(1);
-    expect(response.results[0].assetId).toBe('letter-a');
-    expect(response.results[0].objects).toContain('capital letter a');
+    expect(response.results.map((r) => r.assetId)).toEqual(['combined-a']);
   });
 
-  it('should keep only lowercase-letter-a assets for "letter a"', async () => {
+  it('should keep only capital-letter-a assets for "capital letter A"', async () => {
+    mockEmbeddingProvider.generateEmbedding.mockResolvedValue({
+      embedding: sampleEmbedding,
+      dimensions: 1536,
+      provider: 'openai',
+      model: 'text-embedding-3-small',
+      sourceTextHash: 'query-hash',
+    });
+    mockVectorStorage.searchSimilar.mockResolvedValue([
+      { assetId: 'combined-a', embeddingId: 'e1', distance: 0.1, similarity: 0.9 },
+      { assetId: 'upper-a', embeddingId: 'e2', distance: 0.2, similarity: 0.8 },
+    ]);
+    mockPrisma.asset.findMany.mockResolvedValue([
+      letterAsset('combined-a', ['capital letter a', 'lowercase letter a']),
+      letterAsset('upper-a', ['capital letter a']),
+    ]);
+
+    const response = await service.search({
+      query: 'capital letter A',
+      limit: 5,
+    });
+
+    expect(response.results.map((r) => r.assetId)).toEqual(['upper-a']);
+  });
+
+  it('should keep only lowercase-letter-a assets for "lowercase letter a"', async () => {
     mockEmbeddingProvider.generateEmbedding.mockResolvedValue({
       embedding: sampleEmbedding,
       dimensions: 1536,
@@ -265,13 +290,18 @@ describe('SearchService', () => {
     mockVectorStorage.searchSimilar.mockResolvedValue([
       { assetId: 'upper-a', embeddingId: 'e1', distance: 0.1, similarity: 0.9 },
       { assetId: 'lower-a', embeddingId: 'e2', distance: 0.2, similarity: 0.8 },
+      { assetId: 'combined-a', embeddingId: 'e3', distance: 0.3, similarity: 0.7 },
     ]);
     mockPrisma.asset.findMany.mockResolvedValue([
       letterAsset('upper-a', ['capital letter a']),
       letterAsset('lower-a', ['lowercase letter a']),
+      letterAsset('combined-a', ['capital letter a', 'lowercase letter a']),
     ]);
 
-    const response = await service.search({ query: 'letter a', limit: 5 });
+    const response = await service.search({
+      query: 'lowercase letter a',
+      limit: 5,
+    });
 
     expect(response.results.map((r) => r.assetId)).toEqual(['lower-a']);
   });

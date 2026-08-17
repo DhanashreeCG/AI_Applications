@@ -4,12 +4,12 @@ import { canonicalObjectStrings } from './letter-object-mapper';
 describe('LetterQueryDetectorService', () => {
   const detector = new LetterQueryDetectorService();
 
-  it('detects "Letter A" as uppercase A', () => {
-    expect(detector.detect('Letter A')).toEqual({ letter: 'A', case: 'upper' });
+  it('defaults "Letter A" to combined upper+lower', () => {
+    expect(detector.detect('Letter A')).toEqual({ letter: 'A', case: 'both' });
   });
 
-  it('detects "letter a" as lowercase A', () => {
-    expect(detector.detect('letter a')).toEqual({ letter: 'A', case: 'lower' });
+  it('defaults "letter a" to combined upper+lower', () => {
+    expect(detector.detect('letter a')).toEqual({ letter: 'A', case: 'both' });
   });
 
   it('does not detect "Aa" alone', () => {
@@ -20,6 +20,13 @@ describe('LetterQueryDetectorService', () => {
     expect(detector.detect('capital B worksheet')).toEqual({
       letter: 'B',
       case: 'upper',
+    });
+  });
+
+  it('detects explicit lowercase', () => {
+    expect(detector.detect('lowercase letter a')).toEqual({
+      letter: 'A',
+      case: 'lower',
     });
   });
 
@@ -38,19 +45,15 @@ describe('LetterQueryDetectorService', () => {
   );
 
   it.each(
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').flatMap((letter) => [
-      {
-        query: `Letter ${letter}`,
-        expected: { letter, case: 'upper' as const },
-        objects: [`capital letter ${letter.toLowerCase()}`],
-      },
-      {
-        query: `letter ${letter.toLowerCase()}`,
-        expected: { letter, case: 'lower' as const },
-        objects: [`lowercase letter ${letter.toLowerCase()}`],
-      },
-    ]),
-  )('detects $query for all 26 letters × both cases', ({ query, expected, objects }) => {
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((letter) => ({
+      query: `Letter ${letter}`,
+      expected: { letter, case: 'both' as const },
+      objects: [
+        `capital letter ${letter.toLowerCase()}`,
+        `lowercase letter ${letter.toLowerCase()}`,
+      ],
+    })),
+  )('defaults $query to combined objects', ({ query, expected, objects }) => {
     const entity = detector.detect(query);
     expect(entity).toEqual(expected);
     expect(canonicalObjectStrings(entity!)).toEqual(objects);
