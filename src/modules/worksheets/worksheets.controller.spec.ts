@@ -22,6 +22,7 @@ describe('WorksheetsController', () => {
     saveEdits: jest.fn(),
     uploadImage: jest.fn(),
     loadUserUpload: jest.fn(),
+    regenerate: jest.fn(),
   };
   const renderService = {
     render: jest.fn(),

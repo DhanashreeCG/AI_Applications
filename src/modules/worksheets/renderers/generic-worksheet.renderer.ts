@@ -21,6 +21,13 @@ const FIELD_ALIASES: Record<string, string> = {
 
 const EDITOR_CHROME = `
 <style data-editor-chrome="true">
+body.editor-mode:not(.edit-mode) [data-editor-control],
+body.editor-mode:not(.edit-mode) .ai-pencil,
+body.editor-mode:not(.edit-mode) .img-camera-btn,
+body.editor-mode:not(.edit-mode) .img-zone-box {
+  display: none !important;
+  pointer-events: none !important;
+}
 body.editor-mode.edit-mode [data-editable],
 body.editor-mode.edit-mode img[data-image-slot],
 body.editor-mode.edit-mode .worksheet-image {
@@ -45,12 +52,47 @@ const EDITOR_BRIDGE = `
   function emit(type, detail) {
     try { parent.postMessage(Object.assign({ type: type }, detail), '*'); } catch (e) {}
   }
+  function applySrc(el, src) {
+    if (!el || !src) return;
+    if (el.tagName === 'IMG') {
+      el.setAttribute('src', src);
+      el.src = src;
+      return;
+    }
+    var nested = el.querySelector && el.querySelector('img');
+    if (nested) {
+      nested.setAttribute('src', src);
+      nested.src = src;
+    }
+    try { el.style.backgroundImage = 'url("' + src.replace(/"/g, '\\\\"') + '")'; } catch (e) {}
+  }
+  window.addEventListener('message', function (event) {
+    var data = event.data || {};
+    if (data.type !== 'worksheet-set-image') return;
+    var nodes = [];
+    if (data.path) {
+      document.querySelectorAll('[data-field-path="' + data.path + '"]').forEach(function (n) { nodes.push(n); });
+    }
+    if (data.slotId) {
+      document.querySelectorAll('[data-image-slot="' + data.slotId + '"]').forEach(function (n) { nodes.push(n); });
+    }
+    if (!nodes.length) {
+      document.querySelectorAll('img.worksheet-image, img[data-image-slot]').forEach(function (n) { nodes.push(n); });
+    }
+    nodes.forEach(function (el) { applySrc(el, data.src); });
+  });
   document.addEventListener('click', function (event) {
     var target = event.target;
     if (!(target instanceof Element)) return;
-    var slot = target.closest('[data-image-slot], [data-editor-control][data-image-slot]');
+    if (!document.body.classList.contains('edit-mode')) return;
+    var pencil = target.closest('[data-pencil-for], .ai-pencil');
+    if (pencil && pencil.getAttribute('data-pencil-for')) {
+      emit('worksheet-ai-field', { path: pencil.getAttribute('data-pencil-for') });
+      return;
+    }
+    var slot = target.closest('[data-image-slot], [data-editor-control][data-image-slot], .worksheet-image');
     if (slot) {
-      if (!document.body.classList.contains('edit-mode')) return;
+      event.preventDefault();
       emit('worksheet-replace-image', {
         slotId: slot.getAttribute('data-image-slot'),
         path: slot.getAttribute('data-field-path') || undefined

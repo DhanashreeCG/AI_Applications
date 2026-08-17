@@ -42,6 +42,7 @@ import {
 import { RenderWorksheetDto } from './dto/render-worksheet.dto';
 import { ReplaceWorksheetImageDto } from './dto/replace-worksheet-image.dto';
 import { SaveWorksheetDto } from './dto/save-worksheet.dto';
+import { RegenerateWorksheetDto } from './dto/regenerate-worksheet.dto';
 import {
   SearchWorksheetImagesQueryDto,
   UpdateWorksheetFieldDto,
@@ -363,6 +364,19 @@ export class WorksheetsController {
     @Body() dto: SaveWorksheetDto,
   ) {
     return this.editService.saveEdits(worksheetId, dto);
+  }
+
+  @Post(':worksheetId/regenerate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Regenerate this worksheet in place from new requirements, keeping the same template',
+  })
+  async regenerate(
+    @Param('worksheetId') worksheetId: string,
+    @Body() dto: RegenerateWorksheetDto,
+  ) {
+    return this.editService.regenerate(worksheetId, dto);
   }
 
   @Post(':worksheetId/images')

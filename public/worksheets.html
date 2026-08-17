@@ -280,6 +280,35 @@
         width: 100%; border: 1.5px solid var(--line); border-radius: 10px; padding: 10px; font: inherit;
       }
       .empty { text-align: center; color: var(--muted); padding: 40px 0; grid-column: 1 / -1; }
+      .ai-panel {
+        width: min(760px, 94vw);
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .ai-panel-body { overflow: auto; padding-right: 4px; }
+      .ai-field-card {
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 12px;
+        background: #fbf8ff;
+      }
+      .ai-field-card h3 {
+        margin: 0 0 8px;
+        font-size: 14px;
+        color: var(--purple);
+      }
+      .ai-field-card .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+      .ai-thumb {
+        width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: #efe6f8;
+      }
+      .regen-box {
+        border: 1.5px dashed #d8cce8;
+        border-radius: 12px;
+        padding: 14px;
+        margin-top: 8px;
+      }
     </style>
   </head>
   <body>
@@ -369,17 +398,22 @@
     </div>
 
     <div id="fieldEditModal" class="modal hidden">
-      <div class="modal-card">
-        <h2 id="fieldEditTitle">AI Regenerate</h2>
-        <label>Current text</label>
-        <textarea id="fieldEditCurrent" rows="4"></textarea>
-        <label>Prompt</label>
-        <textarea id="fieldEditInstruction" rows="2" placeholder="Enter prompt to regenerate…"></textarea>
-        <p id="fieldEditError" class="status"></p>
-        <div class="actions">
-          <button class="btn btn-ghost" id="fieldEditCancelBtn" type="button">Cancel</button>
-          <button class="btn btn-gen" id="fieldEditRegenBtn" type="button">Re-Generate</button>
-          <button class="btn btn-gen" id="fieldEditSaveBtn" type="button">Save</button>
+      <div class="modal-card ai-panel">
+        <div class="image-picker-head">
+          <h2>AI Edit</h2>
+          <button class="modal-x" id="fieldEditCancelBtn" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="ai-panel-body">
+          <div id="aiFieldsList"></div>
+          <div class="regen-box">
+            <h3 style="margin:0 0 8px;color:var(--purple);">Regenerate whole worksheet</h3>
+            <p class="image-tip">Keep this template and generate new text and images from your requirements.</p>
+            <textarea id="regenQuery" rows="3" placeholder="e.g. Make this about ocean animals, easier questions, same age group"></textarea>
+            <p id="fieldEditError" class="status"></p>
+            <div class="actions" style="margin-top:10px">
+              <button class="btn btn-gen" id="regenWorksheetBtn" type="button">✦ Regenerate worksheet</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -411,6 +445,7 @@
         lastImageSearch: { query: '', results: [], path: null },
         imagePickerTab: 'search',
         imagePickerLimit: 10,
+        imagePickFromAi: false,
       };
 
       const els = {
@@ -446,12 +481,11 @@
         uploadPane: document.getElementById('uploadPane'),
         imageUploadInput: document.getElementById('imageUploadInput'),
         fieldEditModal: document.getElementById('fieldEditModal'),
-        fieldEditCurrent: document.getElementById('fieldEditCurrent'),
-        fieldEditInstruction: document.getElementById('fieldEditInstruction'),
         fieldEditError: document.getElementById('fieldEditError'),
         fieldEditCancelBtn: document.getElementById('fieldEditCancelBtn'),
-        fieldEditRegenBtn: document.getElementById('fieldEditRegenBtn'),
-        fieldEditSaveBtn: document.getElementById('fieldEditSaveBtn'),
+        aiFieldsList: document.getElementById('aiFieldsList'),
+        regenQuery: document.getElementById('regenQuery'),
+        regenWorksheetBtn: document.getElementById('regenWorksheetBtn'),
       };
 
       function favorites() {
@@ -711,7 +745,9 @@
         applyPendingImages(doc);
       }
 
-      function openImagePicker(path, slotId) {
+      function openImagePicker(path, slotId, fromAi) {
+        if (!state.editMode && !fromAi && !state.imagePickFromAi) return;
+        state.imagePickFromAi = Boolean(fromAi || state.imagePickFromAi);
         state.selectedImageSlotId = slotId || state.selectedImageSlotId;
         state.selectedImagePath = resolveImagePath(path, slotId);
         state.selectedSearchItem = null;
@@ -838,69 +874,229 @@
           tile.appendChild(img);
           tile.appendChild(pick);
           tile.addEventListener('click', () => {
-            state.selectedSearchItem = item;
+            state.selectedSearchItem = { ...item, imageUrl: resolveUrl(item.imageUrl) };
             els.imageBank.querySelectorAll('.image-tile').forEach((node) => node.classList.remove('selected'));
             tile.classList.add('selected');
+          });
+          tile.addEventListener('dblclick', () => {
+            state.selectedSearchItem = { ...item, imageUrl: resolveUrl(item.imageUrl) };
+            if (applySelectedImageToPreview()) {
+              closeImagePicker();
+              setStatus('Image updated. Click Save to keep the change.');
+            }
           });
           els.imageBank.appendChild(tile);
         });
       }
 
+      function previewImageSrc(url) {
+        if (!url) return '';
+        if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+        const resolved = resolveUrl(url);
+        return state.imageBlobCache.get(resolved) || resolved;
+      }
+
+      function applyImageInFrame(src, path, slotId) {
+        const doc = els.worksheetFrame.contentDocument;
+        const abs = previewImageSrc(src);
+        if (doc) {
+          const slots = [];
+          if (path) doc.querySelectorAll(cssAttr('data-field-path', path)).forEach((n) => slots.push(n));
+          if (slotId) doc.querySelectorAll(cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
+          if (!slots.length) doc.querySelectorAll('img[data-image-slot], img.worksheet-image').forEach((n) => slots.push(n));
+          slots.forEach((el) => {
+            if (el.tagName === 'IMG') {
+              el.setAttribute('src', abs);
+              el.src = abs;
+            } else {
+              const nested = el.querySelector('img');
+              if (nested) {
+                nested.setAttribute('src', abs);
+                nested.src = abs;
+              }
+              el.style.backgroundImage = 'url("' + abs.replace(/"/g, '\\"') + '")';
+            }
+          });
+        }
+        try {
+          els.worksheetFrame.contentWindow.postMessage({
+            type: 'worksheet-set-image',
+            src: abs,
+            path: path || undefined,
+            slotId: slotId || undefined,
+          }, '*');
+        } catch {}
+      }
+
       function applyPendingImages(doc) {
-        if (!doc) return;
         Object.entries(state.pendingImageReplacements).forEach(([path, item]) => {
-          const slot = findImageSlot(doc, path, item.slotId || state.selectedImageSlotId);
-          if (!slot || !item?.imageUrl) return;
-          const resolved = item.imageUrl.startsWith('blob:') ? item.imageUrl : resolveUrl(item.imageUrl);
-          slot.src = state.imageBlobCache.get(resolved) || resolved;
+          if (!item?.imageUrl) return;
+          applyImageInFrame(item.imageUrl, path, item.slotId || state.selectedImageSlotId);
         });
       }
 
       function applySelectedImageToPreview() {
         const item = state.selectedSearchItem;
         const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId);
-        if (!item || (!item.assetId && !item.imageUrl) || !path) {
+        if (!item || (!item.assetId && !item.file && !item.imageUrl) || !path) {
           setStatus('Select an image first');
           return false;
         }
         state.selectedImagePath = path;
+        const imageUrl = item.file
+          ? (item.imageUrl || URL.createObjectURL(item.file))
+          : previewImageSrc(item.imageUrl);
         state.pendingImageReplacements[path] = {
           assetId: item.assetId || null,
           userUploadedKey: item.userUploadedKey || null,
-          imageUrl: item.imageUrl,
+          imageUrl,
           slotId: state.selectedImageSlotId,
           file: item.file || null,
         };
-        applyPendingImages(els.worksheetFrame.contentDocument);
+        applyImageInFrame(imageUrl, path, state.selectedImageSlotId);
         return true;
       }
 
-      function openFieldEditor(path) {
-        const fields = state.preview?.editableFields || [];
-        const resolved = path || state.selectedFieldPath || fields.find((field) => field.aiEditable)?.path;
-        if (!resolved) {
-          setStatus('Select a text field to AI edit');
+      function fieldValueAt(path) {
+        const structure = state.preview?.structure;
+        if (!path || !structure) return '';
+        const node = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], structure);
+        if (node == null) return '';
+        if (typeof node === 'string' || typeof node === 'number') return String(node);
+        return '';
+      }
+
+      function collectPanelFields() {
+        const seen = new Set();
+        const fields = [];
+        const add = (item) => {
+          if (!item?.path || seen.has(item.path)) return;
+          seen.add(item.path);
+          fields.push(item);
+        };
+        (state.preview?.editableFields || []).forEach((field) => {
+          if (field.type === 'array' || field.type === 'object') return;
+          add({
+            path: field.path,
+            type: field.type === 'image' ? 'image' : 'text',
+            label: field.path,
+            value: fieldValueAt(field.path),
+          });
+        });
+        const doc = els.worksheetFrame.contentDocument;
+        doc?.querySelectorAll('[data-editable]').forEach((el) => {
+          const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
+          add({ path, type: 'text', label: path, value: el.innerText.trim() || fieldValueAt(path) });
+        });
+        walkStructureFields(state.preview?.structure, '', add);
+        return fields;
+      }
+
+      function walkStructureFields(node, prefix, add) {
+        if (Array.isArray(node)) {
+          node.forEach((item, index) => walkStructureFields(item, `${prefix}[${index}]`, add));
           return;
         }
-        state.selectedFieldPath = resolved;
-        const node = resolved.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], state.preview.structure);
-        const iframeDoc = els.worksheetFrame.contentDocument;
-        const live = iframeDoc?.querySelector(`[data-editable='${resolved}']`);
-        els.fieldEditCurrent.value = live?.innerText?.trim() || (typeof node === 'string' ? node : JSON.stringify(node ?? ''));
-        els.fieldEditInstruction.value = '';
+        if (!node || typeof node !== 'object') {
+          if (prefix && (typeof node === 'string' || typeof node === 'number')) {
+            add({ path: prefix, type: 'text', label: prefix, value: String(node) });
+          }
+          return;
+        }
+        if (node.imageQuery || node.image_name || node.assetId || node.userUploadedKey || node.id) {
+          const looksImage = node.imageQuery || node.image_name || node.assetId || node.userUploadedKey;
+          if (looksImage && prefix) {
+            add({
+              path: prefix,
+              type: 'image',
+              label: prefix,
+              slotId: node.id,
+              src: node.assetUrl || node.imageUrl || '',
+            });
+            return;
+          }
+        }
+        Object.entries(node).forEach(([key, child]) => {
+          if (key === 'userUploadedImages' || key === 'assetId' || key === 'userUploadedKey') return;
+          walkStructureFields(child, prefix ? `${prefix}.${key}` : key, add);
+        });
+      }
+
+      function renderAiPanel() {
+        const fields = collectPanelFields();
+        els.aiFieldsList.innerHTML = fields.map((field) => {
+          if (field.type === 'image') {
+            const src = previewImageSrc(field.src) || '';
+            return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
+              <h3>${escapeHtml(field.label)} · image</h3>
+              ${src ? `<img class="ai-thumb" src="${escapeHtml(src)}" alt="">` : '<div class="ai-thumb"></div>'}
+              <div class="row">
+                <button class="btn btn-search" type="button" data-ai-replace="${escapeHtml(field.path)}" data-slot="${escapeHtml(field.slotId || '')}">Replace image</button>
+              </div>
+            </div>`;
+          }
+          return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
+            <h3>${escapeHtml(field.label)}</h3>
+            <label>Current text</label>
+            <textarea data-ai-current="${escapeHtml(field.path)}" rows="3">${escapeHtml(field.value || '')}</textarea>
+            <label>AI prompt</label>
+            <textarea data-ai-prompt="${escapeHtml(field.path)}" rows="2" placeholder="Rewrite this for the same age group…"></textarea>
+            <div class="row">
+              <button class="btn btn-ghost" type="button" data-ai-apply="${escapeHtml(field.path)}">Apply text</button>
+              <button class="btn btn-gen" type="button" data-ai-rewrite="${escapeHtml(field.path)}">✦ AI rewrite</button>
+            </div>
+          </div>`;
+        }).join('') || '<p class="image-tip">No editable fields found on this worksheet.</p>';
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[ch]);
+      }
+
+      function applyTextInFrame(path, value) {
+        const doc = els.worksheetFrame.contentDocument;
+        if (!doc) return;
+        doc.querySelectorAll(`[data-editable='${path}'], [data-field-path='${path}']`).forEach((el) => {
+          if (el.tagName === 'IMG') return;
+          el.textContent = value;
+        });
+      }
+
+      function openAiPanel() {
+        if (!state.worksheetId) {
+          setStatus('Open a worksheet first');
+          return;
+        }
         els.fieldEditError.textContent = '';
+        els.regenQuery.value = '';
+        renderAiPanel();
         els.fieldEditModal.classList.remove('hidden');
+      }
+
+      function openFieldEditor(path) {
+        if (!state.editMode) return;
+        openAiPanel();
+        if (path) {
+          const card = els.aiFieldsList.querySelector(`[data-path="${path}"]`);
+          card?.scrollIntoView({ block: 'center' });
+        }
       }
 
       window.addEventListener('message', (event) => {
         const data = event.data || {};
         if (data.type === 'worksheet-replace-image') {
-          if (!state.editMode) return;
-          openImagePicker(data.path, data.slotId);
+          if (!state.editMode && !state.imagePickFromAi) return;
+          openImagePicker(data.path, data.slotId, state.imagePickFromAi);
         }
         if (data.type === 'worksheet-select-field') {
           if (!state.editMode) return;
           state.selectedFieldPath = data.path;
+        }
+        if (data.type === 'worksheet-ai-field') {
+          if (!state.editMode) return;
+          openFieldEditor(data.path);
         }
       });
 
@@ -1055,7 +1251,7 @@
           els.editBtn.disabled = false;
         }
       });
-      els.aiEditBtn.addEventListener('click', () => openFieldEditor());
+      els.aiEditBtn.addEventListener('click', () => openAiPanel());
       els.downloadBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'webp'));
       els.downloadPdfBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'pdf'));
       els.imagePickerCloseBtn.addEventListener('click', closeImagePicker);
@@ -1093,39 +1289,105 @@
           if (!applySelectedImageToPreview()) return;
           closeImagePicker();
           setStatus('Uploaded image applied. Click Save to keep the change.');
+          if (!els.fieldEditModal.classList.contains('hidden')) renderAiPanel();
           return;
         }
         if (!applySelectedImageToPreview()) return;
         closeImagePicker();
         setStatus('Image updated. Click Save to keep the change.');
+        if (!els.fieldEditModal.classList.contains('hidden')) renderAiPanel();
       });
-      els.fieldEditCancelBtn.addEventListener('click', () => els.fieldEditModal.classList.add('hidden'));
-      els.fieldEditRegenBtn.addEventListener('click', async () => {
-        els.fieldEditError.textContent = '';
-        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fieldPath: state.selectedFieldPath,
-            instruction: els.fieldEditInstruction.value || 'Rewrite this field for the same age group.',
-          }),
-        });
-        const body = await res.json();
-        if (!res.ok) {
-          els.fieldEditError.textContent = body?.error?.message || 'AI edit failed';
+      els.fieldEditCancelBtn.addEventListener('click', () => {
+        state.imagePickFromAi = false;
+        els.fieldEditModal.classList.add('hidden');
+      });
+      els.aiFieldsList.addEventListener('click', async (event) => {
+        const replaceBtn = event.target.closest('[data-ai-replace]');
+        if (replaceBtn) {
+          state.imagePickFromAi = true;
+          openImagePicker(replaceBtn.getAttribute('data-ai-replace'), replaceBtn.getAttribute('data-slot'), true);
           return;
         }
-        const next = state.selectedFieldPath.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
-        els.fieldEditCurrent.value = typeof next === 'string' ? next : JSON.stringify(next ?? '');
+        const applyBtn = event.target.closest('[data-ai-apply]');
+        if (applyBtn) {
+          const path = applyBtn.getAttribute('data-ai-apply');
+          const value = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`)?.value ?? '';
+          els.fieldEditError.textContent = '';
+          const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, value }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            els.fieldEditError.textContent = body?.error?.message || 'Could not save field';
+            return;
+          }
+          applyTextInFrame(path, value);
+          if (body.structure) state.preview = { ...state.preview, structure: body.structure, html: body.html || state.preview.html };
+          setStatus('Field updated');
+          return;
+        }
+        const rewriteBtn = event.target.closest('[data-ai-rewrite]');
+        if (rewriteBtn) {
+          const path = rewriteBtn.getAttribute('data-ai-rewrite');
+          const instruction = els.aiFieldsList.querySelector(`[data-ai-prompt="${path}"]`)?.value
+            || 'Rewrite this field for the same age group.';
+          els.fieldEditError.textContent = '';
+          rewriteBtn.disabled = true;
+          const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fieldPath: path, instruction }),
+          });
+          const body = await res.json().catch(() => ({}));
+          rewriteBtn.disabled = false;
+          if (!res.ok) {
+            els.fieldEditError.textContent = body?.error?.message || 'AI edit failed';
+            return;
+          }
+          const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
+          const text = typeof next === 'string' || typeof next === 'number' ? String(next) : '';
+          const box = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`);
+          if (box) box.value = text;
+          applyTextInFrame(path, text);
+          if (body.html) {
+            const keepEdit = state.editMode;
+            await openPreview(state.worksheetId);
+            state.editMode = keepEdit;
+            enableInlineEditing(keepEdit);
+            renderAiPanel();
+          }
+          setStatus('Field rewritten');
+        }
       });
-      els.fieldEditSaveBtn.addEventListener('click', async () => {
-        await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
+      els.regenWorksheetBtn.addEventListener('click', async () => {
+        const query = els.regenQuery.value.trim();
+        if (!query) {
+          els.fieldEditError.textContent = 'Enter requirements to regenerate this worksheet';
+          return;
+        }
+        els.fieldEditError.textContent = '';
+        els.regenWorksheetBtn.disabled = true;
+        els.regenWorksheetBtn.textContent = 'Generating…';
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/regenerate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: state.selectedFieldPath, value: els.fieldEditCurrent.value }),
+          body: JSON.stringify({ query }),
         });
-        els.fieldEditModal.classList.add('hidden');
+        const body = await res.json().catch(() => ({}));
+        els.regenWorksheetBtn.disabled = false;
+        els.regenWorksheetBtn.textContent = '✦ Regenerate worksheet';
+        if (!res.ok) {
+          els.fieldEditError.textContent = body?.error?.message || 'Regenerate failed';
+          return;
+        }
+        const keepEdit = state.editMode;
         await openPreview(state.worksheetId);
+        state.editMode = keepEdit;
+        enableInlineEditing(keepEdit);
+        renderAiPanel();
+        setStatus('Worksheet regenerated');
       });
       window.addEventListener('resize', scaleFrame);
 

@@ -131,9 +131,9 @@ describe('GenericWorksheetRenderer', () => {
       canvas: { width: 1016, height: 1316 },
     });
     expect(editor).toContain('editor-mode');
-    expect(editor).toContain('body.editor-mode.edit-mode [data-editable]');
+    expect(editor).toContain('body.editor-mode:not(.edit-mode) .ai-pencil');
     expect(editor).not.toMatch(/body\.editor-mode \[data-editable\] \{/);
-    expect(editor).toContain("document.body.classList.contains('edit-mode')");
+    expect(editor).toContain('worksheet-set-image');
     expect(editor).toContain('1016px');
 
     const exported = renderer.render({

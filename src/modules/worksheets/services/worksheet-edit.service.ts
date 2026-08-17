@@ -9,7 +9,9 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { WORKSHEET_WORKFLOW_EDIT } from '../constants/worksheet.constants';
 import { EditWorksheetDto } from '../dto/edit-worksheet.dto';
+import { GenerateWorksheetDto } from '../dto/generate-worksheet.dto';
 import { SaveWorksheetDto } from '../dto/save-worksheet.dto';
+import { RegenerateWorksheetDto } from '../dto/regenerate-worksheet.dto';
 import { WorksheetException } from '../errors/worksheet.exception';
 import { GenerateWorksheetResponse } from '../types/worksheet.types';
 import {
@@ -176,16 +178,20 @@ export class WorksheetEditService {
       PIPELINE_STAGES.FIELD_RESOLUTION,
       () => {
         const aiConfig = this.templateService.parseAiConfig(template);
-        if (!isEditableField(fieldPath, aiConfig.editableFields)) {
+        const structure = asStructureRecord(worksheet.structure);
+        const currentValue = getValueAtPath(structure, fieldPath);
+        const declared = isEditableField(fieldPath, aiConfig.editableFields);
+        const leaf =
+          typeof currentValue === 'string' || typeof currentValue === 'number';
+        if (!declared && !leaf) {
           throw new WorksheetException(
             'FIELD_NOT_EDITABLE',
             `Field "${fieldPath}" is not editable for this template`,
           );
         }
-        const structure = asStructureRecord(worksheet.structure);
         return {
           structure,
-          currentValue: getValueAtPath(structure, fieldPath),
+          currentValue,
           fieldPrompts: this.templateService.parseFieldPrompts(template),
           linkedValues: this.resolveLinkedValues(
             structure,
@@ -342,7 +348,14 @@ export class WorksheetEditService {
     const template = await this.templateService.getById(worksheet.templateId);
     const aiConfig = this.templateService.parseAiConfig(template);
     const path = fieldPath.trim();
-    if (!isEditableField(path, aiConfig.editableFields)) {
+    const structure = asStructureRecord(worksheet.structure);
+    const current = getValueAtPath(structure, path);
+    const leaf = typeof current === 'string' || typeof current === 'number';
+    if (
+      aiConfig.editableFields?.length &&
+      !isEditableField(path, aiConfig.editableFields) &&
+      !leaf
+    ) {
       throw new WorksheetException(
         'FIELD_NOT_EDITABLE',
         `Field "${path}" is not editable for this template`,
@@ -355,7 +368,6 @@ export class WorksheetEditService {
       );
     }
 
-    const structure = asStructureRecord(worksheet.structure);
     let next = setValueAtPath(structure, path, value);
     next = this.validationService.validateGeneratedStructure(next, template, {
       allowEnrichmentKeys: true,
@@ -484,8 +496,12 @@ export class WorksheetEditService {
         aiConfig.editableFields?.length &&
         !isEditableField(path, aiConfig.editableFields)
       ) {
-        this.logger.debug(`save skipped non-editable field ${path}`);
-        continue;
+        const current = getValueAtPath(next, path);
+        const leaf = typeof current === 'string' || typeof current === 'number';
+        if (!leaf) {
+          this.logger.debug(`save skipped non-editable field ${path}`);
+          continue;
+        }
       }
       try {
         next = setValueAtPath(next, path, field.value);
@@ -519,6 +535,51 @@ export class WorksheetEditService {
     const updated = await this.prisma.worksheet.update({
       where: { id: worksheet.id },
       data: { structure: next as Prisma.InputJsonValue },
+    });
+    return this.toResponse(updated, template);
+  }
+
+  public async regenerate(
+    worksheetId: string,
+    dto: RegenerateWorksheetDto,
+  ): Promise<GenerateWorksheetResponse> {
+    const query = dto.query?.trim();
+    if (!query) {
+      throw new WorksheetException(
+        'INVALID_REQUEST',
+        'Provide requirements to regenerate this worksheet',
+      );
+    }
+    const worksheet = await this.requireWorksheet(worksheetId);
+    const template = await this.templateService.getById(worksheet.templateId);
+    const previousRequest = asStructureRecord(worksheet.request);
+    const generateDto = {
+      ...previousRequest,
+      query,
+      topic: dto.topic?.trim() || previousRequest.topic || query,
+      templateId: template.id,
+    } as GenerateWorksheetDto;
+
+    const generated = await this.contentService.generateStructure(
+      template,
+      generateDto,
+    );
+    const meta = this.templateService.parseMeta(template);
+    const attached = await this.assetService.attachAssets(generated, {
+      grades: generateDto.grade ? [generateDto.grade] : meta.grades,
+    });
+    const validated = this.validationService.validateGeneratedStructure(
+      this.assetService.persistableStructure(attached.structure),
+      template,
+      { allowEnrichmentKeys: true },
+    );
+    const updated = await this.prisma.worksheet.update({
+      where: { id: worksheet.id },
+      data: {
+        request: generateDto as Prisma.InputJsonValue,
+        structure: validated as Prisma.InputJsonValue,
+        status: 'GENERATED',
+      },
     });
     return this.toResponse(updated, template);
   }

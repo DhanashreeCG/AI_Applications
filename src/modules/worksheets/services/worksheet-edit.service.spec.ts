@@ -23,6 +23,7 @@ describe('WorksheetEditService', () => {
   };
   const contentService = {
     generateFieldReplacement: jest.fn(),
+    generateStructure: jest.fn(),
   };
   const validationService = {
     validateGeneratedStructure: jest.fn(),
@@ -42,6 +43,7 @@ describe('WorksheetEditService', () => {
     ),
     persistableStructure: (value: Record<string, unknown>) => value,
     resolveAsset: jest.fn(),
+    attachAssets: jest.fn(),
     applyLibraryImage: jest.fn(
       (structure: Record<string, unknown>, path: string, assetId: string) => {
         const items = [...((structure.items as Array<Record<string, unknown>>) ?? [])];
