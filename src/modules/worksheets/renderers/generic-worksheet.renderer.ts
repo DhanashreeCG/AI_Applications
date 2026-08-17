@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { GENERIC_RENDERER_TYPE } from '../constants/worksheet.constants';
 import { WorksheetRenderInput, WorksheetRenderMode } from '../types/worksheet.types';
 import { flattenTemplateTokens, resolveImageSlot } from '../utils/template-tokens.util';
+import { visualQueryFromImageRecord } from '../utils/structure.util';
 import { WorksheetRenderer } from './worksheet-renderer.interface';
 
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -139,8 +140,8 @@ function slotUrl(
   return {
     src: isUsableSrc(rawSrc) ? rawSrc : '',
     alt:
-      (match?.imageQuery ||
-        (typeof record.imageQuery === 'string' ? record.imageQuery : slotId)) ??
+      match?.imageQuery ||
+      visualQueryFromImageRecord(record) ||
       slotId,
     path: match?.path || slotId,
     slotId: match?.slotId || slotId,
@@ -336,9 +337,6 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
       fontPath: '',
       FONT_PATH: '',
     };
-    if (input.topic) {
-      extras.topic = input.topic;
-    }
     const context = flattenTemplateTokens(input.structure, extras);
     let html = restoreNullPlaceholders(input.templateHtml);
     html = this.renderTemplate(html, context);

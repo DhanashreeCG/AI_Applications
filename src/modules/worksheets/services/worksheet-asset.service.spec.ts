@@ -74,6 +74,42 @@ describe('WorksheetAssetService', () => {
     expect(JSON.stringify(structure)).not.toContain('imageUrl');
   });
 
+  it('searches assets from structure.image.image_name when imageQuery is absent', async () => {
+    searchService.search.mockResolvedValue({
+      query: 'cute jumping dolphins in the ocean',
+      total: 1,
+      results: [{ assetId: 'dolphin-1', s3ObjectKey: 'assets/d.png' }],
+    });
+
+    const { structure, slots } = await service.attachAssets({
+      topic: 'Dolphin Fun',
+      image: {
+        id: 'main_image',
+        image_name: 'cute jumping dolphins in the ocean',
+      },
+    });
+
+    expect(searchService.search).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'cute jumping dolphins in the ocean' }),
+    );
+    expect(slots).toEqual([
+      {
+        path: 'image',
+        imageQuery: 'cute jumping dolphins in the ocean',
+        assetId: 'dolphin-1',
+      },
+    ]);
+    expect(structure).toEqual({
+      topic: 'Dolphin Fun',
+      image: {
+        id: 'main_image',
+        image_name: 'cute jumping dolphins in the ocean',
+        imageQuery: 'cute jumping dolphins in the ocean',
+        assetId: 'dolphin-1',
+      },
+    });
+  });
+
   it('resolves proxy and signed URLs at preview time from assetId', async () => {
     prisma.asset.findUnique.mockResolvedValue({
       id: 'asset-123',

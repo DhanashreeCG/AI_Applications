@@ -15,7 +15,7 @@ import {
   WORKSHEET_WORKFLOW_GENERATE,
 } from '../constants/worksheet.constants';
 import { GenerateWorksheetResponse } from '../types/worksheet.types';
-import { asStructureRecord, collectImageQueries } from '../utils/structure.util';
+import { asStructureRecord, collectImageQueries, normalizeImageQueryFields } from '../utils/structure.util';
 import {
   WorksheetPipelineEmitter,
   createTelemetryContext,
@@ -245,11 +245,19 @@ export class WorksheetGenerationService {
     );
     this.logger.log('content generation completed');
 
+    const normalized = normalizeImageQueryFields(generated);
+    const imageQueries = collectImageQueries(normalized);
+    this.logger.log(
+      `image queries extracted count=${imageQueries.length} ${JSON.stringify(
+        imageQueries.map((item) => ({ path: item.parentPath, query: item.query })),
+      )}`,
+    );
+
     const queries = await runTrackedStage(
       this.emitter,
       telemetry,
       PIPELINE_STAGES.IMAGE_QUERY_GENERATION,
-      () => collectImageQueries(generated),
+      () => imageQueries,
       {
         completeMetadata: (items) => ({
           queryCount: items.length,
@@ -270,7 +278,7 @@ export class WorksheetGenerationService {
       PIPELINE_STAGES.IMAGE_RETRIEVAL,
       () =>
         this.assetService.attachAssets(
-          generated,
+          normalized,
           {
             grades: dto.grade ? [dto.grade] : meta.grades,
             ageGroups,

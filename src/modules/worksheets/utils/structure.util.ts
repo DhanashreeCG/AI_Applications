@@ -251,8 +251,93 @@ export function validateAgainstSchema(
   }
 }
 
+const IMAGE_QUERY_ALIAS_KEYS = [
+  'imageQuery',
+  'image_name',
+  'imageName',
+  'searchDescription',
+] as const;
+
+const SKIP_IMAGE_WALK_KEYS = new Set([
+  'editable_fields',
+  'editableFields',
+  'fieldPrompts',
+  'ai_config',
+  'aiConfig',
+  'meta',
+]);
+
 export function looksLikeHtml(value: string): boolean {
   return /<\/?[a-z][\s\S]*>/i.test(value) || /javascript:/i.test(value);
+}
+
+export function looksLikeImageFileName(query: string): boolean {
+  return /\.(png|jpe?g|gif|webp|svg)$/i.test(query) || query.includes('/');
+}
+
+export function filenameToSearchQuery(value: string): string {
+  const base = value.split(/[/\\]/).pop() ?? value;
+  return base
+    .replace(/\.(png|jpe?g|gif|webp|svg)$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+}
+
+export function visualQueryFromImageRecord(
+  value: Record<string, unknown>,
+): string | null {
+  const phrases: string[] = [];
+  const files: string[] = [];
+  for (const key of IMAGE_QUERY_ALIAS_KEYS) {
+    const raw = value[key];
+    if (typeof raw !== 'string' || !raw.trim()) {
+      continue;
+    }
+    const query = raw.trim();
+    if (looksLikeImageFileName(query)) {
+      files.push(query);
+    } else {
+      phrases.push(query);
+    }
+  }
+  if (phrases[0]) {
+    return phrases[0];
+  }
+  if (files[0]) {
+    return filenameToSearchQuery(files[0]) || null;
+  }
+  return null;
+}
+
+export function normalizeImageQueryFields(
+  structure: Record<string, unknown>,
+): Record<string, unknown> {
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) {
+      return node.map((item) => walk(item));
+    }
+    if (!isRecord(node)) {
+      return node;
+    }
+    const next: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(node)) {
+      if (SKIP_IMAGE_WALK_KEYS.has(key)) {
+        next[key] = child;
+        continue;
+      }
+      next[key] = walk(child);
+    }
+    const query = visualQueryFromImageRecord(next);
+    if (query) {
+      const existing =
+        typeof next.imageQuery === 'string' ? next.imageQuery.trim() : '';
+      if (!existing || looksLikeImageFileName(existing)) {
+        next.imageQuery = query;
+      }
+    }
+    return next;
+  };
+  return asStructureRecord(walk(structure));
 }
 
 export function collectImageQueries(
@@ -282,12 +367,29 @@ export function collectImageQueries(
         `${path ? `${path}.` : ''}imageQuery must be a non-empty string`,
       );
     }
-    if (/\.(png|jpe?g|gif|webp|svg)$/i.test(query) || query.includes('/')) {
-      throw new WorksheetException(
-        'INVALID_STRUCTURE',
-        `${path ? `${path}.` : ''}imageQuery must describe the image, not a file name`,
-      );
+    if (looksLikeImageFileName(query)) {
+      const hasPhraseAlias = IMAGE_QUERY_ALIAS_KEYS.some((key) => {
+        if (key === 'imageQuery') {
+          return false;
+        }
+        const raw = value[key];
+        return (
+          typeof raw === 'string' &&
+          raw.trim().length > 0 &&
+          !looksLikeImageFileName(raw.trim())
+        );
+      });
+      if (!hasPhraseAlias) {
+        throw new WorksheetException(
+          'INVALID_STRUCTURE',
+          `${path ? `${path}.` : ''}imageQuery must describe the image, not a file name`,
+        );
+      }
     }
+  }
+
+  const query = visualQueryFromImageRecord(value);
+  if (query) {
     found.push({
       path: path ? `${path}.imageQuery` : 'imageQuery',
       query,
@@ -296,7 +398,10 @@ export function collectImageQueries(
   }
 
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'imageQuery') {
+    if (IMAGE_QUERY_ALIAS_KEYS.includes(key as (typeof IMAGE_QUERY_ALIAS_KEYS)[number])) {
+      continue;
+    }
+    if (SKIP_IMAGE_WALK_KEYS.has(key)) {
       continue;
     }
     const childPath = path ? `${path}.${key}` : key;
@@ -347,7 +452,8 @@ export function collectImageSlots(
     return found;
   }
 
-  if (typeof value.imageQuery === 'string' && value.imageQuery.trim()) {
+  const imageQuery = visualQueryFromImageRecord(value);
+  if (imageQuery) {
     const explicitId =
       typeof value.id === 'string' && value.id.trim() ? value.id.trim() : null;
     const key = path.split(/[.[\]]/).filter(Boolean).pop() ?? 'image';
@@ -355,12 +461,15 @@ export function collectImageSlots(
       slotId: explicitId || key,
       path,
       assetId: typeof value.assetId === 'string' ? value.assetId : null,
-      imageQuery: value.imageQuery.trim(),
+      imageQuery,
     });
   }
 
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'imageQuery') {
+    if (IMAGE_QUERY_ALIAS_KEYS.includes(key as (typeof IMAGE_QUERY_ALIAS_KEYS)[number])) {
+      continue;
+    }
+    if (SKIP_IMAGE_WALK_KEYS.has(key)) {
       continue;
     }
     const childPath = path ? `${path}.${key}` : key;

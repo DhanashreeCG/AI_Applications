@@ -21,6 +21,7 @@ import {
 } from '../types/worksheet.types';
 import {
   collectImageQueries,
+  normalizeImageQueryFields,
   setValueAtPath,
   stripTransientAssetFields,
 } from '../utils/structure.util';
@@ -72,7 +73,13 @@ export class WorksheetAssetService {
     options?: { grades?: string[]; ageGroups?: string[] },
     telemetry?: PipelineTelemetryContext,
   ): Promise<{ structure: Record<string, unknown>; slots: ResolvedAssetSlot[] }> {
-    const queries = collectImageQueries(structure);
+    const normalized = normalizeImageQueryFields(structure);
+    const queries = collectImageQueries(normalized);
+    this.logger.log(
+      `image search start slots=${queries.length} ${JSON.stringify(
+        queries.map((item) => ({ path: item.parentPath, query: item.query })),
+      )}`,
+    );
     const uniqueParents = new Map<string, { path: string; query: string }>();
     for (const item of queries) {
       uniqueParents.set(item.parentPath, {
@@ -87,7 +94,7 @@ export class WorksheetAssetService {
       async (item) => this.resolveSlot(item.query, item.path, options, telemetry),
     );
 
-    let next = structure;
+    let next = normalized;
     for (const slot of slots) {
       next = this.applySlot(next, slot);
     }
@@ -139,6 +146,10 @@ export class WorksheetAssetService {
       });
     }
 
+    this.logger.log(
+      `image search query path=${path || '(root)'} description="${query}"`,
+    );
+
     try {
       let response = await this.searchService.search({
         query,
@@ -146,6 +157,9 @@ export class WorksheetAssetService {
         filters: hasFilters ? filters : undefined,
       });
       this.emitEmbeddingUsage(telemetry, query, response);
+      this.logger.log(
+        `image search embedding+vector path=${path || '(root)'} query="${query}" hits=${response.results.length} cache=${response.fromCache === true} topAssetId=${response.results[0]?.assetId ?? 'none'}`,
+      );
 
       if (!response.results.length && hasFilters) {
         this.logger.warn(
@@ -165,6 +179,10 @@ export class WorksheetAssetService {
 
       if (!slot.assetId) {
         this.logger.warn(`No asset found for imageQuery "${query}" at ${path}`);
+      } else {
+        this.logger.log(
+          `image search resolved path=${path || '(root)'} assetId=${slot.assetId} url=${this.assetProxyUrl(slot.assetId)}`,
+        );
       }
 
       if (telemetry) {
@@ -264,7 +282,7 @@ export class WorksheetAssetService {
       }
       return value;
     };
-    return walk(structure) as Record<string, unknown>;
+    return walk(normalizeImageQueryFields(structure)) as Record<string, unknown>;
   }
 
   public async searchCandidates(

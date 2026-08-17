@@ -46,15 +46,29 @@ describe('WorksheetRenderService', () => {
       {} as S3StorageService,
       {
         persistableStructure: (value: Record<string, unknown>) => value,
-        enrichForRender: (value: Record<string, unknown>) => ({
-          ...value,
-          items: [
-            {
-              ...((value.items as Array<Record<string, unknown>>)[0] ?? {}),
-              assetUrl: 'http://localhost:5000/worksheets/assets/a1/image',
-            },
-          ],
-        }),
+        enrichForRender: (value: Record<string, unknown>) => {
+          const walk = (node: unknown): unknown => {
+            if (Array.isArray(node)) {
+              return node.map((item) => walk(item));
+            }
+            if (node && typeof node === 'object') {
+              const record = node as Record<string, unknown>;
+              const next: Record<string, unknown> = {};
+              for (const [key, child] of Object.entries(record)) {
+                if (['imageUrl', 'assetUrl', 'signedUrl'].includes(key)) {
+                  continue;
+                }
+                next[key] = walk(child);
+              }
+              if (typeof record.assetId === 'string' && record.assetId.trim()) {
+                next.assetUrl = `http://localhost:5000/worksheets/assets/${record.assetId}/image`;
+              }
+              return next;
+            }
+            return node;
+          };
+          return walk(value) as Record<string, unknown>;
+        },
         assetProxyUrl: (id: string) =>
           `http://localhost:5000/worksheets/assets/${id}/image`,
       } as never,
@@ -84,6 +98,37 @@ describe('WorksheetRenderService', () => {
     expect(result.html).toContain('Count');
     expect(result.html).toContain('/worksheets/assets/a1/image');
     expect(result.html).not.toContain('<base ');
+  });
+
+  it('fills topic from generated structure and main image from assetId, not the raw request', () => {
+    const result = service.composeHtml({
+      template: {
+        rendererType: 'generic',
+        templateHtml:
+          '<div class="topic" data-editable="topic">{{TOPIC}}</div>{{GOAT_IMAGE}}',
+        backgroundAssetId: null,
+      } as never,
+      structure: {
+        topic: 'Dolphin Fun',
+        image: {
+          id: 'main_image',
+          image_name: 'cute jumping dolphins in the ocean',
+          assetId: 'dolphin-1',
+        },
+      },
+      request: {
+        topic: 'Generate worksheet on dolphins',
+        query: 'Generate worksheet on dolphins',
+      },
+      mode: 'editor',
+    });
+
+    expect(result.html).toContain('Dolphin Fun');
+    expect(result.html).not.toContain('Generate worksheet on dolphins');
+    expect(result.html).toContain('data-image-slot="main_image"');
+    expect(result.html).toContain('data-field-path="image"');
+    expect(result.html).toContain('/worksheets/assets/dolphin-1/image');
+    expect(result.html).not.toContain('data-image-slot="GOAT"');
   });
 
   it('rejects an unsupported format', async () => {

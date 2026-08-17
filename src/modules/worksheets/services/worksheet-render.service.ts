@@ -122,9 +122,6 @@ export class WorksheetRenderService {
     const structure = this.assetService.enrichForRender(
       this.assetService.persistableStructure(input.structure),
     );
-    const topic =
-      (typeof input.request?.topic === 'string' && input.request.topic) ||
-      (typeof structure.topic === 'string' ? structure.topic : undefined);
     const renderer = this.rendererRegistry.get(input.template.rendererType);
     const html = renderer.render({
       templateHtml: input.template.templateHtml,
@@ -135,7 +132,6 @@ export class WorksheetRenderService {
         : null,
       mode: input.mode ?? 'editor',
       canvas,
-      topic,
       pencilIconUrl: this.pencilIconUrl,
     });
     return { html, canvas };

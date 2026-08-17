@@ -71,6 +71,29 @@ describe('GenericWorksheetRenderer', () => {
     expect(html).not.toContain('{{QUESTION_1}}');
   });
 
+  it('fills {{GOAT_IMAGE}} from structure.image.id and image_name without using GOAT as the slot id', () => {
+    const html = renderer.render({
+      templateHtml: '{{GOAT_IMAGE}}<div class="topic">{{TOPIC}}</div>',
+      structure: {
+        topic: 'Dolphin Fun',
+        image: {
+          id: 'main_image',
+          image_name: 'cute jumping dolphins in the ocean',
+          assetId: 'dolphin-1',
+          assetUrl: '/worksheets/assets/dolphin-1/image',
+        },
+      },
+      mode: 'export',
+    });
+
+    expect(html).toContain('Dolphin Fun');
+    expect(html).toContain('data-image-slot="main_image"');
+    expect(html).toContain('data-field-path="image"');
+    expect(html).toContain('alt="cute jumping dolphins in the ocean"');
+    expect(html).toContain('src="/worksheets/assets/dolphin-1/image"');
+    expect(html).not.toContain('data-image-slot="GOAT"');
+  });
+
   it('fills the template background image URL', () => {
     const html = renderer.render({
       templateHtml: '<img class="worksheet-bg" src="{{BACKGROUND_IMAGE}}" />',
