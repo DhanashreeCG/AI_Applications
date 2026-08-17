@@ -70,6 +70,7 @@ const EDITOR_BRIDGE = `
     var data = event.data || {};
     if (data.type !== 'worksheet-set-image') return;
     var nodes = [];
+    document.querySelectorAll('[data-ws-target="active"]').forEach(function (n) { nodes.push(n); });
     if (data.path) {
       document.querySelectorAll('[data-field-path="' + data.path + '"]').forEach(function (n) { nodes.push(n); });
     }
@@ -79,6 +80,15 @@ const EDITOR_BRIDGE = `
     if (!nodes.length) {
       document.querySelectorAll('img.worksheet-image, img[data-image-slot]').forEach(function (n) { nodes.push(n); });
     }
+    if (!nodes.length) {
+      document.querySelectorAll('img').forEach(function (n) {
+        if (n.classList.contains('worksheet-bg')) return;
+        if (n.closest && (n.closest('.ai-pencil') || n.closest('.img-camera-btn'))) return;
+        var src = n.getAttribute('src') || '';
+        if (/pencil/i.test(src)) return;
+        nodes.push(n);
+      });
+    }
     nodes.forEach(function (el) { applySrc(el, data.src); });
   });
   document.addEventListener('click', function (event) {
@@ -86,16 +96,37 @@ const EDITOR_BRIDGE = `
     if (!(target instanceof Element)) return;
     if (!document.body.classList.contains('edit-mode')) return;
     var pencil = target.closest('[data-pencil-for], .ai-pencil');
-    if (pencil && pencil.getAttribute('data-pencil-for')) {
-      emit('worksheet-ai-field', { path: pencil.getAttribute('data-pencil-for') });
+    if (pencil) {
+      event.preventDefault();
+      event.stopPropagation();
+      var path = pencil.getAttribute('data-pencil-for');
+      if (!path) {
+        var host = pencil.closest('[data-editable]') || pencil.parentElement;
+        var field = (host && host.closest && host.closest('[data-editable]')) || (host && host.querySelector && host.querySelector('[data-editable]'));
+        if (!field && host && host.previousElementSibling && host.previousElementSibling.matches && host.previousElementSibling.matches('[data-editable]')) {
+          field = host.previousElementSibling;
+        }
+        path = field ? (field.getAttribute('data-field-path') || field.getAttribute('data-editable')) : '';
+      }
+      if (path) emit('worksheet-ai-field', { path: path });
       return;
     }
-    var slot = target.closest('[data-image-slot], [data-editor-control][data-image-slot], .worksheet-image');
+    var camera = target.closest('.img-camera-btn, [data-editor-control]');
+    var slot = target.closest('[data-image-slot], [data-editor-control][data-image-slot], .worksheet-image, .img-zone-box');
+    if (camera && !slot) {
+      var zone = camera.closest('.img-zone-box, .img-zone, .image-wrap') || camera.parentElement;
+      slot = zone && (zone.querySelector('[data-image-slot], img.worksheet-image, img') || zone);
+    }
     if (slot) {
       event.preventDefault();
+      event.stopPropagation();
+      document.querySelectorAll('[data-ws-target]').forEach(function (el) { el.removeAttribute('data-ws-target'); });
+      slot.setAttribute('data-ws-target', 'active');
+      var img = slot.tagName === 'IMG' ? slot : slot.querySelector('img');
+      if (img) img.setAttribute('data-ws-target', 'active');
       emit('worksheet-replace-image', {
-        slotId: slot.getAttribute('data-image-slot'),
-        path: slot.getAttribute('data-field-path') || undefined
+        slotId: (slot.getAttribute('data-image-slot') || (img && img.getAttribute('data-image-slot')) || ''),
+        path: (slot.getAttribute('data-field-path') || (img && img.getAttribute('data-field-path')) || undefined)
       });
       return;
     }

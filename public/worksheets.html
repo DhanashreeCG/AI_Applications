@@ -253,7 +253,16 @@
         background: #f3eef9;
         aspect-ratio: 1;
       }
-      .image-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .image-tile img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+      .upload-preview {
+        display: block;
+        width: min(280px, 100%);
+        max-height: 220px;
+        object-fit: contain;
+        margin: 16px auto 0;
+        border-radius: 12px;
+        background: #f3eef9;
+      }
       .image-tile .pick {
         position: absolute; top: 8px; right: 8px;
         width: 18px; height: 18px; border-radius: 50%;
@@ -385,6 +394,7 @@
           <div class="upload-pane">
             <p>Choose a JPEG, PNG, WebP, or GIF. It is stored on S3 and used for this image slot instead of a library asset.</p>
             <input id="imageUploadInput" type="file" accept="image/*" />
+            <img id="uploadPreview" class="upload-preview hidden" alt="Selected upload preview" />
           </div>
         </div>
         <div class="image-picker-foot">
@@ -393,6 +403,25 @@
             <button class="btn btn-ghost" id="imagePickerCancelBtn" type="button">Cancel</button>
             <button class="btn btn-search" id="selectImageBtn" type="button">Select Image</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="singleFieldModal" class="modal hidden">
+      <div class="modal-card">
+        <div class="image-picker-head">
+          <h2 id="singleFieldTitle">Edit text</h2>
+          <button class="modal-x" id="singleFieldCloseBtn" type="button" aria-label="Close">×</button>
+        </div>
+        <label>Current text</label>
+        <textarea id="singleFieldCurrent" rows="4"></textarea>
+        <label>AI prompt (optional)</label>
+        <textarea id="singleFieldPrompt" rows="2" placeholder="Rewrite this for the same age group…"></textarea>
+        <p id="singleFieldError" class="status"></p>
+        <div class="actions">
+          <button class="btn btn-ghost" id="singleFieldCancelBtn" type="button">Cancel</button>
+          <button class="btn btn-gen" id="singleFieldRewriteBtn" type="button">✦ AI rewrite</button>
+          <button class="btn btn-search" id="singleFieldSaveBtn" type="button">Apply</button>
         </div>
       </div>
     </div>
@@ -480,12 +509,22 @@
         searchPane: document.getElementById('searchPane'),
         uploadPane: document.getElementById('uploadPane'),
         imageUploadInput: document.getElementById('imageUploadInput'),
+        uploadPreview: document.getElementById('uploadPreview'),
         fieldEditModal: document.getElementById('fieldEditModal'),
         fieldEditError: document.getElementById('fieldEditError'),
         fieldEditCancelBtn: document.getElementById('fieldEditCancelBtn'),
         aiFieldsList: document.getElementById('aiFieldsList'),
         regenQuery: document.getElementById('regenQuery'),
         regenWorksheetBtn: document.getElementById('regenWorksheetBtn'),
+        singleFieldModal: document.getElementById('singleFieldModal'),
+        singleFieldTitle: document.getElementById('singleFieldTitle'),
+        singleFieldCurrent: document.getElementById('singleFieldCurrent'),
+        singleFieldPrompt: document.getElementById('singleFieldPrompt'),
+        singleFieldError: document.getElementById('singleFieldError'),
+        singleFieldCloseBtn: document.getElementById('singleFieldCloseBtn'),
+        singleFieldCancelBtn: document.getElementById('singleFieldCancelBtn'),
+        singleFieldRewriteBtn: document.getElementById('singleFieldRewriteBtn'),
+        singleFieldSaveBtn: document.getElementById('singleFieldSaveBtn'),
       };
 
       function favorites() {
@@ -873,8 +912,10 @@
           pick.className = 'pick';
           tile.appendChild(img);
           tile.appendChild(pick);
+          tile.dataset.assetId = item.assetId || '';
+          tile.dataset.imageUrl = resolved || '';
           tile.addEventListener('click', () => {
-            state.selectedSearchItem = { ...item, imageUrl: resolveUrl(item.imageUrl) };
+            state.selectedSearchItem = { ...item, imageUrl: resolved };
             els.imageBank.querySelectorAll('.image-tile').forEach((node) => node.classList.remove('selected'));
             tile.classList.add('selected');
           });
@@ -901,16 +942,30 @@
         const abs = previewImageSrc(src);
         if (doc) {
           const slots = [];
+          doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
           if (path) doc.querySelectorAll(cssAttr('data-field-path', path)).forEach((n) => slots.push(n));
           if (slotId) doc.querySelectorAll(cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
-          if (!slots.length) doc.querySelectorAll('img[data-image-slot], img.worksheet-image').forEach((n) => slots.push(n));
+          if (!slots.length) {
+            doc.querySelectorAll('img[data-image-slot], img.worksheet-image').forEach((n) => slots.push(n));
+          }
+          if (!slots.length) {
+            doc.querySelectorAll('img').forEach((n) => {
+              if (n.classList.contains('worksheet-bg')) return;
+              if (n.closest('.ai-pencil, .img-camera-btn')) return;
+              const srcAttr = n.getAttribute('src') || '';
+              if (/pencil/i.test(srcAttr)) return;
+              slots.push(n);
+            });
+          }
           slots.forEach((el) => {
             if (el.tagName === 'IMG') {
+              el.removeAttribute('srcset');
               el.setAttribute('src', abs);
               el.src = abs;
             } else {
               const nested = el.querySelector('img');
               if (nested) {
+                nested.removeAttribute('srcset');
                 nested.setAttribute('src', abs);
                 nested.src = abs;
               }
@@ -928,6 +983,19 @@
         } catch {}
       }
 
+      function selectedLibraryItem() {
+        if (state.selectedSearchItem?.imageUrl || state.selectedSearchItem?.assetId) {
+          return state.selectedSearchItem;
+        }
+        const tile = els.imageBank.querySelector('.image-tile.selected');
+        if (!tile) return null;
+        return {
+          assetId: tile.dataset.assetId || null,
+          imageUrl: tile.dataset.imageUrl || '',
+          caption: tile.title,
+        };
+      }
+
       function applyPendingImages(doc) {
         Object.entries(state.pendingImageReplacements).forEach(([path, item]) => {
           if (!item?.imageUrl) return;
@@ -936,12 +1004,13 @@
       }
 
       function applySelectedImageToPreview() {
-        const item = state.selectedSearchItem;
-        const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId);
-        if (!item || (!item.assetId && !item.file && !item.imageUrl) || !path) {
+        const item = selectedLibraryItem();
+        const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId) || 'image';
+        if (!item || (!item.assetId && !item.file && !item.imageUrl)) {
           setStatus('Select an image first');
           return false;
         }
+        state.selectedSearchItem = item;
         state.selectedImagePath = path;
         const imageUrl = item.file
           ? (item.imageUrl || URL.createObjectURL(item.file))
@@ -969,57 +1038,48 @@
       function collectPanelFields() {
         const seen = new Set();
         const fields = [];
-        const add = (item) => {
-          if (!item?.path || seen.has(item.path)) return;
-          seen.add(item.path);
-          fields.push(item);
-        };
-        (state.preview?.editableFields || []).forEach((field) => {
-          if (field.type === 'array' || field.type === 'object') return;
-          add({
-            path: field.path,
-            type: field.type === 'image' ? 'image' : 'text',
-            label: field.path,
-            value: fieldValueAt(field.path),
+        const doc = els.worksheetFrame.contentDocument;
+        if (!doc) return fields;
+        doc.querySelectorAll('[data-editable]').forEach((el) => {
+          const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
+          if (!path || seen.has(path)) return;
+          seen.add(path);
+          fields.push({
+            path,
+            type: 'text',
+            label: humanFieldLabel(path, el),
+            value: el.innerText.trim() || fieldValueAt(path),
           });
         });
-        const doc = els.worksheetFrame.contentDocument;
-        doc?.querySelectorAll('[data-editable]').forEach((el) => {
-          const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
-          add({ path, type: 'text', label: path, value: el.innerText.trim() || fieldValueAt(path) });
+        doc.querySelectorAll('[data-image-slot], img.worksheet-image').forEach((el) => {
+          const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+          const path = el.getAttribute('data-field-path') || el.getAttribute('data-image-slot') || 'image';
+          const slotId = el.getAttribute('data-image-slot') || '';
+          const key = 'img:' + path + ':' + slotId;
+          if (seen.has(key)) return;
+          seen.add(key);
+          fields.push({
+            path,
+            type: 'image',
+            label: 'Image',
+            slotId,
+            src: img?.getAttribute('src') || '',
+          });
         });
-        walkStructureFields(state.preview?.structure, '', add);
         return fields;
       }
 
-      function walkStructureFields(node, prefix, add) {
-        if (Array.isArray(node)) {
-          node.forEach((item, index) => walkStructureFields(item, `${prefix}[${index}]`, add));
-          return;
-        }
-        if (!node || typeof node !== 'object') {
-          if (prefix && (typeof node === 'string' || typeof node === 'number')) {
-            add({ path: prefix, type: 'text', label: prefix, value: String(node) });
-          }
-          return;
-        }
-        if (node.imageQuery || node.image_name || node.assetId || node.userUploadedKey || node.id) {
-          const looksImage = node.imageQuery || node.image_name || node.assetId || node.userUploadedKey;
-          if (looksImage && prefix) {
-            add({
-              path: prefix,
-              type: 'image',
-              label: prefix,
-              slotId: node.id,
-              src: node.assetUrl || node.imageUrl || '',
-            });
-            return;
-          }
-        }
-        Object.entries(node).forEach(([key, child]) => {
-          if (key === 'userUploadedImages' || key === 'assetId' || key === 'userUploadedKey') return;
-          walkStructureFields(child, prefix ? `${prefix}.${key}` : key, add);
-        });
+      function humanFieldLabel(path, el) {
+        const cls = String(el?.className || '');
+        const raw = String(path || '');
+        if (/topic/i.test(raw) || /topic/i.test(cls)) return 'Heading / topic';
+        if (/instruction/i.test(raw) || /instruction/i.test(cls)) return 'Instruction';
+        if (/question/i.test(raw) || /question/i.test(cls)) return 'Question';
+        if (/option/i.test(raw) || /option/i.test(cls)) return 'Option';
+        if (/badge/i.test(raw) || /badge/i.test(cls)) return 'Badge';
+        const visible = (el?.innerText || '').trim();
+        if (visible) return visible.slice(0, 48);
+        return raw.replace(/[_[\]]+/g, ' ').trim();
       }
 
       function renderAiPanel() {
@@ -1077,11 +1137,18 @@
 
       function openFieldEditor(path) {
         if (!state.editMode) return;
-        openAiPanel();
-        if (path) {
-          const card = els.aiFieldsList.querySelector(`[data-path="${path}"]`);
-          card?.scrollIntoView({ block: 'center' });
+        if (!path) {
+          setStatus('That text field could not be identified');
+          return;
         }
+        state.selectedFieldPath = path;
+        const doc = els.worksheetFrame.contentDocument;
+        const live = doc?.querySelector(`[data-editable='${path}'], [data-field-path='${path}']`);
+        els.singleFieldTitle.textContent = humanFieldLabel(path, live);
+        els.singleFieldCurrent.value = live?.innerText?.trim() || fieldValueAt(path);
+        els.singleFieldPrompt.value = '';
+        els.singleFieldError.textContent = '';
+        els.singleFieldModal.classList.remove('hidden');
       }
 
       window.addEventListener('message', (event) => {
@@ -1258,6 +1325,24 @@
       els.imagePickerCancelBtn.addEventListener('click', closeImagePicker);
       els.searchTabBtn.addEventListener('click', () => setImagePickerTab('search'));
       els.uploadTabBtn.addEventListener('click', () => setImagePickerTab('upload'));
+      els.imageUploadInput.addEventListener('change', () => {
+        const file = els.imageUploadInput.files?.[0];
+        if (!file) {
+          els.uploadPreview.classList.add('hidden');
+          els.uploadPreview.removeAttribute('src');
+          return;
+        }
+        const previewUrl = URL.createObjectURL(file);
+        state.imageBlobCache.set(previewUrl, previewUrl);
+        els.uploadPreview.src = previewUrl;
+        els.uploadPreview.classList.remove('hidden');
+        state.selectedSearchItem = {
+          assetId: null,
+          imageUrl: previewUrl,
+          file,
+          caption: file.name,
+        };
+      });
       els.searchImagesBtn.addEventListener('click', searchImages);
       els.imageQuery.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
@@ -1272,25 +1357,13 @@
             setStatus('Choose an image to upload');
             return;
           }
-          const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId);
-          if (!path) {
-            setStatus('Image slot is missing');
-            return;
-          }
-          const previewUrl = URL.createObjectURL(file);
-          state.imageBlobCache.set(previewUrl, previewUrl);
-          state.selectedImagePath = path;
+          const previewUrl = els.uploadPreview.src || URL.createObjectURL(file);
           state.selectedSearchItem = {
             assetId: null,
             imageUrl: previewUrl,
             file,
             caption: file.name,
           };
-          if (!applySelectedImageToPreview()) return;
-          closeImagePicker();
-          setStatus('Uploaded image applied. Click Save to keep the change.');
-          if (!els.fieldEditModal.classList.contains('hidden')) renderAiPanel();
-          return;
         }
         if (!applySelectedImageToPreview()) return;
         closeImagePicker();
@@ -1300,6 +1373,51 @@
       els.fieldEditCancelBtn.addEventListener('click', () => {
         state.imagePickFromAi = false;
         els.fieldEditModal.classList.add('hidden');
+      });
+      function closeSingleField() {
+        els.singleFieldModal.classList.add('hidden');
+      }
+      els.singleFieldCloseBtn.addEventListener('click', closeSingleField);
+      els.singleFieldCancelBtn.addEventListener('click', closeSingleField);
+      els.singleFieldSaveBtn.addEventListener('click', async () => {
+        const path = state.selectedFieldPath;
+        const value = els.singleFieldCurrent.value;
+        els.singleFieldError.textContent = '';
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, value }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          els.singleFieldError.textContent = body?.error?.message || 'Could not save field';
+          return;
+        }
+        applyTextInFrame(path, value);
+        closeSingleField();
+        setStatus('Text updated');
+      });
+      els.singleFieldRewriteBtn.addEventListener('click', async () => {
+        const path = state.selectedFieldPath;
+        const instruction = els.singleFieldPrompt.value.trim() || 'Rewrite this field for the same age group.';
+        els.singleFieldError.textContent = '';
+        els.singleFieldRewriteBtn.disabled = true;
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fieldPath: path, instruction }),
+        });
+        const body = await res.json().catch(() => ({}));
+        els.singleFieldRewriteBtn.disabled = false;
+        if (!res.ok) {
+          els.singleFieldError.textContent = body?.error?.message || 'AI edit failed';
+          return;
+        }
+        const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
+        const text = typeof next === 'string' || typeof next === 'number' ? String(next) : els.singleFieldCurrent.value;
+        els.singleFieldCurrent.value = text;
+        applyTextInFrame(path, text);
+        setStatus('Text rewritten');
       });
       els.aiFieldsList.addEventListener('click', async (event) => {
         const replaceBtn = event.target.closest('[data-ai-replace]');
