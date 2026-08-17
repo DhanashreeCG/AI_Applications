@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { GENERIC_RENDERER_TYPE } from '../constants/worksheet.constants';
 import { WorksheetRenderInput, WorksheetRenderMode } from '../types/worksheet.types';
-import { flattenTemplateTokens, resolveImageSlot } from '../utils/template-tokens.util';
+import {
+  flattenTemplateTokens,
+  injectMatchingPairMarkup,
+  positionMatchingPairItems,
+  resolveImageSlot,
+} from '../utils/template-tokens.util';
 import { visualQueryFromImageRecord } from '../utils/structure.util';
 import { WorksheetRenderer } from './worksheet-renderer.interface';
 
@@ -413,7 +418,9 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     };
     const context = flattenTemplateTokens(input.structure, extras);
     let html = restoreNullPlaceholders(input.templateHtml);
+    html = injectMatchingPairMarkup(html, input.structure, input.pencilIconUrl);
     html = this.renderTemplate(html, context);
+    html = positionMatchingPairItems(html, input.structure);
     html = applyImageSlots(html, {
       ...input.structure,
       ...context,
@@ -430,22 +437,33 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     return html;
   }
 
+  private renderLoop(inner: string, items: unknown[]): string {
+    return items
+      .map((item, index) => {
+        const childContext = isRecord(item)
+          ? { ...item, '@index': index + 1, '@index0': index }
+          : { this: item, '@index': index + 1, '@index0': index };
+        return this.renderTemplate(inner, childContext);
+      })
+      .join('');
+  }
+
   private renderTemplate(template: string, context: unknown): string {
-    const withSections = template.replace(
+    const withEach = template.replace(
+      /\{\{#each\s+(\w+)\}\}([\s\S]*?)\{\{\/each\}\}/g,
+      (_match, key: string, inner: string) => {
+        const value = lookup(context, key);
+        return Array.isArray(value) ? this.renderLoop(inner, value) : '';
+      },
+    );
+    const withSections = withEach.replace(
       /\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g,
       (_match, key: string, inner: string) => {
         const value = lookup(context, key);
         if (!Array.isArray(value)) {
           return '';
         }
-        return value
-          .map((item, index) => {
-            const childContext = isRecord(item)
-              ? { ...item, '@index': index + 1 }
-              : { this: item, '@index': index + 1 };
-            return this.renderTemplate(inner, childContext);
-          })
-          .join('');
+        return this.renderLoop(inner, value);
       },
     );
 

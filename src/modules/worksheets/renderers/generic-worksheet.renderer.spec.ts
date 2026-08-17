@@ -213,6 +213,62 @@ NULL
     expect(html).not.toMatch(/class="NULL"/);
     expect(html).not.toMatch(/>\s*NULL\s*</);
   });
+
+  it('renders Handlebars {{#each pairs}} with number and name', () => {
+    const html = renderer.render({
+      templateHtml:
+        '{{#each pairs}}<div class="number-item">{{number}}</div><div class="name-item">{{name}}</div>{{/each}}',
+      structure: {
+        pairs: [
+          { number: 20, name: 'TWENTY', color: '#e85d04' },
+          { number: 15, name: 'FIFTEEN', color: '#2a9d8f' },
+        ],
+      },
+    });
+
+    expect(html).toContain('TWENTY');
+    expect(html).toContain('FIFTEEN');
+    expect(html).toContain('>20<');
+    expect(html).toContain('>15<');
+    expect(html).not.toContain('{{#each pairs}}');
+    expect(html).toContain('top:280px');
+    expect(html).toContain('left:95px');
+    expect(html).toContain('left:620px');
+    expect(html).toContain('top:368px');
+  });
+
+  it('fills empty top/left styles so pair pills do not stack at 0,0', () => {
+    const html = renderer.render({
+      templateHtml:
+        '{{#each pairs}}<div class="number-item" style="top: px; left: px;">{{number}}</div><div class="name-item" style="top: px; left: px; color: ;">{{name}}</div>{{/each}}',
+      structure: {
+        pairs: [
+          { number: 20, name: 'TWENTY', color: '#e85d04' },
+          { number: 15, name: 'FIFTEEN', color: '#2a9d8f' },
+        ],
+      },
+    });
+
+    expect(html).not.toMatch(/top:\s*px/);
+    expect(html).toContain('top:280px');
+    expect(html).toContain('left:620px');
+    expect(html).toContain('color:#e85d04');
+  });
+
+  it('injects positioned pair rows when NUMBERS/NAMES tokens or empty each body are used', () => {
+    const html = renderer.render({
+      templateHtml: '{{NUMBERS}}{{NAMES}}',
+      structure: {
+        pairs: [{ number: 8, name: 'EIGHT', color: '#111111' }],
+      },
+    });
+
+    expect(html).toContain('class="number-item"');
+    expect(html).toContain('class="name-item"');
+    expect(html).toContain('EIGHT');
+    expect(html).toContain('data-field-path="pairs[0].number"');
+    expect(html).toMatch(/style="top:\d+px;left:\d+px"/);
+  });
 });
 
 describe('WorksheetRendererRegistry', () => {
