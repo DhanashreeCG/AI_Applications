@@ -269,19 +269,19 @@
     </div>
 
     <script>
-      const AGES = [
-        { id: '2-3', label: '2-3 years (FS 0)', age: 3, grade: 'FS0' },
-        { id: '3-4', label: '3-4 years (FS 1)', age: 4, grade: 'LKG' },
-        { id: '4-5', label: '4-5 years (FS 2)', age: 5, grade: 'UKG' },
-      ];
       const FAVORITES_KEY = 'worksheet-favorites';
       const state = {
-        ageGroup: '3-4',
+        ages: [],
+        ageGroup: '',
         page: 1,
         pageSize: 10,
+        pagerMaxButtons: 8,
         total: 0,
         defaultCount: 1,
         maxCount: 10,
+        apiBaseUrl: '',
+        apiPrefix: '/worksheets',
+        canvas: { width: 1016, height: 1316 },
         worksheetId: null,
         preview: null,
         editMode: false,
@@ -328,8 +328,27 @@
       function setFavorites(ids) {
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
       }
+      function queryApiBase() {
+        return (new URLSearchParams(location.search).get('api') || '').replace(/\/$/, '');
+      }
+      function apiUrl(path) {
+        const base = (state.apiBaseUrl || queryApiBase()).replace(/\/$/, '');
+        const prefix = (state.apiPrefix || '/worksheets').replace(/\/$/, '');
+        if (!path) return `${base}${prefix}`;
+        if (path.startsWith('?')) return `${base}${prefix}${path}`;
+        const suffix = path.startsWith('/') ? path : `/${path}`;
+        return `${base}${prefix}${suffix}`;
+      }
+      function resolveUrl(path) {
+        if (!path || /^(https?:|data:|blob:)/i.test(path)) return path;
+        const base = (state.apiBaseUrl || queryApiBase()).replace(/\/$/, '');
+        return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+      }
+      function apiFetch(path, options) {
+        return fetch(apiUrl(path), options);
+      }
       function selectedAge() {
-        return AGES.find((item) => item.id === state.ageGroup) || AGES[1];
+        return state.ages.find((item) => item.id === state.ageGroup) || state.ages[0];
       }
       function setStatus(text) { els.status.textContent = text || ''; }
       async function readError(res) {
@@ -343,7 +362,7 @@
 
       function renderAges() {
         els.ageGroup.innerHTML = '';
-        AGES.forEach((age) => {
+        state.ages.forEach((age) => {
           const label = document.createElement('label');
           label.className = 'age' + (age.id === state.ageGroup ? ' selected' : '');
           label.innerHTML = `<input type="radio" name="age" value="${age.id}"> ${age.label}`;
@@ -366,8 +385,8 @@
       }
 
       function scaleThumb(iframe, canvas) {
-        const width = canvas?.width || 1016;
-        const height = canvas?.height || 1316;
+        const width = canvas?.width || state.canvas.width;
+        const height = canvas?.height || state.canvas.height;
         iframe.style.width = width + 'px';
         iframe.style.height = height + 'px';
         const parent = iframe.parentElement;
@@ -390,7 +409,7 @@
           iframe.addEventListener('load', () => scaleThumb(iframe, item.canvas));
           frameWrap.appendChild(iframe);
         } else if (item.thumbnailUrl) {
-          frameWrap.style.background = `center/cover url('${item.thumbnailUrl}')`;
+          frameWrap.style.background = `center/cover url('${resolveUrl(item.thumbnailUrl)}')`;
         }
         card.appendChild(frameWrap);
         const bar = document.createElement('div');
@@ -419,7 +438,7 @@
 
       async function loadGrid() {
         const skip = (state.page - 1) * state.pageSize;
-        const res = await fetch(`/worksheets?skip=${skip}&take=${state.pageSize}`);
+        const res = await apiFetch(`?skip=${skip}&take=${state.pageSize}`);
         const body = await res.json();
         if (!res.ok) {
           setStatus(body?.error?.message || 'Could not load worksheets');
@@ -438,7 +457,7 @@
       function renderPager() {
         const pages = Math.max(1, Math.ceil(state.total / state.pageSize));
         els.pager.innerHTML = '';
-        for (let i = 1; i <= Math.min(pages, 8); i += 1) {
+        for (let i = 1; i <= Math.min(pages, state.pagerMaxButtons); i += 1) {
           const btn = document.createElement('button');
           btn.className = 'page' + (i === state.page ? ' active' : '');
           btn.textContent = String(i);
@@ -461,9 +480,13 @@
           return;
         }
         const age = selectedAge();
+        if (!age) {
+          setStatus('No age groups configured');
+          return;
+        }
         els.generateBtn.disabled = true;
         setStatus('Generating worksheets…');
-        const res = await fetch('/worksheets/generate-set', {
+        const res = await apiFetch('/generate-set', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -488,7 +511,7 @@
 
       function scaleFrame() {
         const iframe = els.worksheetFrame;
-        const canvas = state.preview?.canvas || { width: 1016, height: 1316 };
+        const canvas = state.preview?.canvas || state.canvas;
         iframe.style.width = canvas.width + 'px';
         iframe.style.height = canvas.height + 'px';
         const maxW = iframe.parentElement.clientWidth - 32;
@@ -498,6 +521,10 @@
       }
 
       async function openPreview(id, html) {
+        if (!id || id === 'null' || id === 'undefined') {
+          setStatus('Worksheet id is missing');
+          return;
+        }
         state.worksheetId = id;
         state.editMode = false;
         els.editBtn.textContent = 'Edit';
@@ -518,9 +545,9 @@
           requestAnimationFrame(onReady);
         };
         if (html) {
-          apply({ html, template: { name: 'Worksheet' }, canvas: { width: 1016, height: 1316 }, structure: {}, editableFields: [], fieldPrompts: {} });
+          apply({ html, template: { name: 'Worksheet' }, canvas: state.canvas, structure: {}, editableFields: [], fieldPrompts: {} });
         }
-        const res = await fetch(`/worksheets/${encodeURIComponent(id)}/preview?mode=editor`);
+        const res = await apiFetch(`/${encodeURIComponent(id)}/preview?mode=editor`);
         const preview = await res.json();
         if (!res.ok) {
           if (!html) setStatus(preview?.error?.message || 'Preview failed');
@@ -602,7 +629,7 @@
           if (field.type === 'image' || field.type === 'array' || field.type === 'object') continue;
           const el = doc.querySelector(`[data-editable='${field.path}'], [data-field-path='${field.path}']`);
           if (!el) continue;
-          await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/fields`, {
+          await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path: field.path, value: el.innerText.trim() }),
@@ -613,7 +640,7 @@
 
       async function download(id, format) {
         setStatus('Preparing download…');
-        const res = await fetch(`/worksheets/${encodeURIComponent(id)}/render`, {
+        const res = await apiFetch(`/${encodeURIComponent(id)}/render`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ format, mode: 'export' }),
@@ -632,15 +659,16 @@
         const params = new URLSearchParams();
         if (els.imageQuery.value.trim()) params.set('query', els.imageQuery.value.trim());
         if (state.selectedImagePath) params.set('path', state.selectedImagePath);
-        const res = await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/images/search?${params}`);
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/search?${params}`);
         const body = await res.json();
         els.imageBank.innerHTML = '';
         (body.results || []).forEach((item) => {
+          if (!item.imageUrl || item.imageUrl === 'null') return;
           const img = document.createElement('img');
-          img.src = item.imageUrl;
+          img.src = resolveUrl(item.imageUrl);
           img.title = item.caption || item.searchDescription;
           img.addEventListener('click', async () => {
-            await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/images`, {
+            await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ path: state.selectedImagePath, assetId: item.assetId }),
@@ -674,7 +702,7 @@
       els.fieldEditCancelBtn.addEventListener('click', () => els.fieldEditModal.classList.add('hidden'));
       els.fieldEditRegenBtn.addEventListener('click', async () => {
         els.fieldEditError.textContent = '';
-        const res = await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/edit`, {
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -691,7 +719,7 @@
         els.fieldEditCurrent.value = typeof next === 'string' ? next : JSON.stringify(next ?? '');
       });
       els.fieldEditSaveBtn.addEventListener('click', async () => {
-        await fetch(`/worksheets/${encodeURIComponent(state.worksheetId)}/fields`, {
+        await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: state.selectedFieldPath, value: els.fieldEditCurrent.value }),
@@ -704,20 +732,45 @@
       function fillCountOptions(defaultCount, maxCount) {
         state.defaultCount = defaultCount;
         state.maxCount = maxCount;
-        const options = [...new Set([1, defaultCount, 2, 3, 4, 5, 8, 10].filter((n) => n >= 1 && n <= maxCount))].sort((a, b) => a - b);
+        const options = [];
+        for (let n = 1; n <= maxCount; n += 1) options.push(n);
         els.countSelect.innerHTML = options.map((n) => `<option value="${n}">${n}</option>`).join('');
         els.countSelect.value = String(defaultCount);
       }
 
+      function applySettings(settings) {
+        if (!settings || typeof settings !== 'object') return;
+        if (settings.apiBaseUrl != null) state.apiBaseUrl = String(settings.apiBaseUrl).replace(/\/$/, '');
+        if (settings.apiPrefix) state.apiPrefix = String(settings.apiPrefix).replace(/\/$/, '');
+        if (settings.pageSize) state.pageSize = Number(settings.pageSize) || state.pageSize;
+        if (settings.pagerMaxButtons) state.pagerMaxButtons = Number(settings.pagerMaxButtons) || state.pagerMaxButtons;
+        if (settings.canvas?.width && settings.canvas?.height) state.canvas = settings.canvas;
+        if (Array.isArray(settings.ageGroups) && settings.ageGroups.length) {
+          state.ages = settings.ageGroups;
+          state.ageGroup = settings.defaultAgeGroup && state.ages.some((age) => age.id === settings.defaultAgeGroup)
+            ? settings.defaultAgeGroup
+            : state.ages[0].id;
+        }
+        fillCountOptions(settings.defaultCount || state.defaultCount, settings.maxCount || state.maxCount);
+      }
+
+      async function loadSettings() {
+        const res = await apiFetch('/settings');
+        const settings = await res.json();
+        if (!res.ok) throw new Error(settings?.error?.message || 'Could not load settings');
+        applySettings(settings);
+      }
+
       renderAges();
-      fillCountOptions(1, 10);
-      fetch('/worksheets/settings')
-        .then((res) => res.json())
-        .then((settings) => fillCountOptions(settings.defaultCount || 1, settings.maxCount || 10))
-        .catch(() => {});
-      const params = new URLSearchParams(location.search);
-      if (params.get('id')) openPreview(params.get('id'));
-      else loadGrid();
+      fillCountOptions(state.defaultCount, state.maxCount);
+      loadSettings()
+        .then(() => {
+          renderAges();
+          const params = new URLSearchParams(location.search);
+          if (params.get('id')) return openPreview(params.get('id'));
+          return loadGrid();
+        })
+        .catch((error) => setStatus(error.message || 'Could not load settings'));
     </script>
   </body>
 </html>

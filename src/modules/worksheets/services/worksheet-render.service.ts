@@ -10,7 +10,6 @@ import { PrismaService } from '../../database/prisma.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
 import { BrowserPoolService } from '../../flashcards/flashcard-renderer/browser/browser-pool.service';
 import {
-  DEFAULT_WORKSHEET_CANVAS,
   WORKSHEET_WORKFLOW_RENDER,
 } from '../constants/worksheet.constants';
 import { WorksheetException } from '../errors/worksheet.exception';
@@ -28,6 +27,7 @@ import {
   runTrackedStage,
 } from '../telemetry/worksheet-pipeline.events';
 import { WorksheetRendererRegistry } from '../renderers/worksheet-renderer.registry';
+import { injectBaseHref } from '../renderers/generic-worksheet.renderer';
 import { WorksheetAssetService } from './worksheet-asset.service';
 import { WorksheetFieldMetadataService } from './worksheet-field-metadata.service';
 import {
@@ -67,6 +67,7 @@ export class WorksheetRenderService {
   private readonly logger = new Logger(WorksheetRenderService.name);
   private readonly enabled: boolean;
   private readonly apiBaseUrl: string;
+  private readonly pencilIconUrl: string;
   private readonly defaultWidth: number;
   private readonly defaultHeight: number;
   private readonly keyPrefix: string;
@@ -88,15 +89,14 @@ export class WorksheetRenderService {
     this.enabled =
       this.configService.get<boolean>('worksheets.renderer.enabled') !== false;
     this.apiBaseUrl = (
-      this.configService.get<string>('worksheets.renderer.apiBaseUrl') ??
-      'http://localhost:5000'
+      this.configService.get<string>('worksheets.renderer.apiBaseUrl') ?? ''
     ).replace(/\/$/, '');
+    this.pencilIconUrl =
+      this.configService.get<string>('worksheets.pencilIconUrl') ?? '';
     this.defaultWidth =
-      this.configService.get<number>('worksheets.renderer.defaultWidth') ??
-      DEFAULT_WORKSHEET_CANVAS.width;
+      this.configService.get<number>('worksheets.renderer.defaultWidth') ?? 1016;
     this.defaultHeight =
-      this.configService.get<number>('worksheets.renderer.defaultHeight') ??
-      DEFAULT_WORKSHEET_CANVAS.height;
+      this.configService.get<number>('worksheets.renderer.defaultHeight') ?? 1316;
     this.keyPrefix =
       this.configService.get<string>('worksheets.renderer.s3KeyPrefix') ??
       'worksheets/rendered';
@@ -136,7 +136,7 @@ export class WorksheetRenderService {
       mode: input.mode ?? 'editor',
       canvas,
       topic,
-      baseHref: this.apiBaseUrl,
+      pencilIconUrl: this.pencilIconUrl,
     });
     return { html, canvas };
   }
@@ -482,7 +482,9 @@ export class WorksheetRenderService {
     const page = await browser.newPage();
     try {
       await page.setViewportSize({ width, height });
-      await page.setContent(html, { waitUntil: 'networkidle' });
+      await page.setContent(injectBaseHref(html, this.apiBaseUrl), {
+        waitUntil: 'networkidle',
+      });
       const screenshot = await page.screenshot({ type: 'webp', fullPage: false });
       return screenshot;
     } finally {
@@ -498,7 +500,9 @@ export class WorksheetRenderService {
     const browser = await this.browserPool.getBrowser();
     const page = await browser.newPage();
     try {
-      await page.setContent(html, { waitUntil: 'networkidle' });
+      await page.setContent(injectBaseHref(html, this.apiBaseUrl), {
+        waitUntil: 'networkidle',
+      });
       const pdf = await page.pdf({
         width: `${width}px`,
         height: `${height}px`,

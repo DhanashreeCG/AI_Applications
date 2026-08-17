@@ -27,7 +27,11 @@ describe('WorksheetTemplateService.create', () => {
     calculateSha256: jest.fn(),
   };
   const configService = {
-    get: () => 3600,
+    get: (key: string) => {
+      if (key === 'worksheets.signedUrlTtlSeconds') return 3600;
+      if (key === 'worksheets.assetImagePath') return '/worksheets/assets';
+      return undefined;
+    },
   };
 
   let service: WorksheetTemplateService;

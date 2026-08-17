@@ -8,7 +8,6 @@ import { CreateWorksheetTemplateDto } from '../dto/create-worksheet-template.dto
 import { WorksheetException } from '../errors/worksheet.exception';
 import {
   GENERIC_RENDERER_TYPE,
-  WORKSHEET_ASSET_IMAGE_PATH,
   WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES,
   WORKSHEET_TEMPLATE_IMAGE_MIME_TYPES,
 } from '../constants/worksheet.constants';
@@ -49,6 +48,7 @@ const TEMPLATE_STATUSES = new Set(['DRAFT', 'ACTIVE', 'INACTIVE']);
 export class WorksheetTemplateService {
   private readonly logger = new Logger(WorksheetTemplateService.name);
   private readonly signedUrlTtlSeconds: number;
+  private readonly assetImagePath: string;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -58,6 +58,10 @@ export class WorksheetTemplateService {
   ) {
     this.signedUrlTtlSeconds =
       this.configService.get<number>('worksheets.signedUrlTtlSeconds') ?? 3600;
+    this.assetImagePath = (
+      this.configService.get<string>('worksheets.assetImagePath') ??
+      '/worksheets/assets'
+    ).replace(/\/$/, '');
   }
 
   public async create(
@@ -228,7 +232,7 @@ export class WorksheetTemplateService {
         description: template.description,
         meta,
         sampleUrl: template.sampleAssetId
-          ? `${WORKSHEET_ASSET_IMAGE_PATH}/${template.sampleAssetId}/image`
+          ? `${this.assetImagePath}/${template.sampleAssetId}/image`
           : null,
       };
     });

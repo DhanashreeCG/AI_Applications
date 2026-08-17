@@ -116,6 +116,7 @@ export interface WorksheetRenderInput {
   canvas?: { width: number; height: number };
   topic?: string;
   baseHref?: string;
+  pencilIconUrl?: string;
 }
 
 export interface ResolvedAssetSlot {

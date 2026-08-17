@@ -81,12 +81,21 @@ export interface AppConfig {
     };
   };
   worksheets: {
+    apiBaseUrl: string;
+    apiPrefix: string;
+    assetImagePath: string;
+    pencilIconUrl: string;
     imageConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
     imagePickerLimit: number;
     generateCountDefault: number;
     generateCountMax: number;
+    listPageSize: number;
+    listPageSizeMax: number;
+    pagerMaxButtons: number;
+    defaultAgeGroup: string;
+    ageGroups: Array<{ id: string; label: string; age: number; grade: string }>;
     geminiModel: string;
     promptVersion: string;
     renderer: {
@@ -104,6 +113,36 @@ export interface AppConfig {
     storeAiPayload: boolean;
     workflowDefault: string;
   };
+}
+
+function envTrim(name: string, fallback = ''): string {
+  const raw = process.env[name];
+  if (raw == null || raw.trim() === '') {
+    return fallback;
+  }
+  return raw.trim();
+}
+
+function parseWorksheetAgeGroups(raw: string | undefined): AppConfig['worksheets']['ageGroups'] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as AppConfig['worksheets']['ageGroups'];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(
+      (item) =>
+        item &&
+        typeof item.id === 'string' &&
+        typeof item.label === 'string' &&
+        typeof item.age === 'number' &&
+        typeof item.grade === 'string',
+    );
+  } catch {
+    return [];
+  }
 }
 
 function envFlagEnabled(primary: string, fallback: string): boolean {
@@ -283,6 +322,13 @@ export default (): AppConfig => ({
     },
   },
   worksheets: {
+    apiBaseUrl: envTrim('WORKSHEET_API_BASE_URL').replace(/\/$/, ''),
+    apiPrefix: envTrim('WORKSHEET_API_PREFIX', '/worksheets').replace(/\/$/, '') || '/worksheets',
+    assetImagePath: envTrim('WORKSHEET_ASSET_IMAGE_PATH', '/worksheets/assets').replace(
+      /\/$/,
+      '',
+    ),
+    pencilIconUrl: envTrim('WORKSHEET_PENCIL_ICON_URL', '/pencil.png'),
     imageConcurrency: parseInt(
       process.env.WORKSHEET_IMAGE_CONCURRENCY ||
         process.env.FLASHCARD_IMAGE_CONCURRENCY ||
@@ -311,6 +357,11 @@ export default (): AppConfig => ({
       process.env.WORKSHEET_GENERATE_COUNT_MAX || '10',
       10,
     ),
+    listPageSize: parseInt(process.env.WORKSHEET_LIST_PAGE_SIZE || '10', 10),
+    listPageSizeMax: parseInt(process.env.WORKSHEET_LIST_PAGE_SIZE_MAX || '50', 10),
+    pagerMaxButtons: parseInt(process.env.WORKSHEET_PAGER_MAX_BUTTONS || '8', 10),
+    defaultAgeGroup: envTrim('WORKSHEET_DEFAULT_AGE_GROUP', '3-4'),
+    ageGroups: parseWorksheetAgeGroups(process.env.WORKSHEET_AGE_GROUPS),
     geminiModel:
       process.env.WORKSHEET_GEMINI_MODEL ||
       process.env.FLASHCARD_GEMINI_MODEL ||
@@ -325,10 +376,10 @@ export default (): AppConfig => ({
         process.env.WORKSHEET_RENDERER_SIGNED_URL_TTL_SECONDS || '3600',
         10,
       ),
-      apiBaseUrl:
-        process.env.WORKSHEET_RENDERER_API_BASE_URL ||
-        process.env.FLASHCARD_RENDERER_API_BASE_URL ||
-        `http://localhost:${process.env.PORT || '5000'}`,
+      apiBaseUrl: envTrim(
+        'WORKSHEET_RENDERER_API_BASE_URL',
+        envTrim('WORKSHEET_API_BASE_URL'),
+      ).replace(/\/$/, ''),
       defaultWidth: parseInt(process.env.WORKSHEET_RENDER_WIDTH || '1016', 10),
       defaultHeight: parseInt(
         process.env.WORKSHEET_RENDER_HEIGHT || '1316',

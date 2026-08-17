@@ -21,7 +21,7 @@ describe('WorksheetAssetService', () => {
       if (key === 'worksheets.imageSearchLimit') return 1;
       if (key === 'worksheets.imagePickerLimit') return 12;
       if (key === 'worksheets.signedUrlTtlSeconds') return 3600;
-      if (key === 'worksheets.renderer.apiBaseUrl') return 'http://localhost:5000';
+      if (key === 'worksheets.assetImagePath') return '/worksheets/assets';
       return undefined;
     },
   };
@@ -83,7 +83,7 @@ describe('WorksheetAssetService', () => {
 
     await expect(service.resolveAsset('asset-123')).resolves.toEqual({
       assetId: 'asset-123',
-      imageUrl: 'http://localhost:5000/worksheets/assets/asset-123/image',
+      imageUrl: '/worksheets/assets/asset-123/image',
       signedUrl: 'https://signed.example/img',
     });
     expect(s3StorageService.getSignedUrl).toHaveBeenCalled();

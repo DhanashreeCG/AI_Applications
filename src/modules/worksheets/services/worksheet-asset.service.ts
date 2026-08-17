@@ -12,7 +12,6 @@ import {
 } from '../../../common/events/pipeline-tracker.events';
 import {
   mapWithConcurrency,
-  WORKSHEET_ASSET_IMAGE_PATH,
   WORKSHEET_IMAGE_SEARCH_EMBEDDING_PURPOSE,
 } from '../constants/worksheet.constants';
 import { WorksheetException } from '../errors/worksheet.exception';
@@ -37,7 +36,7 @@ export class WorksheetAssetService {
   private readonly searchLimit: number;
   private readonly pickerLimit: number;
   private readonly signedUrlTtlSeconds: number;
-  private readonly apiBaseUrl: string;
+  private readonly assetImagePath: string;
   private readonly emitter: WorksheetPipelineEmitter;
 
   constructor(
@@ -55,9 +54,9 @@ export class WorksheetAssetService {
       this.configService.get<number>('worksheets.imagePickerLimit') ?? 12;
     this.signedUrlTtlSeconds =
       this.configService.get<number>('worksheets.signedUrlTtlSeconds') ?? 3600;
-    this.apiBaseUrl = (
-      this.configService.get<string>('worksheets.renderer.apiBaseUrl') ??
-      'http://localhost:5000'
+    this.assetImagePath = (
+      this.configService.get<string>('worksheets.assetImagePath') ??
+      '/worksheets/assets'
     ).replace(/\/$/, '');
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
   }
@@ -206,7 +205,7 @@ export class WorksheetAssetService {
   }
 
   public assetProxyUrl(assetId: string): string {
-    return `${WORKSHEET_ASSET_IMAGE_PATH}/${assetId}/image`;
+    return `${this.assetImagePath}/${assetId}/image`;
   }
 
   public async resolveAsset(assetId: string): Promise<ResolvedAssetUrl> {
@@ -237,7 +236,7 @@ export class WorksheetAssetService {
 
     return {
       assetId: asset.id,
-      imageUrl: `${this.apiBaseUrl}${this.assetProxyUrl(asset.id)}`,
+      imageUrl: this.assetProxyUrl(asset.id),
       signedUrl,
     };
   }

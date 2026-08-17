@@ -12,7 +12,6 @@ import { GenerateWorksheetDto } from '../dto/generate-worksheet.dto';
 import { WorksheetException } from '../errors/worksheet.exception';
 import {
   mapWithConcurrency,
-  WORKSHEET_ASSET_IMAGE_PATH,
   WORKSHEET_WORKFLOW_GENERATE,
 } from '../constants/worksheet.constants';
 import { GenerateWorksheetResponse } from '../types/worksheet.types';
@@ -40,6 +39,21 @@ export class WorksheetGenerationService {
   private readonly workflowType: string;
   private readonly defaultCount: number;
   private readonly maxCount: number;
+  private readonly pageSize: number;
+  private readonly pageSizeMax: number;
+  private readonly pagerMaxButtons: number;
+  private readonly apiBaseUrl: string;
+  private readonly apiPrefix: string;
+  private readonly assetImagePath: string;
+  private readonly pencilIconUrl: string;
+  private readonly defaultAgeGroup: string;
+  private readonly ageGroups: Array<{
+    id: string;
+    label: string;
+    age: number;
+    grade: string;
+  }>;
+  private readonly canvas: { width: number; height: number };
 
   constructor(
     private readonly prisma: PrismaService,
@@ -60,14 +74,57 @@ export class WorksheetGenerationService {
     );
     this.maxCount = Math.max(
       this.defaultCount,
-      this.configService.get<number>('worksheets.generateCountMax') ?? 10,
+      this.configService.get<number>('worksheets.generateCountMax') ?? this.defaultCount,
     );
+    this.pageSize = Math.max(
+      1,
+      this.configService.get<number>('worksheets.listPageSize') ?? 10,
+    );
+    this.pageSizeMax = Math.max(
+      this.pageSize,
+      this.configService.get<number>('worksheets.listPageSizeMax') ?? this.pageSize,
+    );
+    this.pagerMaxButtons = Math.max(
+      1,
+      this.configService.get<number>('worksheets.pagerMaxButtons') ?? 8,
+    );
+    this.apiBaseUrl = (
+      this.configService.get<string>('worksheets.apiBaseUrl') ?? ''
+    ).replace(/\/$/, '');
+    this.apiPrefix = (
+      this.configService.get<string>('worksheets.apiPrefix') ?? '/worksheets'
+    ).replace(/\/$/, '');
+    this.assetImagePath = (
+      this.configService.get<string>('worksheets.assetImagePath') ??
+      '/worksheets/assets'
+    ).replace(/\/$/, '');
+    this.pencilIconUrl =
+      this.configService.get<string>('worksheets.pencilIconUrl') ?? '/pencil.png';
+    this.defaultAgeGroup =
+      this.configService.get<string>('worksheets.defaultAgeGroup') ?? '';
+    this.ageGroups =
+      this.configService.get<Array<{ id: string; label: string; age: number; grade: string }>>(
+        'worksheets.ageGroups',
+      ) ?? [];
+    this.canvas = {
+      width: this.configService.get<number>('worksheets.renderer.defaultWidth') ?? 1016,
+      height: this.configService.get<number>('worksheets.renderer.defaultHeight') ?? 1316,
+    };
   }
 
   public uiSettings() {
     return {
+      apiBaseUrl: this.apiBaseUrl,
+      apiPrefix: this.apiPrefix,
+      assetImagePath: this.assetImagePath,
+      pencilIconUrl: this.pencilIconUrl,
       defaultCount: this.defaultCount,
       maxCount: this.maxCount,
+      pageSize: this.pageSize,
+      pagerMaxButtons: this.pagerMaxButtons,
+      defaultAgeGroup: this.defaultAgeGroup,
+      ageGroups: this.ageGroups,
+      canvas: this.canvas,
     };
   }
 
@@ -383,7 +440,10 @@ export class WorksheetGenerationService {
 
   public async list(options: { skip?: number; take?: number } = {}) {
     const skip = Math.max(0, options.skip ?? 0);
-    const take = Math.min(50, Math.max(1, options.take ?? 10));
+    const take = Math.min(
+      this.pageSizeMax,
+      Math.max(1, options.take ?? this.pageSize),
+    );
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.worksheet.findMany({
         skip,
@@ -474,7 +534,7 @@ export class WorksheetGenerationService {
         category: row.template.category,
       },
       thumbnailUrl: row.template.sampleAssetId
-        ? `${WORKSHEET_ASSET_IMAGE_PATH}/${row.template.sampleAssetId}/image`
+        ? `${this.assetImagePath}/${row.template.sampleAssetId}/image`
         : null,
     };
   }

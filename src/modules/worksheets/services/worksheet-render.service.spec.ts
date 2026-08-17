@@ -83,6 +83,7 @@ describe('WorksheetRenderService', () => {
     expect(result.format).toBe('html');
     expect(result.html).toContain('Count');
     expect(result.html).toContain('/worksheets/assets/a1/image');
+    expect(result.html).not.toContain('<base ');
   });
 
   it('rejects an unsupported format', async () => {
