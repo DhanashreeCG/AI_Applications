@@ -30,6 +30,11 @@ import {
   ImageSearchQuery,
 } from '../interfaces/flashcard.interfaces';
 import {
+  hitSubjectKeys,
+  isLetterGlyphSubject,
+  primaryImageSubject,
+} from '../utils/distinct-image-subjects.util';
+import {
   FlashcardPipelineEmitter,
   hashPayload,
 } from '../telemetry/flashcard-pipeline.events';
@@ -40,6 +45,7 @@ interface RetrieveImagesInput {
   ageMin: number | null;
   ageMax: number | null;
   usedAssetIds?: Set<string>;
+  usedObjectKeys?: Set<string>;
 }
 
 @Injectable()
@@ -51,6 +57,7 @@ export class FlashcardImageRetrievalService {
   private readonly pickerLimit: number;
   private readonly userUploadS3Prefix: string;
   private readonly emitter: FlashcardPipelineEmitter;
+  private pickLock: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly searchService: SearchService,
@@ -93,13 +100,15 @@ export class FlashcardImageRetrievalService {
       return this.emptyReference('', attempts, 'IMAGE_NOT_FOUND');
     }
 
-    for (const attempt of cascade) {
+    for (let index = 0; index < cascade.length; index += 1) {
+      const attempt = cascade[index];
       attempts.push(attempt.label);
       const hit = await this.searchOnce(
         attempt.query,
         input,
         telemetry,
         attempts,
+        index === cascade.length - 1,
       );
       if (hit) {
         return hit;
@@ -199,6 +208,7 @@ export class FlashcardImageRetrievalService {
     input: RetrieveImagesInput,
     telemetry: PipelineTelemetryContext | undefined,
     attempts: string[],
+    allowReuse: boolean,
   ): Promise<AssetReference | null> {
     const searchId = randomUUID();
     const startedAt = Date.now();
@@ -213,7 +223,6 @@ export class FlashcardImageRetrievalService {
     }
 
     try {
-      // Single top match only — highest similarity / least distance.
       const response = await this.searchService.search({
         query,
         limit: this.searchLimit,
@@ -221,9 +230,12 @@ export class FlashcardImageRetrievalService {
 
       this.emitEmbeddingUsage(telemetry, query, response);
 
-      const candidate = this.selectTopSimilarityHit(
+      const querySubject = primaryImageSubject(input.queries[0]);
+      const candidate = await this.claimHit(
         response.results,
-        input.usedAssetIds,
+        input,
+        querySubject,
+        allowReuse,
       );
 
       if (!candidate) {
@@ -242,8 +254,6 @@ export class FlashcardImageRetrievalService {
         }
         return null;
       }
-
-      input.usedAssetIds?.add(candidate.assetId);
 
       let signedUrl: string | null = null;
       try {
@@ -325,15 +335,58 @@ export class FlashcardImageRetrievalService {
   }
 
   /**
-   * Pick exactly the top semantic hit (highest similarity / least distance).
-   * No random rotation. If that asset was already used in this set, treat as a
-   * miss so the cascade can try the next LLM-derived query.
-   * When the only hit is already used and this is the sole result, still return
-   * it so the card is not left blank after all attempts.
+   * Claim the best unused hit. Concurrent card searches wait on pickLock so two
+   * cards cannot take the same asset or object type. Reuse is allowed only on
+   * the last cascade attempt so a card is not left blank.
    */
+  private claimHit(
+    results: SearchResultItem[],
+    input: RetrieveImagesInput,
+    querySubject: string,
+    allowReuse: boolean,
+  ): Promise<SearchResultItem | null> {
+    const run = this.pickLock.then(() => {
+      const candidate = this.selectTopSimilarityHit(
+        results,
+        input.usedAssetIds,
+        input.usedObjectKeys,
+        allowReuse,
+      );
+      if (!candidate) {
+        return null;
+      }
+      input.usedAssetIds?.add(candidate.assetId);
+      this.markUsedSubjects(input.usedObjectKeys, candidate, querySubject);
+      return candidate;
+    });
+    this.pickLock = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private markUsedSubjects(
+    usedObjectKeys: Set<string> | undefined,
+    hit: SearchResultItem,
+    querySubject: string,
+  ): void {
+    if (!usedObjectKeys) {
+      return;
+    }
+    if (querySubject && !isLetterGlyphSubject(querySubject)) {
+      usedObjectKeys.add(querySubject);
+    }
+    for (const key of hitSubjectKeys(hit)) {
+      usedObjectKeys.add(key);
+    }
+  }
+
   private selectTopSimilarityHit(
     results: SearchResultItem[],
-    usedAssetIds?: Set<string>,
+    usedAssetIds: Set<string> | undefined,
+    usedObjectKeys: Set<string> | undefined,
+    allowReuse: boolean,
   ): SearchResultItem | null {
     if (!results.length) {
       return null;
@@ -342,16 +395,27 @@ export class FlashcardImageRetrievalService {
     const ranked = [...results].sort(
       (left, right) => (right.similarity ?? 0) - (left.similarity ?? 0),
     );
-    const top = ranked[0];
 
-    if (!usedAssetIds?.has(top.assetId)) {
-      return top;
+    const unused = ranked.find(
+      (item) =>
+        !usedAssetIds?.has(item.assetId) &&
+        !this.isSameImageType(item, usedObjectKeys),
+    );
+    if (unused) {
+      return unused;
     }
 
-    // Top hit already used — only fall through to a lower-ranked unused hit
-    // when the search returned more than one (should not happen with limit=1).
-    const unused = ranked.find((item) => !usedAssetIds.has(item.assetId));
-    return unused ?? top;
+    return allowReuse ? ranked[0] : null;
+  }
+
+  private isSameImageType(
+    hit: SearchResultItem,
+    usedObjectKeys: Set<string> | undefined,
+  ): boolean {
+    if (!usedObjectKeys?.size) {
+      return false;
+    }
+    return hitSubjectKeys(hit).some((key) => usedObjectKeys.has(key));
   }
 
   public async searchCandidates(

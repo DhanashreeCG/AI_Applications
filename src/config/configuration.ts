@@ -265,7 +265,7 @@ export default (): AppConfig => ({
       10,
     ),
     imageSearchLimit: parseInt(
-      process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '1',
+      process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '8',
       10,
     ),
     imagePickerLimit: parseInt(

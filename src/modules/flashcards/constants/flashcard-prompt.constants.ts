@@ -717,6 +717,17 @@ Selected template contract:
 - Orientation: ${input.selectedTemplate.orientation}
 
 Produce exactly ${input.count} cards.
+${
+  input.count > 1
+    ? `
+CROSS-CARD IMAGE UNIQUENESS (count is ${input.count}):
+- Each card must show a DIFFERENT primary image subject. Never repeat the same object, animal, food, or scene across cards (forbidden: apple on card 1 and apple on card 2).
+- expectedObjects[0] must be unique across cards in this response.
+- searchQuery must name that distinct subject so retrieval does not return the same image type twice.
+- Exception: BARE_EXACT_QUERY letter-glyph slots may repeat the same letter phrase when teaching that letter.
+`
+    : ''
+}
 Inside "textComponents", use these exact component IDs verbatim (already-expanded, one value each). Do not rename, translate, omit required IDs, merge IDs together, or add IDs:
 ${textContract || '- No text components in this template.'}
 

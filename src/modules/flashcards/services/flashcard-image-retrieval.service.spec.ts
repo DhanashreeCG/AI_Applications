@@ -165,6 +165,43 @@ describe('FlashcardImageRetrievalService', () => {
     expect(result.assetId).toBe('used-1');
   });
 
+  it('prefers an unused distinct object when the top hit is already used', async () => {
+    searchService.search.mockResolvedValue({
+      query: 'apple',
+      total: 2,
+      results: [
+        {
+          assetId: 'used-1',
+          s3ObjectKey: 'assets/used-1/original.png',
+          caption: 'apple',
+          objects: ['apple'],
+          similarity: 0.95,
+          mimeType: 'image/png',
+          ageGroups: [],
+        },
+        {
+          assetId: 'banana-1',
+          s3ObjectKey: 'assets/banana-1/original.png',
+          caption: 'banana',
+          objects: ['banana'],
+          similarity: 0.7,
+          mimeType: 'image/png',
+          ageGroups: [],
+        },
+      ],
+    });
+
+    const result = await service.retrieveForCard({
+      queries: [{ searchQuery: 'apple', expectedObjects: ['apple'] }],
+      ageMin: 4,
+      ageMax: 6,
+      usedAssetIds: new Set(['used-1']),
+      usedObjectKeys: new Set(['apple']),
+    });
+
+    expect(result.assetId).toBe('banana-1');
+  });
+
   it('returns IMAGE_NOT_FOUND only when embeddings yield no results', async () => {
     searchService.search.mockResolvedValue({
       query: 'missing object',

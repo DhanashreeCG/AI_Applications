@@ -114,6 +114,6 @@ export const FLASHCARD_USER_UPLOAD_MIME_TYPES = new Set([
 ]);
 export const DEFAULT_IMAGE_CONCURRENCY = 3;
 export const DEFAULT_SIGNED_URL_TTL_SECONDS = 3600;
-/** Always fetch the single top semantic match (highest similarity / least distance). */
-export const DEFAULT_IMAGE_SEARCH_LIMIT = 1;
+/** Fetch several semantic matches so unused / distinct-type assets can be chosen. */
+export const DEFAULT_IMAGE_SEARCH_LIMIT = 8;
 export const DEFAULT_LANGUAGE = 'English';

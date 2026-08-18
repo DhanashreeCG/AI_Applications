@@ -419,19 +419,39 @@
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
         gap: 26px 22px;
+        align-items: start;
       }
 
       .tile {
         display: flex;
         flex-direction: column;
         gap: 12px;
+        min-width: 0;
+        position: relative;
+        z-index: 0;
+      }
+
+      .tile.editing {
+        z-index: 2;
       }
 
       .tile-actions {
         display: flex;
-        gap: 14px;
+        flex-wrap: wrap;
+        gap: 8px 10px;
         align-items: center;
         padding-left: 2px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      .tile-edit-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        width: 100%;
+        flex-basis: 100%;
+        padding-top: 2px;
       }
 
       .icon-btn {
@@ -467,20 +487,25 @@
         border-radius: 18px;
       }
 
-      .icon-btn.save-edit {
-        color: var(--ok);
-        font-size: 11px;
+      .icon-btn.save-edit,
+      .icon-btn.cancel-edit {
+        font-size: 12px;
         font-weight: 800;
         width: auto;
-        padding: 0 8px;
+        min-width: 64px;
+        height: 32px;
+        padding: 0 12px;
+        border-radius: 8px;
+      }
+
+      .icon-btn.save-edit {
+        color: var(--ok);
+        background: #ecfdf3;
       }
 
       .icon-btn.cancel-edit {
         color: var(--danger);
-        font-size: 11px;
-        font-weight: 800;
-        width: auto;
-        padding: 0 8px;
+        background: #fef2f2;
       }
 
       /* ---------- skeleton ---------- */
@@ -4291,6 +4316,9 @@
         actions.append(fav, edit, view, png, pdf);
 
         if (state.editingIndex === index) {
+          const editRow = document.createElement('div');
+          editRow.className = 'tile-edit-actions';
+
           const save = document.createElement('button');
           save.type = 'button';
           save.className = 'icon-btn save-edit';
@@ -4304,7 +4332,8 @@
           cancel.textContent = 'Cancel';
           cancel.addEventListener('click', () => cancelEditingCard());
 
-          actions.append(save, cancel);
+          editRow.append(save, cancel);
+          actions.appendChild(editRow);
         }
 
         tile.appendChild(actions);
