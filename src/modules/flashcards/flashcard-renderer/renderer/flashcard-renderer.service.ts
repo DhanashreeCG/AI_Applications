@@ -196,4 +196,81 @@ export class FlashcardRendererService {
 
     return this.cachedCss;
   }
+
+  public async renderDownload(
+    response: GenerateFlashcardsResponse,
+    format: 'pdf' | 'png' | 'webp',
+    cardIndex?: number,
+  ): Promise<{ buffer: Buffer; contentType: string; fileName: string }> {
+    if (!this.enabled) {
+      throw new ServiceUnavailableException(
+        'Flashcard renderer is disabled (FLASHCARD_RENDERER_ENABLED=false)',
+      );
+    }
+
+    const layout = parseLayoutDefinition(response.layoutDefinition);
+    const dimensions = resolvePageDimensions(
+      response.template.pageSize,
+      response.template.orientation,
+    );
+    const css = this.getStylesheet();
+    const context: FlashcardRenderContext = {
+      apiBaseUrl: this.apiBaseUrl,
+      pageWidth: dimensions.width,
+      pageHeight: dimensions.height,
+      warnings: [],
+      template: response.template,
+      request: response.request,
+    };
+
+    const cards =
+      Number.isInteger(cardIndex) && cardIndex != null
+        ? response.cards.filter(
+            (card, index) => card.cardIndex === cardIndex || index === cardIndex,
+          )
+        : response.cards;
+    if (!cards.length) {
+      throw new ServiceUnavailableException('No flashcard is available to download');
+    }
+
+    const cardsHtml = cards.map((card) =>
+      this.cardRenderer.render(card, layout, context),
+    );
+    const slug = (response.request?.topic || response.request?.query || 'flashcards')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 40);
+
+    if (format === 'pdf') {
+      const buffer = await this.pdfService.renderPdfFromCards({
+        title: slug,
+        cardsHtml: cardsHtml.join('\n'),
+        width: dimensions.width,
+        height: dimensions.height,
+      });
+      return {
+        buffer,
+        contentType: 'application/pdf',
+        fileName: `${slug || 'flashcards'}.pdf`,
+      };
+    }
+
+    const html = renderDocument({
+      title: `Flashcard ${cards[0].cardIndex}`,
+      css,
+      bodyHtml: `<div class="flashcard-stage">${cardsHtml[0]}</div>`,
+    });
+    const buffer = await this.pdfService.renderImageFromHtml({
+      html,
+      width: dimensions.width,
+      height: dimensions.height,
+      type: format,
+    });
+    return {
+      buffer,
+      contentType: format === 'png' ? 'image/png' : 'image/webp',
+      fileName: `${slug || 'flashcard'}-${cards[0].cardIndex}.${format}`,
+    };
+  }
 }

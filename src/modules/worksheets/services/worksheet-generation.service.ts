@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@generated/prisma/client';
+import { joinPublicAssetUrl } from '../../../common/ui/toondemy-font';
 import { getErrorMessage } from '../../../common/utils/error-message';
 import {
   PIPELINE_STAGES,
@@ -99,8 +100,10 @@ export class WorksheetGenerationService {
       this.configService.get<string>('worksheets.assetImagePath') ??
       '/worksheets/assets'
     ).replace(/\/$/, '');
-    this.pencilIconUrl =
-      this.configService.get<string>('worksheets.pencilIconUrl') ?? '/pencil.png';
+    this.pencilIconUrl = joinPublicAssetUrl(
+      this.apiBaseUrl,
+      this.configService.get<string>('worksheets.pencilIconUrl') ?? '/pencil.png',
+    );
     this.imagePickerLimit = Math.max(
       1,
       this.configService.get<number>('worksheets.imagePickerLimit') ?? 10,

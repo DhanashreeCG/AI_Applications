@@ -717,6 +717,17 @@ Selected template contract:
 - Orientation: ${input.selectedTemplate.orientation}
 
 Produce exactly ${input.count} cards.
+${
+  input.count > 1
+    ? `
+CROSS-CARD IMAGE UNIQUENESS (count is ${input.count}):
+- Each card must show a DIFFERENT primary image subject. Never repeat the same object, animal, food, or scene across cards (forbidden: apple on card 1 and apple on card 2).
+- expectedObjects[0] must be unique across cards in this response.
+- searchQuery must name that distinct subject so retrieval does not return the same image type twice.
+- Exception: BARE_EXACT_QUERY letter-glyph slots may repeat the same letter phrase when teaching that letter.
+`
+    : ''
+}
 Inside "textComponents", use these exact component IDs verbatim (already-expanded, one value each). Do not rename, translate, omit required IDs, merge IDs together, or add IDs:
 ${textContract || '- No text components in this template.'}
 
@@ -890,4 +901,31 @@ function validationRulesToJsonSchema(
   }
 
   return schema;
+}
+
+export function buildFlashcardEditPrompt(input: {
+  instruction: string;
+  cardId: string;
+  componentId: string;
+  componentType: string;
+  currentValue: unknown;
+  card: unknown;
+}): string {
+  return [
+    'You edit a single flashcard component. Return JSON only.',
+    `Card id: ${input.cardId}`,
+    `Component id: ${input.componentId}`,
+    `Component type: ${input.componentType}`,
+    `User instruction: ${input.instruction}`,
+    '',
+    'Current component value:',
+    JSON.stringify(input.currentValue, null, 2),
+    '',
+    'Full card (context only; do not rewrite unrelated components):',
+    JSON.stringify(input.card, null, 2),
+    '',
+    'Return JSON of the form {"value": <replacement>}.',
+    'For text components, value must be a plain string. No HTML or CSS.',
+    'For image components, value must be a visual search phrase (never a filename).',
+  ].join('\n');
 }

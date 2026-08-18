@@ -16,11 +16,7 @@ export class BrowserPoolService implements OnModuleInit, OnModuleDestroy {
   private launchPromise: Promise<Browser> | null = null;
 
   constructor(private readonly configService: ConfigService) {
-    const flashcardsEnabled =
-      this.configService.get<boolean>('flashcards.renderer.enabled') !== false;
-    const worksheetsEnabled =
-      this.configService.get<boolean>('worksheets.renderer.enabled') !== false;
-    this.enabled = flashcardsEnabled || worksheetsEnabled;
+    this.enabled = true;
   }
 
   async onModuleInit(): Promise<void> {

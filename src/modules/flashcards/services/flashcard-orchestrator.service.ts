@@ -19,6 +19,7 @@ import {
 import { parseEditableComponentsFromLayout } from '../utils/template-layout.util';
 import { expandDefinitionsForAvailableIds } from '../utils/repeat-component.util';
 import { assertAssembledCardComponents } from '../utils/assembled-card.validator';
+import { uniquifyCardImageQueries } from '../utils/distinct-image-subjects.util';
 import { resolveUserRequest } from '../utils/user-request.resolver';
 import {
   FlashcardPipelineEmitter,
@@ -221,15 +222,18 @@ export class FlashcardOrchestratorService {
       telemetry,
     );
 
+    uniquifyCardImageQueries(llmPayload.cards);
+
     this.emitter.emitStageStarted({
       ...telemetry,
       stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
     });
 
     const usedAssetIds = new Set<string>();
-    const cards = await this.imageRetrievalService.mapWithConcurrency(
-      llmPayload.cards,
-      async (card): Promise<FlashcardCardPayload> => {
+    const usedObjectKeys = new Set<string>();
+    const assembleCard = async (
+      card: (typeof llmPayload.cards)[number],
+    ): Promise<FlashcardCardPayload> => {
         // Expand any `{x}` image placeholders into the concrete ids the LLM
         // returned (image-1..image-N) before retrieval + merge.
         const expandedImageDefinitions = expandDefinitionsForAvailableIds(
@@ -250,6 +254,7 @@ export class FlashcardOrchestratorService {
                 ageMin: selected.ageMin,
                 ageMax: selected.ageMax,
                 usedAssetIds,
+                usedObjectKeys,
               },
               telemetry,
             );
@@ -285,8 +290,12 @@ export class FlashcardOrchestratorService {
           cardIndex: card.cardIndex,
           components,
         };
-      },
-    );
+    };
+
+    const cards: FlashcardCardPayload[] = [];
+    for (const card of llmPayload.cards) {
+      cards.push(await assembleCard(card));
+    }
 
     this.emitter.emitStageCompleted({
       ...telemetry,

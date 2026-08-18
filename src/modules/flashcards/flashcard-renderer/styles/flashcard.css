@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Toondemy';
+  src: url('/fonts/TOONDEMY%20FONTS.TTF') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #f3f1fd;
   --surface: #ffffff;
@@ -27,7 +35,7 @@ body {
 }
 
 body {
-  font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Toondemy', system-ui, -apple-system, 'Segoe UI', sans-serif;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
 }
@@ -68,6 +76,11 @@ body {
   border-radius: 22px;
   box-shadow: 0 10px 26px rgba(42, 27, 74, 0.16);
   background: transparent;
+  font-family: 'Toondemy', sans-serif;
+}
+
+.uno * {
+  font-family: inherit;
 }
 
 .uno-frame {
@@ -129,7 +142,7 @@ body {
   align-items: flex-end;
   gap: 0.5cqw;
   flex: 0 0 auto;
-  font-family: 'Baloo 2', sans-serif;
+  font-family: 'Toondemy', sans-serif;
   font-weight: 800;
   line-height: 1;
 }
@@ -225,7 +238,7 @@ body {
 .uno-hero {
   flex: 0 0 auto;
   text-align: center;
-  font-family: 'Baloo 2', sans-serif;
+  font-family: 'Toondemy', sans-serif;
   font-weight: 800;
   font-size: 38cqw;
   line-height: 0.98;
@@ -271,7 +284,7 @@ body {
 .cell-label {
   flex: 0 0 auto;
   text-align: center;
-  font-family: 'Baloo 2', sans-serif;
+  font-family: 'Toondemy', sans-serif;
   font-weight: 700;
   font-size: 5.2cqw;
   line-height: 1.1;
@@ -318,7 +331,7 @@ body {
   border-radius: 50%;
   background: var(--bubble);
   color: #fff;
-  font-family: 'Baloo 2', sans-serif;
+  font-family: 'Toondemy', sans-serif;
   font-weight: 800;
   font-size: 12cqw;
   line-height: 1;
@@ -361,7 +374,7 @@ body {
 }
 
 .u-caption {
-  font-family: 'Baloo 2', sans-serif;
+  font-family: 'Toondemy', sans-serif;
   font-weight: 700;
   font-size: 8.6cqw;
   line-height: 1.05;
@@ -408,7 +421,7 @@ body {
 
 .u-note .tag {
   flex: 0 0 auto;
-  font-family: 'Baloo 2', sans-serif;
+  font-family: 'Toondemy', sans-serif;
   font-weight: 800;
   font-size: 3.2cqw;
   letter-spacing: 0.08em;
@@ -427,7 +440,7 @@ body {
   border-radius: 999px;
   background: var(--frame);
   color: var(--frame-ink);
-  font-family: 'Baloo 2', sans-serif;
+  font-family: 'Toondemy', sans-serif;
   font-weight: 800;
   font-size: 3.6cqw;
 }
@@ -449,7 +462,7 @@ body {
   border-radius: 999px;
   background: var(--tint);
   color: var(--frame-ink);
-  font-family: 'Baloo 2', sans-serif;
+  font-family: 'Toondemy', sans-serif;
   font-weight: 700;
   font-size: 3.6cqw;
 }

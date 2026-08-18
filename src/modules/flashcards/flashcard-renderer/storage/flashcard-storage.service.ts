@@ -37,6 +37,10 @@ export class FlashcardStorageService {
     return this.backend.saveFile(input);
   }
 
+  async readFile(path: string): Promise<Buffer> {
+    return this.backend.readFile(path);
+  }
+
   private resolveBackendType(
     configService: ConfigService,
   ): FlashcardRenderStorageBackendType {

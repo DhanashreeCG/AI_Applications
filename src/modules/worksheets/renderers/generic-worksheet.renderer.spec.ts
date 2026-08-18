@@ -164,7 +164,8 @@ describe('GenericWorksheetRenderer', () => {
     expect(html).not.toContain('<base ');
     expect(html).toContain('src="/pencil.png"');
     expect(html).not.toContain('../../pencil.png');
-    expect(html).not.toContain('@font-face');
+    expect(html).toContain('/fonts/TOONDEMY%20FONTS.TTF');
+    expect(html).toContain("font-family:'Toondemy'");
   });
 
   it('restores SQL NULL placeholders from imported prototype templates', () => {

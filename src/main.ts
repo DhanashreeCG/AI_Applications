@@ -10,7 +10,11 @@ async function bootstrap() {
   const port = process.env.PORT ?? 5000;
   app.useGlobalInterceptors(app.get(LoggingInterceptor));
   app.enableCors();
-  app.useStaticAssets(join(process.cwd(), 'public'));
+  app.useStaticAssets(join(process.cwd(), 'public'), {
+    setHeaders: (res) => {
+      res.set('Access-Control-Allow-Origin', '*');
+    },
+  });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('AI Asset Ingestion API')

@@ -5,8 +5,11 @@ import { StorageModule } from '../storage/storage.module';
 import { FlashcardsController } from './flashcards.controller';
 import { AssetImageService } from './services/asset-image.service';
 import { FlashcardContentService } from './services/flashcard-content.service';
+import { FlashcardDownloadService } from './services/flashcard-download.service';
+import { FlashcardEditService } from './services/flashcard-edit.service';
 import { FlashcardImageRetrievalService } from './services/flashcard-image-retrieval.service';
 import { FlashcardOrchestratorService } from './services/flashcard-orchestrator.service';
+import { FlashcardPersistenceService } from './services/flashcard-persistence.service';
 import { FlashcardSeedService } from './services/flashcard-seed.service';
 import { FlashcardTemplateService } from './services/flashcard-template.service';
 import { TemplateCatalogCacheService } from './services/template-catalog-cache.service';
@@ -31,6 +34,9 @@ import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-
     FlashcardContentService,
     FlashcardImageRetrievalService,
     FlashcardOrchestratorService,
+    FlashcardPersistenceService,
+    FlashcardEditService,
+    FlashcardDownloadService,
     FlashcardSeedService,
     BrowserPoolService,
     FlashcardStorageService,
@@ -39,6 +45,7 @@ import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-
   ],
   exports: [
     FlashcardOrchestratorService,
+    FlashcardPersistenceService,
     TemplateSelectionService,
     FlashcardRendererService,
     BrowserPoolService,

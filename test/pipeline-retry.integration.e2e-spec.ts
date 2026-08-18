@@ -36,6 +36,7 @@ describe('Pipeline Retry & DLQ (integration e2e)', () => {
     jest.spyOn(imageProcessor, 'validateImage').mockResolvedValueOnce({
       isValid: false,
       error: 'Corrupted or invalid image file',
+      size: 0,
     });
 
     await expect(
@@ -57,7 +58,10 @@ describe('Pipeline Retry & DLQ (integration e2e)', () => {
 
     jest.spyOn(imageProcessor, 'validateImage').mockImplementation(originalValidate);
 
-    const dlqMessage = harness.mockSqs.peekQueue('dlq')[0].body;
+    const dlqMessage = harness.mockSqs.peekQueue('dlq')[0].body as Record<
+      string,
+      unknown
+    >;
 
     await request(harness.getHttpServer())
       .post('/pipeline/dlq/replay')

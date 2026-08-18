@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
 import {
   FlashcardRenderStorageBackend,
@@ -42,5 +42,10 @@ export class LocalFlashcardRenderStorage implements FlashcardRenderStorageBacken
       path: relativePath,
       uri: relativePath,
     };
+  }
+
+  async readFile(path: string): Promise<Buffer> {
+    const absolute = isAbsolute(path) ? path : join(process.cwd(), path);
+    return readFile(absolute);
   }
 }

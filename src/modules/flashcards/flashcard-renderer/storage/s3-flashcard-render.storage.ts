@@ -54,4 +54,8 @@ export class S3FlashcardRenderStorage implements FlashcardRenderStorageBackend {
       uri,
     };
   }
+
+  async readFile(path: string): Promise<Buffer> {
+    return this.s3StorageService.downloadBuffer(path, this.bucket);
+  }
 }

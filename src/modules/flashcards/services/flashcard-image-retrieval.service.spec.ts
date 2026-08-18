@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { PrismaService } from '../../database/prisma.service';
 import { SearchService } from '../../search/search.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
 import { FlashcardImageRetrievalService } from './flashcard-image-retrieval.service';
@@ -31,6 +32,7 @@ describe('FlashcardImageRetrievalService', () => {
     service = new FlashcardImageRetrievalService(
       searchService as unknown as SearchService,
       s3StorageService as unknown as S3StorageService,
+      {} as PrismaService,
       configService as unknown as ConfigService,
       eventEmitter as unknown as EventEmitter2,
     );
@@ -161,6 +163,43 @@ describe('FlashcardImageRetrievalService', () => {
     expect(searchService.search).toHaveBeenCalledTimes(1);
     expect(result.status).toBe('found');
     expect(result.assetId).toBe('used-1');
+  });
+
+  it('prefers an unused distinct object when the top hit is already used', async () => {
+    searchService.search.mockResolvedValue({
+      query: 'apple',
+      total: 2,
+      results: [
+        {
+          assetId: 'used-1',
+          s3ObjectKey: 'assets/used-1/original.png',
+          caption: 'apple',
+          objects: ['apple'],
+          similarity: 0.95,
+          mimeType: 'image/png',
+          ageGroups: [],
+        },
+        {
+          assetId: 'banana-1',
+          s3ObjectKey: 'assets/banana-1/original.png',
+          caption: 'banana',
+          objects: ['banana'],
+          similarity: 0.7,
+          mimeType: 'image/png',
+          ageGroups: [],
+        },
+      ],
+    });
+
+    const result = await service.retrieveForCard({
+      queries: [{ searchQuery: 'apple', expectedObjects: ['apple'] }],
+      ageMin: 4,
+      ageMax: 6,
+      usedAssetIds: new Set(['used-1']),
+      usedObjectKeys: new Set(['apple']),
+    });
+
+    expect(result.assetId).toBe('banana-1');
   });
 
   it('returns IMAGE_NOT_FOUND only when embeddings yield no results', async () => {

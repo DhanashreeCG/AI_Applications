@@ -57,6 +57,8 @@ export interface AppConfig {
     imageConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
+    imagePickerLimit: number;
+    userUploadS3Prefix: string;
     templateSelectionAi: {
       enabled: boolean;
       provider: string;
@@ -263,9 +265,17 @@ export default (): AppConfig => ({
       10,
     ),
     imageSearchLimit: parseInt(
-      process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '1',
+      process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '8',
       10,
     ),
+    imagePickerLimit: parseInt(
+      process.env.FLASHCARD_IMAGE_PICKER_LIMIT || '10',
+      10,
+    ),
+    userUploadS3Prefix: envTrim(
+      'FLASHCARD_USER_UPLOAD_S3_PREFIX',
+      'flashcards/uploads',
+    ).replace(/\/$/, '') || 'flashcards/uploads',
     templateSelectionAi: {
       enabled: process.env.FLASHCARD_TEMPLATE_SELECTION_AI_ENABLED !== 'false',
       provider:
@@ -319,7 +329,8 @@ export default (): AppConfig => ({
         10,
       ),
       apiBaseUrl:
-        process.env.FLASHCARD_RENDERER_API_BASE_URL || 'http://localhost:3000',
+        process.env.FLASHCARD_RENDERER_API_BASE_URL ||
+        `http://127.0.0.1:${process.env.PORT || '3000'}`,
     },
   },
   worksheets: {

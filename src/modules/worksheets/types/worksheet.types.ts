@@ -117,6 +117,7 @@ export interface WorksheetRenderInput {
   topic?: string;
   baseHref?: string;
   pencilIconUrl?: string;
+  fontPath?: string;
 }
 
 export interface ResolvedAssetSlot {

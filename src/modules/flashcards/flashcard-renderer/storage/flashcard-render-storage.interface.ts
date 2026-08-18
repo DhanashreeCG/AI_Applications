@@ -19,4 +19,6 @@ export interface FlashcardRenderStorageBackend {
   resolveOutputLocation(requestId: string): string;
 
   saveFile(input: SaveRenderFileInput): Promise<StoredRenderFile>;
+
+  readFile(path: string): Promise<Buffer>;
 }

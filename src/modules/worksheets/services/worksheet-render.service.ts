@@ -1,3 +1,4 @@
+import { joinPublicAssetUrl, toondemyFontUrl } from '../../../common/ui/toondemy-font';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -99,8 +100,10 @@ export class WorksheetRenderService {
     this.apiBaseUrl = (
       this.configService.get<string>('worksheets.renderer.apiBaseUrl') ?? ''
     ).replace(/\/$/, '');
-    this.pencilIconUrl =
-      this.configService.get<string>('worksheets.pencilIconUrl') ?? '';
+    this.pencilIconUrl = joinPublicAssetUrl(
+      this.apiBaseUrl,
+      this.configService.get<string>('worksheets.pencilIconUrl') || '/pencil.png',
+    );
     this.defaultWidth =
       this.configService.get<number>('worksheets.renderer.defaultWidth') ?? 1016;
     this.defaultHeight =
@@ -145,6 +148,7 @@ export class WorksheetRenderService {
       mode: input.mode ?? 'editor',
       canvas,
       pencilIconUrl: this.pencilIconUrl,
+      fontPath: toondemyFontUrl(this.apiBaseUrl),
     });
     return { html, canvas };
   }
