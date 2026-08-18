@@ -4,8 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI Flash Cards</title>
-    <link rel="stylesheet" href="/fonts/toondemy.css" />
+    <link
+      rel="stylesheet"
+      href="fonts/toondemy.css"
+      data-public-href="/fonts/toondemy.css"
+    />
     <script src="env-config.js"></script>
+    <script src="public-assets.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
@@ -2302,6 +2307,13 @@
         return String(url).trim().replace(/\/+$/, '');
       }
 
+      function publicAsset(path) {
+        if (typeof window.publicAssetUrl === 'function') return window.publicAssetUrl(path);
+        if (!path) return path;
+        if (/^(https?:|data:|blob:)/i.test(path)) return path;
+        return path.charAt(0) === '/' ? path.slice(1) : path;
+      }
+
       function apiBase() {
         return (el('apiBase').value || configuredApiBase() || defaultApiBase()).replace(/\/+$/, '');
       }
@@ -3042,12 +3054,12 @@
           .toLowerCase();
 
         const logos = {
-          abc: '/logos/abc.png',
-          '123': '/logos/123.png',
-          reading: '/logos/reading.png',
-          fact: '/logos/fact.png',
-          colors: '/logos/colors.png',
-          quiz: '/logos/quiz.png',
+          abc: publicAsset('/logos/abc.png'),
+          '123': publicAsset('/logos/123.png'),
+          reading: publicAsset('/logos/reading.png'),
+          fact: publicAsset('/logos/fact.png'),
+          colors: publicAsset('/logos/colors.png'),
+          quiz: publicAsset('/logos/quiz.png'),
         };
 
         /* Prefer template.learningObjectives matches (exact-ish phrases first). */

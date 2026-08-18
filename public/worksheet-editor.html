@@ -2,15 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="refresh" content="0; url=/worksheets.html" />
     <title>Worksheet editor</title>
     <script>
       const params = new URLSearchParams(location.search);
       const id = params.get('id');
-      location.replace(id ? '/worksheets.html?id=' + encodeURIComponent(id) : '/worksheets.html');
+      location.replace(id ? 'worksheets.html?id=' + encodeURIComponent(id) : 'worksheets.html');
     </script>
   </head>
   <body>
-    <p>Redirecting to <a href="/worksheets.html">Generate AI Worksheets</a>.</p>
+    <p>Redirecting to <a href="worksheets.html">Generate AI Worksheets</a>.</p>
   </body>
 </html>

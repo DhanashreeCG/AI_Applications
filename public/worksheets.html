@@ -4,8 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Generate AI Worksheets</title>
-    <link rel="stylesheet" href="/fonts/toondemy.css" />
+    <link
+      rel="stylesheet"
+      href="fonts/toondemy.css"
+      data-public-href="/fonts/toondemy.css"
+    />
     <script src="env-config.js"></script>
+    <script src="public-assets.js"></script>
     <style>
       :root {
         --sidebar: #5b2d91;
@@ -541,6 +546,12 @@
           ''
         ).replace(/\/$/, '');
       }
+      function publicAsset(path) {
+        if (typeof window.publicAssetUrl === 'function') return window.publicAssetUrl(path);
+        if (!path) return path;
+        if (/^(https?:|data:|blob:)/i.test(path)) return path;
+        return path.charAt(0) === '/' ? path.slice(1) : path;
+      }
       function apiUrl(path) {
         const base = (state.apiBaseUrl || queryApiBase()).replace(/\/$/, '');
         const prefix = (state.apiPrefix || '/worksheets').replace(/\/$/, '');
@@ -551,6 +562,9 @@
       }
       function resolveUrl(path) {
         if (!path || /^(https?:|data:|blob:)/i.test(path)) return path;
+        if (/^\/(fonts|logos)\//.test(path) || /\.(png|css|ttf|woff2?)$/i.test(path)) {
+          return publicAsset(path);
+        }
         const base = (state.apiBaseUrl || queryApiBase()).replace(/\/$/, '');
         return `${base}${path.startsWith('/') ? path : `/${path}`}`;
       }
@@ -1525,7 +1539,10 @@
 
       function applySettings(settings) {
         if (!settings || typeof settings !== 'object') return;
-        if (settings.apiBaseUrl) {
+        const frontendApi = frontendWorksheetsApi() || new URLSearchParams(location.search).get('api') || '';
+        if (frontendApi) {
+          state.apiBaseUrl = String(frontendApi).replace(/\/$/, '');
+        } else if (settings.apiBaseUrl) {
           state.apiBaseUrl = String(settings.apiBaseUrl).replace(/\/$/, '');
         } else if (!state.apiBaseUrl) {
           state.apiBaseUrl = queryApiBase();

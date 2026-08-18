@@ -1,9 +1,22 @@
 export const TOONDEMY_FONT_FAMILY = 'Toondemy';
 export const TOONDEMY_FONT_PATH = '/fonts/TOONDEMY%20FONTS.TTF';
 
+/** Join a public/ path onto an origin (Nest or shared static host). */
+export function joinPublicAssetUrl(baseUrl = '', path: string): string {
+  const trimmed = (path || '').trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  if (/^(https?:|data:|blob:)/i.test(trimmed)) {
+    return trimmed;
+  }
+  const base = baseUrl.replace(/\/$/, '');
+  const suffix = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return `${base}${suffix}`;
+}
+
 export function toondemyFontUrl(apiBaseUrl = ''): string {
-  const base = apiBaseUrl.replace(/\/$/, '');
-  return `${base}${TOONDEMY_FONT_PATH}`;
+  return joinPublicAssetUrl(apiBaseUrl, TOONDEMY_FONT_PATH);
 }
 
 export function toondemyFontFaceCss(fontUrl = TOONDEMY_FONT_PATH): string {
