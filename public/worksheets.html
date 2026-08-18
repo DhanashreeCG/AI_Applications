@@ -10,6 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    <script src="env-config.js"></script>
     <style>
       :root {
         --sidebar: #5b2d91;
@@ -533,8 +534,16 @@
       function setFavorites(ids) {
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
       }
+      function frontendWorksheetsApi() {
+        const env = window.__ENV__ || {};
+        return String(env.WORKSHEETS_API_URL || env.API_URL || '').trim().replace(/\/+$/, '');
+      }
       function queryApiBase() {
-        return (new URLSearchParams(location.search).get('api') || '').replace(/\/$/, '');
+        return (
+          new URLSearchParams(location.search).get('api') ||
+          frontendWorksheetsApi() ||
+          ''
+        ).replace(/\/$/, '');
       }
       function apiUrl(path) {
         const base = (state.apiBaseUrl || queryApiBase()).replace(/\/$/, '');
@@ -1520,7 +1529,11 @@
 
       function applySettings(settings) {
         if (!settings || typeof settings !== 'object') return;
-        if (settings.apiBaseUrl != null) state.apiBaseUrl = String(settings.apiBaseUrl).replace(/\/$/, '');
+        if (settings.apiBaseUrl) {
+          state.apiBaseUrl = String(settings.apiBaseUrl).replace(/\/$/, '');
+        } else if (!state.apiBaseUrl) {
+          state.apiBaseUrl = queryApiBase();
+        }
         if (settings.apiPrefix) state.apiPrefix = String(settings.apiPrefix).replace(/\/$/, '');
         if (settings.pageSize) state.pageSize = Number(settings.pageSize) || state.pageSize;
         if (settings.pagerMaxButtons) state.pagerMaxButtons = Number(settings.pagerMaxButtons) || state.pagerMaxButtons;
@@ -1544,6 +1557,7 @@
 
       renderAges();
       fillCountOptions(state.defaultCount, state.maxCount);
+      state.apiBaseUrl = queryApiBase();
       loadSettings()
         .then(() => {
           renderAges();

@@ -329,7 +329,8 @@ export default (): AppConfig => ({
         10,
       ),
       apiBaseUrl:
-        process.env.FLASHCARD_RENDERER_API_BASE_URL || 'http://localhost:3000',
+        process.env.FLASHCARD_RENDERER_API_BASE_URL ||
+        `http://127.0.0.1:${process.env.PORT || '3000'}`,
     },
   },
   worksheets: {

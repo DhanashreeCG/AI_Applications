@@ -1,7 +1,8 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FlashcardException } from '../errors/flashcard.exception';
 import { GenerateFlashcardsResponse } from '../interfaces/flashcard.interfaces';
-import { FlashcardRendererService } from '../flashcard-renderer/renderer/flashcard-renderer.service';
+import { FlashcardPdfService } from '../flashcard-renderer/pdf/flashcard-pdf.service';
 import { FlashcardPersistenceService } from './flashcard-persistence.service';
 
 export interface FlashcardDownloadResult {
@@ -13,10 +14,18 @@ export interface FlashcardDownloadResult {
 
 @Injectable()
 export class FlashcardDownloadService {
+  private readonly apiBaseUrl: string;
+
   constructor(
     private readonly persistence: FlashcardPersistenceService,
-    private readonly rendererService: FlashcardRendererService,
-  ) {}
+    private readonly pdfService: FlashcardPdfService,
+    configService: ConfigService,
+  ) {
+    this.apiBaseUrl = (
+      configService.get<string>('flashcards.renderer.apiBaseUrl') ||
+      `http://127.0.0.1:${configService.get<number>('port') || 5000}`
+    ).replace(/\/$/, '');
+  }
 
   public async downloadFromPayload(
     payload: GenerateFlashcardsResponse,
@@ -24,17 +33,29 @@ export class FlashcardDownloadService {
     cardIndex?: number,
   ): Promise<FlashcardDownloadResult> {
     this.assertFormat(format);
-    const rendered = await this.rendererService.renderDownload(
-      payload,
-      format,
-      cardIndex,
-    );
-    return {
-      buffer: rendered.buffer,
-      format,
-      contentType: rendered.contentType,
-      fileName: rendered.fileName,
-    };
+    try {
+      const captured = await this.pdfService.captureUiCards({
+        payload,
+        pageUrl: `${this.apiBaseUrl}/flashcards.html`,
+        apiBaseUrl: this.apiBaseUrl,
+        format,
+        cardIndex,
+      });
+      return {
+        buffer: captured.buffer,
+        format,
+        contentType: captured.contentType,
+        fileName: captured.fileName,
+      };
+    } catch (error) {
+      throw new FlashcardException(
+        'DOWNLOAD_NOT_IMPLEMENTED',
+        error instanceof Error
+          ? error.message
+          : 'Could not capture flashcard UI for download',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
   }
 
   public async download(

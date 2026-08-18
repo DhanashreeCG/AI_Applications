@@ -2264,16 +2264,17 @@
       };
 
       function defaultApiBase() {
-        return location.protocol.startsWith('http') ? location.origin : 'http://localhost:3000';
-      }
-
-      function apiBase() {
-        return (el('apiBase').value || defaultApiBase()).replace(/\/+$/, '');
+        return location.protocol.startsWith('http') ? location.origin : 'http://localhost:5000';
       }
 
       function configuredApiBase() {
-        const url = (window.__ENV__ && window.__ENV__.API_URL) || '';
+        const env = window.__ENV__ || {};
+        const url = env.FLASHCARDS_API_URL || env.API_URL || '';
         return String(url).trim().replace(/\/+$/, '');
+      }
+
+      function apiBase() {
+        return (el('apiBase').value || configuredApiBase() || defaultApiBase()).replace(/\/+$/, '');
       }
 
       function toast(html, ms = 2600) {
@@ -4995,8 +4996,82 @@
         }
       }
 
+      /* ---------------- Playwright UI capture ---------------- */
+
+      function absolutizeCaptureUrl(url, apiHost) {
+        if (!url) return url;
+        if (/^(https?:|data:|blob:)/i.test(url)) return url;
+        return apiHost.replace(/\/+$/, '') + (url.charAt(0) === '/' ? url : '/' + url);
+      }
+
+      function absolutizePayloadImages(payload, apiHost) {
+        for (const card of payload.cards || []) {
+          for (const component of card.components || []) {
+            const refs = collectImageRefs(component);
+            refs.forEach((ref) => {
+              if (ref.imageUrl) ref.imageUrl = absolutizeCaptureUrl(ref.imageUrl, apiHost);
+              if (ref.signedUrl) ref.signedUrl = absolutizeCaptureUrl(ref.signedUrl, apiHost);
+            });
+          }
+        }
+        return payload;
+      }
+
+      async function runFlashcardCapture(spec) {
+        const apiHost = (spec.apiBase || configuredApiBase() || defaultApiBase()).replace(/\/+$/, '');
+        state.payload = absolutizePayloadImages(spec.payload, apiHost);
+        document.querySelectorAll('.main, .modal, .picker-modal, .toast').forEach((node) => {
+          node.style.display = 'none';
+        });
+        const stage = el('exportStage');
+        stage.style.visibility = 'visible';
+        stage.style.position = 'static';
+        stage.style.left = 'auto';
+        stage.style.top = 'auto';
+        stage.style.zIndex = '1';
+        stage.style.pointerEvents = 'none';
+        stage.style.background = '#fff';
+        stage.innerHTML = '';
+
+        await preloadImages(state.payload);
+        const width = spec.width || 900;
+        const indexes =
+          spec.cardIndex == null || spec.cardIndex === ''
+            ? state.payload.cards.map((_, i) => i)
+            : [Number(spec.cardIndex)];
+
+        for (const index of indexes) {
+          const node = buildCardElement(state.payload.cards[index], index);
+          node.style.width = width + 'px';
+          node.style.flex = 'none';
+          node.style.boxShadow = 'none';
+          node.dataset.captureIndex = String(index);
+          stage.appendChild(node);
+        }
+
+        if (document.fonts && document.fonts.ready) await document.fonts.ready;
+        await Promise.all(
+          Array.from(stage.querySelectorAll('img')).map((img) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise((resolve) => {
+                  img.onload = resolve;
+                  img.onerror = resolve;
+                }),
+          ),
+        );
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        window.__FLASHCARD_CAPTURE_DONE__ = true;
+      }
+
       /* ---------------- wiring ---------------- */
 
+      if (window.__FLASHCARD_CAPTURE__ && window.__FLASHCARD_CAPTURE__.payload) {
+        runFlashcardCapture(window.__FLASHCARD_CAPTURE__).catch((error) => {
+          window.__FLASHCARD_CAPTURE_ERROR__ = String(error && error.message ? error.message : error);
+          window.__FLASHCARD_CAPTURE_DONE__ = true;
+        });
+      } else {
       el('apiBase').value = configuredApiBase() || defaultApiBase();
       loadTemplates();
       el('apiBase').addEventListener('change', loadTemplates);
@@ -5115,6 +5190,7 @@
           generate();
         });
       });
+      }
     </script>
   </body>
 </html>
