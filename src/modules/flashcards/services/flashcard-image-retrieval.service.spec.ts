@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { PrismaService } from '../../database/prisma.service';
 import { SearchService } from '../../search/search.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
 import { FlashcardImageRetrievalService } from './flashcard-image-retrieval.service';
@@ -31,6 +32,7 @@ describe('FlashcardImageRetrievalService', () => {
     service = new FlashcardImageRetrievalService(
       searchService as unknown as SearchService,
       s3StorageService as unknown as S3StorageService,
+      {} as PrismaService,
       configService as unknown as ConfigService,
       eventEmitter as unknown as EventEmitter2,
     );

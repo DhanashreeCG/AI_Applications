@@ -99,10 +99,19 @@ export const COMPONENT_TYPES = [
 export type ComponentType = (typeof COMPONENT_TYPES)[number];
 
 export const FLASHCARD_CONTENT_STAGE = 'flashcard_content';
+export const FLASHCARD_EDIT_STAGE = 'flashcard_edit';
+export const FLASHCARD_WORKFLOW_EDIT = 'flashcards_edit';
 export const FLASHCARD_IMAGE_SEARCH_EMBEDDING_PURPOSE =
   'flashcard_image_search_embedding';
 export const FLASHCARD_ASSET_IMAGE_PATH = '/flashcards/assets';
 export const DEFAULT_FLASHCARD_COUNT = 5;
+export const FLASHCARD_USER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+export const FLASHCARD_USER_UPLOAD_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
 export const DEFAULT_IMAGE_CONCURRENCY = 3;
 export const DEFAULT_SIGNED_URL_TTL_SECONDS = 3600;
 /** Always fetch the single top semantic match (highest similarity / least distance). */

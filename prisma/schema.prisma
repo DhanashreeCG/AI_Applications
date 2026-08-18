@@ -220,6 +220,7 @@ model FlashcardTemplate {
   orientation        String                  @default("PORTRAIT")
   thumbnail          String?
   selectionRules     TemplateSelectionRule[]
+  flashcardSets      FlashcardSet[]
 
   @@unique([name, templateVersion])
   @@index([active])
@@ -249,6 +250,41 @@ model TemplateSelectionRule {
 
   @@index([active, priority])
   @@index([templateId])
+}
+
+/// Generated flashcard set. Cards JSON is user-specific content, not the template schema.
+model FlashcardSet {
+  id               String             @id @default(cuid())
+  templateId       String
+  request          Json
+  selection        Json
+  templateSnapshot Json
+  templateVersion  String
+  layoutDefinition Json
+  cards            Json
+  metadata         Json
+  renderedOutput   Json?
+  status           FlashcardSetStatus @default(GENERATED)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  template         FlashcardTemplate  @relation(fields: [templateId], references: [id])
+  outputs          FlashcardOutput[]
+
+  @@index([templateId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+/// Rendered flashcard artifact stored in S3 or local storage. Never binary in Postgres.
+model FlashcardOutput {
+  id             String                @id @default(cuid())
+  flashcardSetId String
+  format         FlashcardOutputFormat
+  storageKey     String
+  createdAt      DateTime              @default(now())
+  flashcardSet   FlashcardSet          @relation(fields: [flashcardSetId], references: [id], onDelete: Cascade)
+
+  @@index([flashcardSetId])
 }
 
 /// Observability-only flashcard (and future workflow) pipeline execution.
@@ -465,6 +501,18 @@ enum WorksheetStatus {
 
 enum WorksheetOutputFormat {
   HTML
+  WEBP
+  PDF
+}
+
+enum FlashcardSetStatus {
+  GENERATED
+  COMPLETED
+  FAILED
+}
+
+enum FlashcardOutputFormat {
+  PNG
   WEBP
   PDF
 }

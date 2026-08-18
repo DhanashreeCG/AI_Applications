@@ -95,6 +95,11 @@ export interface AssetReference {
   signedUrl: string | null;
   /** Same-origin proxy path; avoids S3 CORS for canvas-based renderers. */
   imageUrl: string | null;
+  /**
+   * S3 object key for a user-uploaded replacement. Null when the slot uses a
+   * library asset. Cleared once the upload is replaced with a DB asset.
+   */
+  userUploadedKey?: string | null;
   caption: string | null;
   similarity: number | null;
   mimeType: string | null;
@@ -170,6 +175,8 @@ export interface FlashcardRenderedOutput {
 }
 
 export interface GenerateFlashcardsResponse {
+  id?: string;
+  status?: string;
   request: {
     query: string;
     topic: string;
@@ -229,4 +236,9 @@ export type FlashcardErrorCode =
   | 'TEMPLATE_VERSION_MISMATCH'
   | 'MISSING_EDITABLE_COMPONENT'
   | 'IMAGE_SEARCH_TIMEOUT'
-  | 'PARTIAL_IMAGE_FAILURE';
+  | 'PARTIAL_IMAGE_FAILURE'
+  | 'FLASHCARD_NOT_FOUND'
+  | 'INVALID_FIELD'
+  | 'FIELD_NOT_EDITABLE'
+  | 'UNSUPPORTED_FORMAT'
+  | 'DOWNLOAD_NOT_IMPLEMENTED';

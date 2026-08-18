@@ -9,10 +9,11 @@ export class FlashcardPdfService {
 
   constructor(private readonly browserPool: BrowserPoolService) {}
 
-  async renderWebpFromHtml(params: {
+  async renderImageFromHtml(params: {
     html: string;
     width: number;
     height: number;
+    type: 'png' | 'webp';
   }): Promise<Buffer> {
     const browser = await this.browserPool.getBrowser();
     const page = await browser.newPage();
@@ -26,7 +27,7 @@ export class FlashcardPdfService {
       await page.evaluate(() => document.fonts.ready);
 
       const screenshot = await page.screenshot({
-        type: 'webp',
+        type: params.type,
         fullPage: false,
       });
 
@@ -34,6 +35,14 @@ export class FlashcardPdfService {
     } finally {
       await page.close();
     }
+  }
+
+  async renderWebpFromHtml(params: {
+    html: string;
+    width: number;
+    height: number;
+  }): Promise<Buffer> {
+    return this.renderImageFromHtml({ ...params, type: 'webp' });
   }
 
   async renderPdfFromCards(params: {

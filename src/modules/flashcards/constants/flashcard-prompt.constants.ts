@@ -891,3 +891,30 @@ function validationRulesToJsonSchema(
 
   return schema;
 }
+
+export function buildFlashcardEditPrompt(input: {
+  instruction: string;
+  cardId: string;
+  componentId: string;
+  componentType: string;
+  currentValue: unknown;
+  card: unknown;
+}): string {
+  return [
+    'You edit a single flashcard component. Return JSON only.',
+    `Card id: ${input.cardId}`,
+    `Component id: ${input.componentId}`,
+    `Component type: ${input.componentType}`,
+    `User instruction: ${input.instruction}`,
+    '',
+    'Current component value:',
+    JSON.stringify(input.currentValue, null, 2),
+    '',
+    'Full card (context only; do not rewrite unrelated components):',
+    JSON.stringify(input.card, null, 2),
+    '',
+    'Return JSON of the form {"value": <replacement>}.',
+    'For text components, value must be a plain string. No HTML or CSS.',
+    'For image components, value must be a visual search phrase (never a filename).',
+  ].join('\n');
+}
