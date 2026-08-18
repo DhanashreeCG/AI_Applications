@@ -722,11 +722,12 @@
       .img-camera-btn {
         display: none;
         position: absolute;
-        top: 8px;
-        right: 8px;
+        bottom: 10px;
+        right: 10px;
+        top: auto;
         z-index: 3;
-        width: 32px;
-        height: 32px;
+        width: 44px;
+        height: 44px;
         border-radius: 50%;
         background: rgba(255, 255, 255, 0.94);
         color: var(--primary);
@@ -4169,7 +4170,7 @@
         camera.type = 'button';
         camera.className = 'img-camera-btn';
         camera.setAttribute('aria-label', 'Change image');
-        camera.innerHTML = svg(ICONS.camera, 16);
+        camera.innerHTML = svg(ICONS.camera, 22);
         camera.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
