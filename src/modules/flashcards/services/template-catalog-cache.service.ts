@@ -54,6 +54,7 @@ export class TemplateCatalogCacheService {
         learningObjectives: true,
         subjectsSupported: true,
         difficultyLevels: true,
+        supportedAgeGroups: true,
         layoutDefinition: true,
       },
     });
@@ -68,6 +69,7 @@ export class TemplateCatalogCacheService {
       learningObjectives: [...template.learningObjectives].sort(),
       subjectsSupported: [...template.subjectsSupported].sort(),
       difficultyLevels: [...template.difficultyLevels].sort(),
+      supportedAgeGroups: [...template.supportedAgeGroups].sort(),
       componentSummary: deriveComponentSummary(template.layoutDefinition),
     }));
 
@@ -83,6 +85,7 @@ export class TemplateCatalogCacheService {
         learningObjectives: entry.learningObjectives,
         subjectsSupported: entry.subjectsSupported,
         difficultyLevels: entry.difficultyLevels,
+        supportedAgeGroups: entry.supportedAgeGroups,
         componentSummary: entry.componentSummary,
       })),
     };

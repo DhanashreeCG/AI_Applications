@@ -90,6 +90,7 @@ function templateSeedToSelectable(
     difficulties: [],
     intents: [],
     topics: [],
+    isFallback: false,
     templateId: template.id,
     templateActive: true,
     templateAgeGroups: template.supportedAgeGroups,

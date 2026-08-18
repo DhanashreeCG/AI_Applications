@@ -11,6 +11,7 @@ export interface CatalogTemplateEntry {
   learningObjectives: string[];
   subjectsSupported: string[];
   difficultyLevels: string[];
+  supportedAgeGroups: string[];
   componentSummary: string;
 }
 
@@ -64,5 +65,8 @@ export interface TemplateSelectionAiSelectInput {
   learningObjective: string;
   objectiveConfidence?: ObjectiveConfidence;
   allowedTemplateIds: string[];
+  /** Exact native age-group matches; prefer these over younger allowed IDs. */
+  nativeTemplateIds?: string[];
+  query?: string;
   telemetry?: PipelineTelemetryContext;
 }

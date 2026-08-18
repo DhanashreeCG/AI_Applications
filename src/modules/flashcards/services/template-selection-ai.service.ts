@@ -174,6 +174,7 @@ export class TemplateSelectionAiService {
     const snapshot = await this.catalogCache.getSnapshot();
     const userPayload = {
       topic: input.topic,
+      query: input.query ?? null,
       ageGroup: input.ageGroup,
       grade: input.grade ?? null,
       subject: input.subject ?? null,
@@ -181,6 +182,9 @@ export class TemplateSelectionAiService {
       learningObjective: input.learningObjective,
       objectiveConfidence: input.objectiveConfidence ?? null,
       allowedTemplateIds: [...allowed].sort(),
+      nativeTemplateIds: [...new Set(input.nativeTemplateIds ?? [])]
+        .filter((id) => allowed.includes(id))
+        .sort(),
       promptVersion: TEMPLATE_SELECTION_PROMPT_VERSION,
     };
     const userContent = JSON.stringify(userPayload);

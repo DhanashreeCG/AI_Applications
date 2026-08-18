@@ -1,4 +1,4 @@
-export const TEMPLATE_SELECTION_PROMPT_VERSION = 'v1-catalog-cached';
+export const TEMPLATE_SELECTION_PROMPT_VERSION = 'v2-age-native-intent';
 
 export const TEMPLATE_SELECTION_AI_STAGE = 'flashcard_template_selection';
 
@@ -20,38 +20,39 @@ in allowedTemplateIds for each request.
 INPUT YOU WILL RECEIVE
 - A static TEMPLATE CATALOG (system message) describing every active template:
   id, name, description, templateType, layoutType, tags, learningObjectives,
-  subjectsSupported, difficultyLevels, componentSummary.
+  subjectsSupported, difficultyLevels, supportedAgeGroups, componentSummary.
 - A per-request user JSON with:
   - topic: the subject/skill the flashcards should teach
+  - query: original user request when available (intent signal)
   - ageGroup: the target learner age range
   - optional: grade, subject, difficulty, learningObjective, objectiveConfidence
-  - allowedTemplateIds: the subset of catalog IDs that already passed hard
-    eligibility filters (active, age-group overlap, and any explicit
-    subject/grade/difficulty constraints). Every id in this array is a VALID
-    choice. You are never shown ineligible templates, so do not reason about
-    age/subject eligibility — that has already been decided. Your job is
-    purely to judge topical and pedagogical FIT among allowedTemplateIds.
+  - allowedTemplateIds: templates that already passed the AGE filter
+    (native requested band, covering ranges, or younger bands only —
+    older-only templates are never included)
+  - nativeTemplateIds: the subset of allowedTemplateIds whose
+    supportedAgeGroups include the requested ageGroup exactly (e.g. "4-5").
+    Prefer these first.
 
 HOW TO CHOOSE
-Rank allowed candidates by how well their PURPOSE and STRUCTURE match the
-topic — not just keyword overlap. Consider:
+Age was already used to BUILD allowedTemplateIds. Within that list, rank as:
 
-1. Semantic fit of description/templateType/tags to the topic — does this
-   template's stated purpose match what's actually being taught? A template
-   for "single vocabulary word + image" is a poor fit for a topic like
-   "comparing hot and cold" even if both mention "vocabulary" as a tag.
-2. Structural fit — does the number/type of editable slots suit the topic?
-   A topic naturally built around two contrasting items fits a two-column
-   comparison template better than a single-image vocabulary template. A
-   topic that is a numeric or alphabetic sequence fits a sequence-grid
-   template better than a single-object template.
-3. learningObjective / subject match, when provided, as a secondary signal
-   after semantic and structural fit.
-4. If multiple candidates are a close, defensible fit, prefer the one whose
-   description most literally matches the topic's core skill.
-5. Never let ageGroup or subject break a tie beyond what's already implied —
-   those were already used to build allowedTemplateIds. Use them only as a
-   soft signal if the topic itself is ambiguous.
+1. Prefer nativeTemplateIds first. For a 4-5 request, templates built for
+   4-5 outrank templates built for 3-4 or 2-3, even if a younger template
+   is a slightly closer topical match.
+2. User INTENT next — topic, query, and learningObjective. Among native
+   templates, pick the layout whose purpose/structure matches the intent
+   (counting, matching, comparison, phonics, quiz, etc.). Do not pick a
+   generic single-image vocabulary card when a native template fits the
+   intent better.
+3. Only if no native template is a reasonable intent fit, choose from the
+   remaining allowedTemplateIds (younger-age templates). Prefer the closest
+   younger band (3-4 before 2-3 for a 4-5 request), then the best intent fit.
+4. Semantic and structural fit of description/templateType/tags/componentSummary
+   to the topic, as supporting evidence for intent — not instead of age order.
+5. Do not select a generic single-image vocabulary/recognition template merely
+   because it is broadly applicable and "safe." Only choose it when the topic
+   is literally a single object plus its name, with no comparison, sequence,
+   counting, classification, matching, opposites, or quiz structure implied.
 
 CONSTRAINTS
 - You MUST return a selectedTemplateId that appears in allowedTemplateIds,

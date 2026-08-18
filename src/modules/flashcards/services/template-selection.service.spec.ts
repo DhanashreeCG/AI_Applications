@@ -197,6 +197,7 @@ describe('TemplateSelectionService.select with AI layer', () => {
       difficulties: [],
       intents: [],
       topics: [],
+      isFallback: false,
       templateId: 'tmpl_a',
       templateActive: true,
       templateAgeGroups: ['3-4'],
@@ -219,6 +220,7 @@ describe('TemplateSelectionService.select with AI layer', () => {
       difficulties: [],
       intents: [],
       topics: [],
+      isFallback: false,
       templateId: 'tmpl_b',
       templateActive: true,
       templateAgeGroups: ['3-4'],
@@ -264,6 +266,7 @@ describe('TemplateSelectionService.select with AI layer', () => {
       expect.objectContaining({
         topic: 'match animals to names',
         allowedTemplateIds: expect.arrayContaining(['tmpl_a', 'tmpl_b']),
+        nativeTemplateIds: expect.arrayContaining(['tmpl_a', 'tmpl_b']),
       }),
     );
     expect(result.template.id).toBe('tmpl_b');
