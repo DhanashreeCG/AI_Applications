@@ -571,7 +571,7 @@
           <div class="brand-mark">📡</div>
           <div>
             <h1>Pipeline Tracker</h1>
-            <p>Flashcard generation executions, stages, AI &amp; image search</p>
+            <p>Flashcard &amp; worksheet generation executions, stages, AI &amp; image search</p>
           </div>
         </div>
         <div class="header-actions">
@@ -580,6 +580,7 @@
             <input id="apiBase" placeholder="http://localhost:3000" />
           </div>
           <a class="btn btn-ghost" href="/flashcards.html">🎴 Studio</a>
+          <a class="btn btn-ghost" href="/api">📘 API</a>
           <button class="btn-ghost" id="refreshBtn">Refresh</button>
           <label class="auto">
             <input type="checkbox" id="autoRefresh" />
@@ -608,6 +609,9 @@
               <select id="workflowFilter">
                 <option value="">All workflows</option>
                 <option value="flashcards">flashcards</option>
+                <option value="worksheets">worksheets</option>
+                <option value="worksheets_edit">worksheets_edit</option>
+                <option value="worksheets_render">worksheets_render</option>
               </select>
               <div class="pill-input">
                 <label for="lookup">Lookup</label>
@@ -816,16 +820,23 @@
         const body = el('execBody');
         if (!rows.length) {
           body.innerHTML =
-            '<tr><td colspan="7" class="muted">No executions yet. Generate flashcards to see runs appear here.</td></tr>';
+            '<tr><td colspan="7" class="muted">No executions yet. Generate flashcards or worksheets to see runs appear here.</td></tr>';
           return;
         }
 
         body.innerHTML = rows
           .map((row) => {
-            const topic = metaField(row.metadata, 'topic') || '—';
+            const topic =
+              metaField(row.metadata, 'topic') ||
+              metaField(row.metadata, 'templateSlug') ||
+              metaField(row.metadata, 'fieldPath') ||
+              metaField(row.metadata, 'format') ||
+              metaField(row.metadata, 'operation') ||
+              '—';
             const age =
               metaField(row.metadata, 'ageGroup') ||
               metaField(row.metadata, 'age') ||
+              metaField(row.metadata, 'grade') ||
               '—';
             const counts = row._count
               ? row._count.stages +
@@ -968,13 +979,18 @@
             ['Request', '<span class="mono">' + escapeHtml(execution.requestId) + '</span>'],
             ['Correlation', '<span class="mono">' + escapeHtml(execution.correlationId) + '</span>'],
             ['Workflow', escapeHtml(execution.workflowType)],
+            ['Operation', escapeHtml(meta.operation || '—')],
             ['Current stage', '<span class="mono">' + escapeHtml(execution.currentStage || '—') + '</span>'],
             ['Duration', escapeHtml(formatDuration(execution.totalDurationMs))],
             ['Started', escapeHtml(formatTime(execution.startedAt))],
             ['Completed', escapeHtml(formatTime(execution.completedAt))],
             ['Topic', escapeHtml(meta.topic || '—')],
-            ['Age group', escapeHtml(meta.ageGroup || '—')],
-            ['Template', escapeHtml(meta.templateId || '—')],
+            ['Grade / age', escapeHtml((meta.grade || meta.ageGroup || meta.age || '—').toString())],
+            ['Subject', escapeHtml(meta.subject || '—')],
+            ['Worksheet', escapeHtml(meta.worksheetId || '—')],
+            ['Template', escapeHtml(meta.templateSlug || meta.templateId || '—')],
+            ['Field', escapeHtml(meta.fieldPath || '—')],
+            ['Format', escapeHtml(meta.format || '—')],
             ['Objective', escapeHtml((meta.learningObjective || '—').toString().replace(/_/g, ' '))],
           ]
             .map(([k, v]) => '<dt>' + k + '</dt><dd>' + v + '</dd>')
@@ -1075,16 +1091,22 @@
             (ai.stageExecutionId && ai.stageExecutionId === stage.id) ||
             (!ai.stageExecutionId &&
               stage.stageName &&
-              (ai.purpose === 'flashcard_content'
+              (ai.purpose === 'flashcard_content' ||
+              ai.purpose === 'worksheet_content' ||
+              ai.purpose === 'worksheet_edit'
                 ? stage.stageName === 'llm_request'
-                : ai.purpose === 'flashcard_image_search_embedding'
-                  ? stage.stageName === 'image_search'
+                : ai.purpose === 'flashcard_image_search_embedding' ||
+                    ai.purpose === 'worksheet_image_search_embedding'
+                  ? stage.stageName === 'image_search' ||
+                    stage.stageName === 'image_retrieval'
                   : false)),
         );
         const linkedSearches = searches.filter(
           (search) =>
             (search.stageExecutionId && search.stageExecutionId === stage.id) ||
-            (!search.stageExecutionId && stage.stageName === 'image_search'),
+            (!search.stageExecutionId &&
+              (stage.stageName === 'image_search' ||
+                stage.stageName === 'image_retrieval')),
         );
 
         let panel =

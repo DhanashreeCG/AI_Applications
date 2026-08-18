@@ -41,6 +41,8 @@ import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-
     FlashcardOrchestratorService,
     TemplateSelectionService,
     FlashcardRendererService,
+    BrowserPoolService,
+    AssetImageService,
   ],
 })
 export class FlashcardsModule {}

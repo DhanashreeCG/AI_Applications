@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@generated/prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { OpenAiEmbeddingProvider } from '../ai/providers/openai-embedding.provider';
 import { RedisCacheService } from '../cache/redis-cache.service';
@@ -13,6 +14,17 @@ import {
   SearchResultItem,
 } from './interfaces/search-result.interface';
 import { matchesMetadataFilters } from './utils/metadata-filter.util';
+import { LetterEntity, LetterQueryDetectorService } from './letter-query-detector.service';
+import {
+  canonicalObjectStrings,
+  matchesCanonicalLetterObjects,
+} from './letter-object-mapper';
+
+/** Vector window used before in-memory `objects` letter filtering. */
+export const LETTER_CANDIDATE_K = 75;
+
+type AssetWithMetadata = Prisma.AssetGetPayload<{ include: { metadata: true } }>;
+type AssetMetadataRecord = NonNullable<AssetWithMetadata['metadata']>;
 
 @Injectable()
 export class SearchService {
@@ -26,6 +38,7 @@ export class SearchService {
     private readonly embeddingProvider: OpenAiEmbeddingProvider,
     private readonly vectorStorage: VectorStorageService,
     private readonly redisCache: RedisCacheService,
+    private readonly letterDetector: LetterQueryDetectorService,
   ) {}
 
   public async search(dto: SearchAssetsDto): Promise<SearchAssetsResponse> {
@@ -91,10 +104,13 @@ export class SearchService {
     limit: number,
     dto: SearchAssetsDto,
   ): Promise<SearchAssetsResponse> {
-    const candidateLimit = Math.max(
-      limit * this.candidateMultiplier,
-      this.minimumCandidates,
-    );
+    const entity = this.letterDetector.detect(query);
+    const candidateLimit = entity
+      ? Math.max(
+          limit * this.candidateMultiplier,
+          LETTER_CANDIDATE_K,
+        )
+      : Math.max(limit * this.candidateMultiplier, this.minimumCandidates);
 
     this.logger.log(`Searching assets for query: "${query}"`);
 
@@ -113,7 +129,7 @@ export class SearchService {
       candidateLimit,
     );
 
-    if (vectorResults.length === 0) {
+    if (vectorResults.length === 0 && !entity) {
       return {
         query,
         total: 0,
@@ -125,7 +141,7 @@ export class SearchService {
     const assetIds = vectorResults.map((result) => result.assetId);
     const assets = await this.loadAssetsWithMetadata(assetIds);
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
-    const filteredResults: SearchResultItem[] = [];
+    const rankedResults: SearchResultItem[] = [];
 
     for (const vectorResult of vectorResults) {
       const asset = assetMap.get(vectorResult.assetId);
@@ -137,37 +153,106 @@ export class SearchService {
         continue;
       }
 
-      filteredResults.push({
-        assetId: asset.id,
-        similarity: vectorResult.similarity,
-        distance: vectorResult.distance,
-        caption: asset.metadata.caption,
-        orientation: asset.metadata.orientation,
-        colors: asset.metadata.colors,
-        styles: asset.metadata.styles,
-        objects: asset.metadata.objects,
-        actions: asset.metadata.actions,
-        ageGroups: asset.metadata.ageGroups,
-        grades: asset.metadata.grades,
-        searchDescription: asset.metadata.searchDescription,
-        s3ObjectKey: asset.s3ObjectKey,
-        mimeType: asset.mimeType,
-      });
+      rankedResults.push(
+        this.toSearchResult(asset, asset.metadata, {
+          similarity: vectorResult.similarity,
+          distance: vectorResult.distance,
+        }),
+      );
+    }
 
-      if (filteredResults.length >= limit) {
-        break;
+    let finalResults = rankedResults;
+
+    if (entity) {
+      const targets = canonicalObjectStrings(entity).map((s) => s.toLowerCase());
+      const letterFiltered = rankedResults.filter((item) =>
+        matchesCanonicalLetterObjects(item.objects, entity),
+      );
+
+      if (letterFiltered.length > 0) {
+        finalResults = letterFiltered;
+      } else {
+        this.logger.warn(
+          `Letter filter empty for "${query}" (${targets.join(', ')}); falling back to objects lookup`,
+        );
+        finalResults = await this.findByCanonicalObjects(entity, dto, limit);
       }
     }
 
+    const sliced = finalResults.slice(0, limit);
+
     return {
       query,
-      total: filteredResults.length,
-      results: filteredResults,
+      total: sliced.length,
+      results: sliced,
       usage,
     };
   }
 
+  private async findByCanonicalObjects(
+    entity: LetterEntity,
+    dto: SearchAssetsDto,
+    limit: number,
+  ): Promise<SearchResultItem[]> {
+    const targets = canonicalObjectStrings(entity).map((s) => s.toLowerCase());
+    const rows = await this.prisma.assetMetadata.findMany({
+      where: {
+        objects:
+          entity.case === 'both'
+            ? { hasEvery: targets }
+            : { hasSome: targets },
+      },
+      include: { asset: true },
+      take: Math.max(limit * 5, 20),
+    });
+
+    const results: SearchResultItem[] = [];
+    for (const row of rows) {
+      if (!matchesMetadataFilters(row, dto.filters)) {
+        continue;
+      }
+      if (!matchesCanonicalLetterObjects(row.objects, entity)) {
+        continue;
+      }
+      results.push(
+        this.toSearchResult(row.asset, row, { similarity: 1, distance: 0 }),
+      );
+      if (results.length >= limit) {
+        break;
+      }
+    }
+
+    return results;
+  }
+
+  private toSearchResult(
+    asset: Pick<AssetWithMetadata, 'id' | 's3ObjectKey' | 'mimeType'>,
+    metadata: AssetMetadataRecord,
+    scores: { similarity: number; distance: number },
+  ): SearchResultItem {
+    return {
+      assetId: asset.id,
+      similarity: scores.similarity,
+      distance: scores.distance,
+      caption: metadata.caption,
+      orientation: metadata.orientation,
+      colors: metadata.colors,
+      styles: metadata.styles,
+      objects: metadata.objects,
+      actions: metadata.actions,
+      ageGroups: metadata.ageGroups,
+      grades: metadata.grades,
+      searchDescription: metadata.searchDescription,
+      s3ObjectKey: asset.s3ObjectKey,
+      mimeType: asset.mimeType,
+    };
+  }
+
   private async loadAssetsWithMetadata(assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return [];
+    }
+
     const assets = await this.prisma.asset.findMany({
       where: {
         id: { in: assetIds },

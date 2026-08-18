@@ -1,0 +1,1557 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Generate AI Worksheets</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --sidebar: #5b2d91;
+        --sidebar-deep: #4a2278;
+        --purple: #6b2fa0;
+        --purple-soft: #efe6f8;
+        --orange: #f08a3a;
+        --text: #2b2140;
+        --muted: #7a7190;
+        --line: #eadff4;
+        --white: #ffffff;
+        --danger: #e24b4b;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        font-family: Nunito, Segoe UI, sans-serif;
+        color: var(--text);
+        background: #f7f4fb;
+      }
+      .main { overflow: auto; min-width: 0; }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 22px 32px 8px;
+      }
+      h1 {
+        margin: 0;
+        color: var(--purple);
+        font-size: 32px;
+        font-weight: 800;
+      }
+      .userbox { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+      .avatar {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: var(--purple); color: #fff; display: grid; place-items: center; font-weight: 800;
+      }
+      .form-card, .preview-wrap {
+        background: var(--white);
+        margin: 12px 32px 20px;
+        padding: 22px 24px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+      }
+      label { display: block; font-weight: 800; margin-bottom: 8px; }
+      .topic-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 14px;
+        margin-bottom: 18px;
+      }
+      .topic-row input {
+        border: 0; outline: none; width: 100%; font: inherit; font-size: 15px;
+      }
+      .ages { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+      .form-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .count-field { min-width: 180px; }
+      .count-field select {
+        width: 100%;
+        border: 1.5px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+        font-weight: 700;
+        background: #fff;
+      }
+      .age {
+        border: 1.5px solid #d8cce8;
+        background: #fff;
+        border-radius: 999px;
+        padding: 10px 16px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .age input { display: none; }
+      .age.selected {
+        border-color: var(--purple);
+        background: var(--purple-soft);
+        color: var(--purple);
+      }
+      .actions { display: flex; justify-content: flex-end; gap: 12px; }
+      .btn {
+        border: 0; border-radius: 10px; padding: 11px 18px; font-weight: 800; cursor: pointer;
+      }
+      .btn-ghost { background: #fff; color: var(--purple); border: 1.5px solid var(--purple); }
+      .btn-gen {
+        color: #fff;
+        background: linear-gradient(90deg, var(--purple), var(--orange));
+      }
+      .btn:disabled { opacity: 0.55; cursor: wait; }
+      .grid-wrap { padding: 0 32px 40px; }
+      .worksheet-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 18px;
+      }
+      @media (max-width: 1200px) { .worksheet-grid { grid-template-columns: repeat(3, 1fr); } }
+      @media (max-width: 800px) {
+        .worksheet-grid { grid-template-columns: repeat(2, 1fr); }
+      }
+      .card {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 6px 18px rgba(91,45,145,0.06);
+        cursor: pointer;
+      }
+      .card:hover { box-shadow: 0 10px 24px rgba(91,45,145,0.14); }
+      .thumb-frame {
+        width: 100%;
+        height: 170px;
+        overflow: hidden;
+        background: #f3eef9;
+        pointer-events: none;
+      }
+      .thumb-frame iframe {
+        border: 0;
+        transform-origin: top left;
+        pointer-events: none;
+      }
+      .card-bar {
+        display: flex;
+        justify-content: space-around;
+        padding: 8px;
+        border-top: 1px solid var(--line);
+      }
+      .icon-btn {
+        width: 34px; height: 34px; border: 0; background: transparent; cursor: pointer; font-size: 16px;
+      }
+      .icon-btn.loved { color: var(--danger); }
+      .pager {
+        display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 18px; color: var(--muted);
+      }
+      .page {
+        min-width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; cursor: pointer; font-weight: 800;
+      }
+      .page.active { background: var(--purple); color: #fff; }
+      .hidden { display: none !important; }
+      .status { margin: 0 32px 8px; color: var(--muted); font-weight: 700; }
+      .preview-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 16px; }
+      .frame-shell {
+        overflow: auto;
+        background: #efeaf6;
+        border-radius: 12px;
+        padding: 16px;
+        min-height: 480px;
+      }
+      iframe.worksheet-frame {
+        border: 1.5px solid var(--line);
+        background: #fff;
+        display: block;
+        transform-origin: top left;
+        width: 1016px;
+        height: 1316px;
+      }
+      .modal {
+        position: fixed; inset: 0; background: rgba(30,16,50,0.45);
+        display: grid; place-items: center; z-index: 40;
+      }
+      .modal-card {
+        width: min(720px, 92vw); max-height: 86vh; overflow: auto;
+        background: #fff; border-radius: 16px; padding: 18px;
+      }
+      .image-picker {
+        width: min(980px, 94vw);
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        padding: 22px 24px 18px;
+      }
+      .image-picker-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .image-picker-head h2 {
+        margin: 0;
+        font-family: 'Baloo 2', cursive;
+        font-size: 28px;
+        color: #2b2140;
+      }
+      .modal-x {
+        width: 36px; height: 36px; border: 0; background: transparent;
+        font-size: 22px; cursor: pointer; color: #6b6280;
+      }
+      .image-picker-tabs {
+        display: flex; gap: 28px; margin: 10px 0 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .image-tab {
+        border: 0; background: transparent; padding: 10px 0 12px;
+        font: inherit; font-weight: 800; color: var(--muted); cursor: pointer;
+      }
+      .image-tab.active {
+        color: var(--text);
+        box-shadow: inset 0 -3px 0 var(--orange);
+      }
+      .image-search-row {
+        display: flex; gap: 10px; align-items: stretch;
+      }
+      .image-search-row input {
+        flex: 1; margin: 0;
+      }
+      .btn-search {
+        display: inline-flex; align-items: center; gap: 8px;
+        background: var(--orange); color: #fff; white-space: nowrap;
+      }
+      .image-results-meta {
+        display: flex; justify-content: space-between; align-items: baseline;
+        margin: 16px 0 10px; font-weight: 800;
+      }
+      .image-results-meta span { color: var(--muted); font-weight: 700; font-size: 13px; }
+      .image-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        min-height: 220px;
+      }
+      @media (max-width: 900px) {
+        .image-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+      .image-tile {
+        position: relative;
+        border: 2px solid transparent;
+        border-radius: 12px;
+        overflow: hidden;
+        cursor: pointer;
+        background: #f3eef9;
+        aspect-ratio: 1;
+      }
+      .image-tile img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+      .upload-preview {
+        display: block;
+        width: min(280px, 100%);
+        max-height: 220px;
+        object-fit: contain;
+        margin: 16px auto 0;
+        border-radius: 12px;
+        background: #f3eef9;
+      }
+      .image-tile .pick {
+        position: absolute; top: 8px; right: 8px;
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid #fff; background: rgba(255,255,255,0.35);
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+      }
+      .image-tile.selected { border-color: var(--orange); }
+      .image-tile.selected .pick { background: var(--orange); border-color: #fff; }
+      .image-picker-foot {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; margin-top: 18px; flex-wrap: wrap;
+      }
+      .image-tip { color: var(--muted); font-size: 13px; font-weight: 700; }
+      .image-picker-actions { display: flex; gap: 10px; }
+      .upload-pane {
+        border: 1.5px dashed #d8cce8;
+        border-radius: 14px;
+        padding: 36px 20px;
+        text-align: center;
+        color: var(--muted);
+        font-weight: 700;
+      }
+      textarea, .modal input {
+        width: 100%; border: 1.5px solid var(--line); border-radius: 10px; padding: 10px; font: inherit;
+      }
+      .empty { text-align: center; color: var(--muted); padding: 40px 0; grid-column: 1 / -1; }
+      .ai-panel {
+        width: min(760px, 94vw);
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .ai-panel-body { overflow: auto; padding-right: 4px; }
+      .ai-field-card {
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 12px;
+        background: #fbf8ff;
+      }
+      .ai-field-card h3 {
+        margin: 0 0 8px;
+        font-size: 14px;
+        color: var(--purple);
+      }
+      .ai-field-card .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+      .ai-thumb {
+        width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: #efe6f8;
+      }
+      .regen-box {
+        border: 1.5px dashed #d8cce8;
+        border-radius: 12px;
+        padding: 14px;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="main">
+      <div class="topbar">
+        <h1>Generate AI Worksheets</h1>
+        <div class="userbox">
+          <div>Teacher workspace</div>
+          <div class="avatar">AI</div>
+        </div>
+      </div>
+
+      <section id="formSection" class="form-card">
+        <label>Today's learning topic</label>
+        <div class="topic-row">
+          <span>✦</span>
+          <input id="topicInput" placeholder="e.g My body Parts, Healthy Food, Animals" />
+        </div>
+        <label>Select age group*</label>
+        <div class="ages" id="ageGroup"></div>
+        <div class="form-row">
+          <div class="count-field">
+            <label for="countSelect">How many worksheets</label>
+            <select id="countSelect"></select>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost" id="cancelBtn" type="button">Cancel</button>
+          <button class="btn btn-gen" id="generateBtn" type="button">✦ Generate Worksheets</button>
+        </div>
+      </section>
+
+      <p class="status" id="status"></p>
+      <div class="grid-wrap" id="gridSection">
+        <div class="worksheet-grid" id="worksheetGrid"></div>
+        <div class="pager" id="pager"></div>
+      </div>
+
+      <section id="previewSection" class="preview-wrap hidden">
+        <button class="btn btn-ghost" id="backBtn" type="button">← Back</button>
+        <h2 id="worksheetTitle"></h2>
+        <div class="preview-toolbar">
+          <button class="btn btn-ghost" id="editBtn" type="button">Edit</button>
+          <button class="btn btn-gen" id="aiEditBtn" type="button">✦ AI Edit</button>
+          <button class="btn btn-ghost" id="downloadBtn" type="button">⬇ Download</button>
+          <button class="btn btn-ghost" id="downloadPdfBtn" type="button">⬇ Download PDF</button>
+        </div>
+        <div class="frame-shell"><iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe></div>
+      </section>
+    </div>
+
+    <div id="imagePickerModal" class="modal hidden" style="z-index: 50;">
+      <div class="modal-card image-picker">
+        <div class="image-picker-head">
+          <h2>Select Image</h2>
+          <button class="modal-x" id="imagePickerCloseBtn" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="image-picker-tabs">
+          <button class="image-tab active" id="searchTabBtn" type="button" data-tab="search">Search Images</button>
+          <button class="image-tab" id="uploadTabBtn" type="button" data-tab="upload">Upload From Computer</button>
+        </div>
+        <div id="searchPane">
+          <div class="image-search-row">
+            <input id="imageQuery" placeholder='Search for images (e.g., "airplane", "happy child", "red apple")' />
+            <button class="btn btn-search" id="searchImagesBtn" type="button">🔍 Search</button>
+          </div>
+          <div class="image-results-meta">
+            <strong>Search Results</strong>
+            <span id="imageResultsCount">No search yet</span>
+          </div>
+          <div class="image-grid" id="imageBank"></div>
+        </div>
+        <div id="uploadPane" class="hidden">
+          <div class="upload-pane">
+            <p>Choose a JPEG, PNG, WebP, or GIF. It is stored on S3 and used for this image slot instead of a library asset.</p>
+            <input id="imageUploadInput" type="file" accept="image/*" />
+            <img id="uploadPreview" class="upload-preview hidden" alt="Selected upload preview" />
+          </div>
+        </div>
+        <div class="image-picker-foot">
+          <div class="image-tip">Can't find what you're looking for? Try different keywords or upload your own image.</div>
+          <div class="image-picker-actions">
+            <button class="btn btn-ghost" id="imagePickerCancelBtn" type="button">Cancel</button>
+            <button class="btn btn-search" id="selectImageBtn" type="button">Select Image</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="singleFieldModal" class="modal hidden">
+      <div class="modal-card">
+        <div class="image-picker-head">
+          <h2 id="singleFieldTitle">Edit text</h2>
+          <button class="modal-x" id="singleFieldCloseBtn" type="button" aria-label="Close">×</button>
+        </div>
+        <label>Current text</label>
+        <textarea id="singleFieldCurrent" rows="4"></textarea>
+        <label>AI prompt (optional)</label>
+        <textarea id="singleFieldPrompt" rows="2" placeholder="Rewrite this for the same age group…"></textarea>
+        <p id="singleFieldError" class="status"></p>
+        <div class="actions">
+          <button class="btn btn-ghost" id="singleFieldCancelBtn" type="button">Cancel</button>
+          <button class="btn btn-gen" id="singleFieldRewriteBtn" type="button">✦ AI rewrite</button>
+          <button class="btn btn-search" id="singleFieldSaveBtn" type="button">Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="fieldEditModal" class="modal hidden">
+      <div class="modal-card ai-panel">
+        <div class="image-picker-head">
+          <h2>AI Edit</h2>
+          <button class="modal-x" id="fieldEditCancelBtn" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="ai-panel-body">
+          <div id="aiFieldsList"></div>
+          <div class="regen-box">
+            <h3 style="margin:0 0 8px;color:var(--purple);">Regenerate whole worksheet</h3>
+            <p class="image-tip">Keep this template and generate new text and images from your requirements.</p>
+            <textarea id="regenQuery" rows="3" placeholder="e.g. Make this about ocean animals, easier questions, same age group"></textarea>
+            <p id="fieldEditError" class="status"></p>
+            <div class="actions" style="margin-top:10px">
+              <button class="btn btn-gen" id="regenWorksheetBtn" type="button">✦ Regenerate worksheet</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const FAVORITES_KEY = 'worksheet-favorites';
+      const state = {
+        ages: [],
+        ageGroup: '',
+        page: 1,
+        pageSize: 10,
+        pagerMaxButtons: 8,
+        total: 0,
+        defaultCount: 1,
+        maxCount: 10,
+        apiBaseUrl: '',
+        apiPrefix: '/worksheets',
+        canvas: { width: 1016, height: 1316 },
+        worksheetId: null,
+        preview: null,
+        editMode: false,
+        selectedImagePath: null,
+        selectedImageSlotId: null,
+        selectedFieldPath: null,
+        selectedSearchItem: null,
+        pendingImageReplacements: {},
+        imageSearchCache: new Map(),
+        imageBlobCache: new Map(),
+        lastImageSearch: { query: '', results: [], path: null },
+        imagePickerTab: 'search',
+        imagePickerLimit: 10,
+        imagePickFromAi: false,
+      };
+
+      const els = {
+        topicInput: document.getElementById('topicInput'),
+        ageGroup: document.getElementById('ageGroup'),
+        generateBtn: document.getElementById('generateBtn'),
+        cancelBtn: document.getElementById('cancelBtn'),
+        countSelect: document.getElementById('countSelect'),
+        status: document.getElementById('status'),
+        worksheetGrid: document.getElementById('worksheetGrid'),
+        pager: document.getElementById('pager'),
+        formSection: document.getElementById('formSection'),
+        gridSection: document.getElementById('gridSection'),
+        previewSection: document.getElementById('previewSection'),
+        worksheetTitle: document.getElementById('worksheetTitle'),
+        worksheetFrame: document.getElementById('worksheetFrame'),
+        backBtn: document.getElementById('backBtn'),
+        editBtn: document.getElementById('editBtn'),
+        aiEditBtn: document.getElementById('aiEditBtn'),
+        downloadBtn: document.getElementById('downloadBtn'),
+        downloadPdfBtn: document.getElementById('downloadPdfBtn'),
+        imagePickerModal: document.getElementById('imagePickerModal'),
+        imageQuery: document.getElementById('imageQuery'),
+        searchImagesBtn: document.getElementById('searchImagesBtn'),
+        imageBank: document.getElementById('imageBank'),
+        imageResultsCount: document.getElementById('imageResultsCount'),
+        imagePickerCloseBtn: document.getElementById('imagePickerCloseBtn'),
+        imagePickerCancelBtn: document.getElementById('imagePickerCancelBtn'),
+        selectImageBtn: document.getElementById('selectImageBtn'),
+        searchTabBtn: document.getElementById('searchTabBtn'),
+        uploadTabBtn: document.getElementById('uploadTabBtn'),
+        searchPane: document.getElementById('searchPane'),
+        uploadPane: document.getElementById('uploadPane'),
+        imageUploadInput: document.getElementById('imageUploadInput'),
+        uploadPreview: document.getElementById('uploadPreview'),
+        fieldEditModal: document.getElementById('fieldEditModal'),
+        fieldEditError: document.getElementById('fieldEditError'),
+        fieldEditCancelBtn: document.getElementById('fieldEditCancelBtn'),
+        aiFieldsList: document.getElementById('aiFieldsList'),
+        regenQuery: document.getElementById('regenQuery'),
+        regenWorksheetBtn: document.getElementById('regenWorksheetBtn'),
+        singleFieldModal: document.getElementById('singleFieldModal'),
+        singleFieldTitle: document.getElementById('singleFieldTitle'),
+        singleFieldCurrent: document.getElementById('singleFieldCurrent'),
+        singleFieldPrompt: document.getElementById('singleFieldPrompt'),
+        singleFieldError: document.getElementById('singleFieldError'),
+        singleFieldCloseBtn: document.getElementById('singleFieldCloseBtn'),
+        singleFieldCancelBtn: document.getElementById('singleFieldCancelBtn'),
+        singleFieldRewriteBtn: document.getElementById('singleFieldRewriteBtn'),
+        singleFieldSaveBtn: document.getElementById('singleFieldSaveBtn'),
+      };
+
+      function favorites() {
+        try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch { return []; }
+      }
+      function setFavorites(ids) {
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+      }
+      function queryApiBase() {
+        return (new URLSearchParams(location.search).get('api') || '').replace(/\/$/, '');
+      }
+      function apiUrl(path) {
+        const base = (state.apiBaseUrl || queryApiBase()).replace(/\/$/, '');
+        const prefix = (state.apiPrefix || '/worksheets').replace(/\/$/, '');
+        if (!path) return `${base}${prefix}`;
+        if (path.startsWith('?')) return `${base}${prefix}${path}`;
+        const suffix = path.startsWith('/') ? path : `/${path}`;
+        return `${base}${prefix}${suffix}`;
+      }
+      function resolveUrl(path) {
+        if (!path || /^(https?:|data:|blob:)/i.test(path)) return path;
+        const base = (state.apiBaseUrl || queryApiBase()).replace(/\/$/, '');
+        return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+      }
+      function apiFetch(path, options) {
+        return fetch(apiUrl(path), options);
+      }
+      function selectedAge() {
+        return state.ages.find((item) => item.id === state.ageGroup) || state.ages[0];
+      }
+      function setStatus(text) { els.status.textContent = text || ''; }
+      async function readError(res) {
+        try {
+          const body = await res.json();
+          return body?.error?.message || body?.message || res.statusText;
+        } catch {
+          return res.statusText;
+        }
+      }
+
+      function renderAges() {
+        els.ageGroup.innerHTML = '';
+        state.ages.forEach((age) => {
+          const label = document.createElement('label');
+          label.className = 'age' + (age.id === state.ageGroup ? ' selected' : '');
+          label.innerHTML = `<input type="radio" name="age" value="${age.id}"> ${age.label}`;
+          label.addEventListener('click', () => {
+            state.ageGroup = age.id;
+            renderAges();
+          });
+          els.ageGroup.appendChild(label);
+        });
+      }
+
+      function showGrid() {
+        els.formSection.classList.remove('hidden');
+        els.gridSection.classList.remove('hidden');
+        els.previewSection.classList.add('hidden');
+        state.worksheetId = null;
+        state.preview = null;
+        state.editMode = false;
+        state.pendingImageReplacements = {};
+        els.editBtn.textContent = 'Edit';
+      }
+
+      function scaleThumb(iframe, canvas) {
+        const width = canvas?.width || state.canvas.width;
+        const height = canvas?.height || state.canvas.height;
+        iframe.style.width = width + 'px';
+        iframe.style.height = height + 'px';
+        const parent = iframe.parentElement;
+        if (!parent) return;
+        const scale = parent.clientWidth / width;
+        iframe.style.transform = 'scale(' + scale + ')';
+        parent.style.height = Math.round(height * scale) + 'px';
+      }
+
+      function appendCard(item) {
+        const loved = favorites().includes(item.id);
+        const card = document.createElement('div');
+        card.className = 'card';
+        const frameWrap = document.createElement('div');
+        frameWrap.className = 'thumb-frame';
+        if (item.html) {
+          const iframe = document.createElement('iframe');
+          iframe.title = item.template?.name || 'Worksheet';
+          iframe.srcdoc = item.html;
+          iframe.addEventListener('load', () => scaleThumb(iframe, item.canvas));
+          frameWrap.appendChild(iframe);
+        } else if (item.thumbnailUrl) {
+          frameWrap.style.background = `center/cover url('${resolveUrl(item.thumbnailUrl)}')`;
+        }
+        card.appendChild(frameWrap);
+        const bar = document.createElement('div');
+        bar.className = 'card-bar';
+        bar.innerHTML = `
+            <button class="icon-btn ${loved ? 'loved' : ''}" data-act="fav" data-id="${item.id}" title="Favourite">❤</button>
+            <button class="icon-btn" data-act="preview" data-id="${item.id}" title="Preview">🖥</button>
+            <button class="icon-btn" data-act="download" data-id="${item.id}" title="Download">⬇</button>`;
+        card.appendChild(bar);
+        card.addEventListener('click', (event) => {
+          const btn = event.target.closest('[data-act]');
+          if (btn?.dataset.act === 'fav') {
+            event.preventDefault();
+            toggleFav(item.id, btn);
+            return;
+          }
+          if (btn?.dataset.act === 'download') {
+            event.preventDefault();
+            download(item.id, 'pdf');
+            return;
+          }
+          openPreview(item.id, item.html);
+        });
+        els.worksheetGrid.appendChild(card);
+      }
+
+      async function loadGrid() {
+        const skip = (state.page - 1) * state.pageSize;
+        const res = await apiFetch(`?skip=${skip}&take=${state.pageSize}`);
+        const body = await res.json();
+        if (!res.ok) {
+          setStatus(body?.error?.message || 'Could not load worksheets');
+          return;
+        }
+        state.total = body.total || 0;
+        els.worksheetGrid.innerHTML = '';
+        if (!body.items?.length) {
+          els.worksheetGrid.innerHTML = '<div class="empty">No worksheets yet. Enter a topic and generate.</div>';
+        } else {
+          body.items.forEach(appendCard);
+        }
+        renderPager();
+      }
+
+      function renderPager() {
+        const pages = Math.max(1, Math.ceil(state.total / state.pageSize));
+        els.pager.innerHTML = '';
+        for (let i = 1; i <= Math.min(pages, state.pagerMaxButtons); i += 1) {
+          const btn = document.createElement('button');
+          btn.className = 'page' + (i === state.page ? ' active' : '');
+          btn.textContent = String(i);
+          btn.addEventListener('click', () => { state.page = i; loadGrid(); });
+          els.pager.appendChild(btn);
+        }
+      }
+
+      function toggleFav(id, btn) {
+        const ids = favorites();
+        const next = ids.includes(id) ? ids.filter((item) => item !== id) : ids.concat(id);
+        setFavorites(next);
+        btn.classList.toggle('loved', next.includes(id));
+      }
+
+      async function generateSet() {
+        const topic = els.topicInput.value.trim();
+        if (!topic) {
+          setStatus('Enter a learning topic');
+          return;
+        }
+        const age = selectedAge();
+        if (!age) {
+          setStatus('No age groups configured');
+          return;
+        }
+        els.generateBtn.disabled = true;
+        setStatus('Generating worksheets…');
+        const res = await apiFetch('/generate-set', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: topic,
+            topic,
+            age: age.age,
+            ageGroup: age.id,
+            grade: age.grade,
+            count: Number(els.countSelect.value) || state.defaultCount,
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        els.generateBtn.disabled = false;
+        if (!res.ok) {
+          setStatus(body?.error?.message || 'Generation failed');
+          return;
+        }
+        setStatus(`Created ${(body.items || []).length} worksheet(s)`);
+        state.page = 1;
+        await loadGrid();
+      }
+
+      function scaleFrame() {
+        const iframe = els.worksheetFrame;
+        const canvas = state.preview?.canvas || state.canvas;
+        iframe.style.width = canvas.width + 'px';
+        iframe.style.height = canvas.height + 'px';
+        const maxW = iframe.parentElement.clientWidth - 32;
+        const scale = Math.min(1, maxW / canvas.width);
+        iframe.style.transform = `scale(${scale})`;
+        iframe.parentElement.style.height = canvas.height * scale + 8 + 'px';
+      }
+
+      async function openPreview(id, html) {
+        if (!id || id === 'null' || id === 'undefined') {
+          setStatus('Worksheet id is missing');
+          return;
+        }
+        state.worksheetId = id;
+        state.editMode = false;
+        els.editBtn.textContent = 'Edit';
+        setStatus('Loading preview…');
+        els.formSection.classList.add('hidden');
+        els.gridSection.classList.add('hidden');
+        els.previewSection.classList.remove('hidden');
+        const apply = (preview) => {
+          state.preview = preview;
+          els.worksheetTitle.textContent = preview.template?.name || 'Worksheet';
+          const iframe = els.worksheetFrame;
+          const onReady = () => {
+            scaleFrame();
+            wireFrame();
+          };
+          iframe.onload = onReady;
+          iframe.srcdoc = preview.html || html || '';
+          requestAnimationFrame(onReady);
+        };
+        if (html) {
+          apply({ html, template: { name: 'Worksheet' }, canvas: state.canvas, structure: {}, editableFields: [], fieldPrompts: {} });
+        }
+        const res = await apiFetch(`/${encodeURIComponent(id)}/preview?mode=editor`);
+        const preview = await res.json();
+        if (!res.ok) {
+          if (!html) setStatus(preview?.error?.message || 'Preview failed');
+          return;
+        }
+        apply(preview);
+        setStatus('');
+      }
+
+      function wireFrame() {
+        const doc = els.worksheetFrame.contentDocument;
+        if (!doc) return;
+        doc.querySelectorAll('[data-pencil-for]').forEach((btn) => {
+          btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!state.editMode) return;
+            openFieldEditor(btn.getAttribute('data-pencil-for'));
+          });
+        });
+        doc.querySelectorAll('[data-editable]').forEach((el) => {
+          el.addEventListener('click', () => {
+            if (!state.editMode) return;
+            state.selectedFieldPath = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
+          });
+        });
+        enableInlineEditing(state.editMode);
+        applyPendingImages(doc);
+      }
+
+      function openImagePicker(path, slotId, fromAi) {
+        if (!state.editMode && !fromAi && !state.imagePickFromAi) return;
+        state.imagePickFromAi = Boolean(fromAi || state.imagePickFromAi);
+        state.selectedImageSlotId = slotId || state.selectedImageSlotId;
+        state.selectedImagePath = resolveImagePath(path, slotId);
+        state.selectedSearchItem = null;
+        setImagePickerTab('search');
+        els.imagePickerModal.classList.remove('hidden');
+        const cached = state.lastImageSearch;
+        if (cached.results?.length) {
+          els.imageQuery.value = cached.query || '';
+          renderImageResults(cached.results, cached.query);
+          return;
+        }
+        els.imageQuery.value = '';
+        renderImageResults([], '');
+      }
+
+      function resolveImagePath(path, slotId) {
+        if (path && path !== 'undefined' && path !== 'null') return path;
+        const structure = state.preview?.structure;
+        if (slotId && structure) {
+          const found = findStructurePathBySlotId(structure, slotId);
+          if (found) return found;
+        }
+        return slotId || state.selectedImagePath || '';
+      }
+
+      function findStructurePathBySlotId(node, slotId, prefix) {
+        if (Array.isArray(node)) {
+          for (let i = 0; i < node.length; i += 1) {
+            const found = findStructurePathBySlotId(node[i], slotId, `${prefix}[${i}]`);
+            if (found) return found;
+          }
+          return null;
+        }
+        if (!node || typeof node !== 'object') return null;
+        if (node.id === slotId && prefix) return prefix;
+        for (const [key, child] of Object.entries(node)) {
+          const childPath = prefix ? `${prefix}.${key}` : key;
+          if (key === slotId && child && typeof child === 'object' && !Array.isArray(child)) {
+            return childPath;
+          }
+          const found = findStructurePathBySlotId(child, slotId, childPath);
+          if (found) return found;
+        }
+        return null;
+      }
+
+      function cssAttr(name, value) {
+        return `[${name}="${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`;
+      }
+
+      function findImageSlot(doc, path, slotId) {
+        if (!doc) return null;
+        const selectors = [];
+        if (path) selectors.push('img' + cssAttr('data-field-path', path), cssAttr('data-field-path', path));
+        if (slotId) selectors.push('img' + cssAttr('data-image-slot', slotId), cssAttr('data-image-slot', slotId));
+        for (const selector of selectors) {
+          const el = doc.querySelector(selector);
+          if (!el) continue;
+          if (el.tagName === 'IMG') return el;
+          const nested = el.querySelector('img');
+          if (nested) return nested;
+        }
+        const imgs = doc.querySelectorAll('img[data-image-slot], img.worksheet-image');
+        return imgs.length === 1 ? imgs[0] : null;
+      }
+
+      function closeImagePicker() {
+        els.imagePickerModal.classList.add('hidden');
+        state.selectedSearchItem = null;
+      }
+
+      function setImagePickerTab(tab) {
+        state.imagePickerTab = tab;
+        els.searchTabBtn.classList.toggle('active', tab === 'search');
+        els.uploadTabBtn.classList.toggle('active', tab === 'upload');
+        els.searchPane.classList.toggle('hidden', tab !== 'search');
+        els.uploadPane.classList.toggle('hidden', tab !== 'upload');
+      }
+
+      function cacheKey(query, path) {
+        return `${(query || '').trim().toLowerCase()}::${path || ''}`;
+      }
+
+      async function cachedImageSrc(url) {
+        const resolved = resolveUrl(url);
+        if (!resolved) return '';
+        if (state.imageBlobCache.has(resolved)) return state.imageBlobCache.get(resolved);
+        try {
+          const res = await fetch(resolved);
+          if (!res.ok) throw new Error(String(res.status));
+          const blob = await res.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          state.imageBlobCache.set(resolved, objectUrl);
+          return objectUrl;
+        } catch {
+          state.imageBlobCache.set(resolved, resolved);
+          return resolved;
+        }
+      }
+
+      function renderImageResults(results, query) {
+        const items = Array.isArray(results) ? results.filter((item) => item?.imageUrl && item.imageUrl !== 'null') : [];
+        els.imageBank.innerHTML = '';
+        if (!items.length) {
+          els.imageResultsCount.textContent = query ? 'Showing 0 results' : 'No search yet';
+          els.imageBank.innerHTML = '<div class="empty">Search for images to see results here.</div>';
+          return;
+        }
+        els.imageResultsCount.textContent = `Showing ${items.length} result${items.length === 1 ? '' : 's'}`;
+        items.forEach((item) => {
+          const tile = document.createElement('button');
+          tile.type = 'button';
+          tile.className = 'image-tile' + (state.selectedSearchItem?.assetId === item.assetId ? ' selected' : '');
+          tile.title = item.caption || item.searchDescription || '';
+          const img = document.createElement('img');
+          img.alt = item.caption || item.searchDescription || 'Search result';
+          const resolved = resolveUrl(item.imageUrl);
+          img.src = state.imageBlobCache.get(resolved) || resolved;
+          cachedImageSrc(item.imageUrl).then((src) => {
+            if (img.isConnected) img.src = src;
+          });
+          const pick = document.createElement('span');
+          pick.className = 'pick';
+          tile.appendChild(img);
+          tile.appendChild(pick);
+          tile.dataset.assetId = item.assetId || '';
+          tile.dataset.imageUrl = resolved || '';
+          tile.addEventListener('click', () => {
+            state.selectedSearchItem = { ...item, imageUrl: resolved };
+            els.imageBank.querySelectorAll('.image-tile').forEach((node) => node.classList.remove('selected'));
+            tile.classList.add('selected');
+          });
+          tile.addEventListener('dblclick', () => {
+            state.selectedSearchItem = { ...item, imageUrl: resolveUrl(item.imageUrl) };
+            if (applySelectedImageToPreview()) {
+              closeImagePicker();
+              setStatus('Image updated. Click Save to keep the change.');
+            }
+          });
+          els.imageBank.appendChild(tile);
+        });
+      }
+
+      function previewImageSrc(url) {
+        if (!url) return '';
+        if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+        const resolved = resolveUrl(url);
+        return state.imageBlobCache.get(resolved) || resolved;
+      }
+
+      function applyImageInFrame(src, path, slotId) {
+        const doc = els.worksheetFrame.contentDocument;
+        const abs = previewImageSrc(src);
+        if (doc) {
+          const slots = [];
+          doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
+          if (path) doc.querySelectorAll(cssAttr('data-field-path', path)).forEach((n) => slots.push(n));
+          if (slotId) doc.querySelectorAll(cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
+          if (!slots.length) {
+            doc.querySelectorAll('img[data-image-slot], img.worksheet-image').forEach((n) => slots.push(n));
+          }
+          if (!slots.length) {
+            doc.querySelectorAll('img').forEach((n) => {
+              if (n.classList.contains('worksheet-bg')) return;
+              if (n.closest('.ai-pencil, .img-camera-btn')) return;
+              const srcAttr = n.getAttribute('src') || '';
+              if (/pencil/i.test(srcAttr)) return;
+              slots.push(n);
+            });
+          }
+          slots.forEach((el) => {
+            if (el.tagName === 'IMG') {
+              el.removeAttribute('srcset');
+              el.setAttribute('src', abs);
+              el.src = abs;
+            } else {
+              const nested = el.querySelector('img');
+              if (nested) {
+                nested.removeAttribute('srcset');
+                nested.setAttribute('src', abs);
+                nested.src = abs;
+              }
+              el.style.backgroundImage = 'url("' + abs.replace(/"/g, '\\"') + '")';
+            }
+          });
+        }
+        try {
+          els.worksheetFrame.contentWindow.postMessage({
+            type: 'worksheet-set-image',
+            src: abs,
+            path: path || undefined,
+            slotId: slotId || undefined,
+          }, '*');
+        } catch {}
+      }
+
+      function selectedLibraryItem() {
+        if (state.selectedSearchItem?.imageUrl || state.selectedSearchItem?.assetId) {
+          return state.selectedSearchItem;
+        }
+        const tile = els.imageBank.querySelector('.image-tile.selected');
+        if (!tile) return null;
+        return {
+          assetId: tile.dataset.assetId || null,
+          imageUrl: tile.dataset.imageUrl || '',
+          caption: tile.title,
+        };
+      }
+
+      function applyPendingImages(doc) {
+        Object.entries(state.pendingImageReplacements).forEach(([path, item]) => {
+          if (!item?.imageUrl) return;
+          applyImageInFrame(item.imageUrl, path, item.slotId || state.selectedImageSlotId);
+        });
+      }
+
+      function applySelectedImageToPreview() {
+        const item = selectedLibraryItem();
+        const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId) || 'image';
+        if (!item || (!item.assetId && !item.file && !item.imageUrl)) {
+          setStatus('Select an image first');
+          return false;
+        }
+        state.selectedSearchItem = item;
+        state.selectedImagePath = path;
+        const imageUrl = item.file
+          ? (item.imageUrl || URL.createObjectURL(item.file))
+          : previewImageSrc(item.imageUrl);
+        state.pendingImageReplacements[path] = {
+          assetId: item.assetId || null,
+          userUploadedKey: item.userUploadedKey || null,
+          imageUrl,
+          slotId: state.selectedImageSlotId,
+          file: item.file || null,
+        };
+        applyImageInFrame(imageUrl, path, state.selectedImageSlotId);
+        return true;
+      }
+
+      function fieldValueAt(path) {
+        const structure = state.preview?.structure;
+        if (!path || !structure) return '';
+        const node = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], structure);
+        if (node == null) return '';
+        if (typeof node === 'string' || typeof node === 'number') return String(node);
+        return '';
+      }
+
+      function collectPanelFields() {
+        const seen = new Set();
+        const fields = [];
+        const doc = els.worksheetFrame.contentDocument;
+        if (!doc) return fields;
+        doc.querySelectorAll('[data-editable]').forEach((el) => {
+          const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
+          if (!path || seen.has(path)) return;
+          seen.add(path);
+          fields.push({
+            path,
+            type: 'text',
+            label: humanFieldLabel(path, el),
+            value: el.innerText.trim() || fieldValueAt(path),
+          });
+        });
+        doc.querySelectorAll('[data-image-slot], img.worksheet-image').forEach((el) => {
+          const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+          const path = el.getAttribute('data-field-path') || el.getAttribute('data-image-slot') || 'image';
+          const slotId = el.getAttribute('data-image-slot') || '';
+          const key = 'img:' + path + ':' + slotId;
+          if (seen.has(key)) return;
+          seen.add(key);
+          fields.push({
+            path,
+            type: 'image',
+            label: 'Image',
+            slotId,
+            src: img?.getAttribute('src') || '',
+          });
+        });
+        return fields;
+      }
+
+      function humanFieldLabel(path, el) {
+        const cls = String(el?.className || '');
+        const raw = String(path || '');
+        if (/topic/i.test(raw) || /topic/i.test(cls)) return 'Heading / topic';
+        if (/instruction/i.test(raw) || /instruction/i.test(cls)) return 'Instruction';
+        if (/question/i.test(raw) || /question/i.test(cls)) return 'Question';
+        if (/option/i.test(raw) || /option/i.test(cls)) return 'Option';
+        if (/badge/i.test(raw) || /badge/i.test(cls)) return 'Badge';
+        const visible = (el?.innerText || '').trim();
+        if (visible) return visible.slice(0, 48);
+        return raw.replace(/[_[\]]+/g, ' ').trim();
+      }
+
+      function renderAiPanel() {
+        const fields = collectPanelFields();
+        els.aiFieldsList.innerHTML = fields.map((field) => {
+          if (field.type === 'image') {
+            const src = previewImageSrc(field.src) || '';
+            return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
+              <h3>${escapeHtml(field.label)} · image</h3>
+              ${src ? `<img class="ai-thumb" src="${escapeHtml(src)}" alt="">` : '<div class="ai-thumb"></div>'}
+              <div class="row">
+                <button class="btn btn-search" type="button" data-ai-replace="${escapeHtml(field.path)}" data-slot="${escapeHtml(field.slotId || '')}">Replace image</button>
+              </div>
+            </div>`;
+          }
+          return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
+            <h3>${escapeHtml(field.label)}</h3>
+            <label>Current text</label>
+            <textarea data-ai-current="${escapeHtml(field.path)}" rows="3">${escapeHtml(field.value || '')}</textarea>
+            <label>AI prompt</label>
+            <textarea data-ai-prompt="${escapeHtml(field.path)}" rows="2" placeholder="Rewrite this for the same age group…"></textarea>
+            <div class="row">
+              <button class="btn btn-ghost" type="button" data-ai-apply="${escapeHtml(field.path)}">Apply text</button>
+              <button class="btn btn-gen" type="button" data-ai-rewrite="${escapeHtml(field.path)}">✦ AI rewrite</button>
+            </div>
+          </div>`;
+        }).join('') || '<p class="image-tip">No editable fields found on this worksheet.</p>';
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[ch]);
+      }
+
+      function applyTextInFrame(path, value) {
+        const doc = els.worksheetFrame.contentDocument;
+        if (!doc) return;
+        doc.querySelectorAll(`[data-editable='${path}'], [data-field-path='${path}']`).forEach((el) => {
+          if (el.tagName === 'IMG') return;
+          el.textContent = value;
+        });
+      }
+
+      function openAiPanel() {
+        if (!state.worksheetId) {
+          setStatus('Open a worksheet first');
+          return;
+        }
+        els.fieldEditError.textContent = '';
+        els.regenQuery.value = '';
+        renderAiPanel();
+        els.fieldEditModal.classList.remove('hidden');
+      }
+
+      function openFieldEditor(path) {
+        if (!state.editMode) return;
+        if (!path) {
+          setStatus('That text field could not be identified');
+          return;
+        }
+        state.selectedFieldPath = path;
+        const doc = els.worksheetFrame.contentDocument;
+        const live = doc?.querySelector(`[data-editable='${path}'], [data-field-path='${path}']`);
+        els.singleFieldTitle.textContent = humanFieldLabel(path, live);
+        els.singleFieldCurrent.value = live?.innerText?.trim() || fieldValueAt(path);
+        els.singleFieldPrompt.value = '';
+        els.singleFieldError.textContent = '';
+        els.singleFieldModal.classList.remove('hidden');
+      }
+
+      window.addEventListener('message', (event) => {
+        const data = event.data || {};
+        if (data.type === 'worksheet-replace-image') {
+          if (!state.editMode && !state.imagePickFromAi) return;
+          openImagePicker(data.path, data.slotId, state.imagePickFromAi);
+        }
+        if (data.type === 'worksheet-select-field') {
+          if (!state.editMode) return;
+          state.selectedFieldPath = data.path;
+        }
+        if (data.type === 'worksheet-ai-field') {
+          if (!state.editMode) return;
+          openFieldEditor(data.path);
+        }
+      });
+
+      function enableInlineEditing(on) {
+        const doc = els.worksheetFrame.contentDocument;
+        if (!doc) return;
+        doc.body.classList.toggle('edit-mode', on);
+        doc.querySelectorAll('[data-editable]').forEach((el) => {
+          if (on) el.setAttribute('contenteditable', 'true');
+          else el.removeAttribute('contenteditable');
+        });
+      }
+
+      async function saveInlineEdits() {
+        const doc = els.worksheetFrame.contentDocument;
+        const fields = [];
+        doc?.querySelectorAll('[data-editable]').forEach((el) => {
+          const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
+          if (!path) return;
+          fields.push({ path, value: el.innerText.trim() });
+        });
+        const images = [];
+        for (const [path, item] of Object.entries(state.pendingImageReplacements)) {
+          if (item?.file) {
+            const form = new FormData();
+            form.append('file', item.file);
+            form.append('path', path);
+            const uploaded = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/upload`, {
+              method: 'POST',
+              body: form,
+            });
+            const body = await uploaded.json().catch(() => ({}));
+            if (!uploaded.ok) {
+              throw new Error(body?.error?.message || 'Image upload failed');
+            }
+            images.push({
+              path,
+              assetId: null,
+              userUploadedKey: body.userUploadedKey,
+            });
+            continue;
+          }
+          if (item?.userUploadedKey) {
+            images.push({ path, assetId: null, userUploadedKey: item.userUploadedKey });
+            continue;
+          }
+          if (item?.assetId) {
+            images.push({ path, assetId: item.assetId });
+          }
+        }
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields, images }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(body?.error?.message || 'Could not save worksheet edits');
+        }
+        state.pendingImageReplacements = {};
+        await openPreview(state.worksheetId);
+      }
+
+      async function download(id, format) {
+        setStatus('Preparing download…');
+        const res = await apiFetch(`/${encodeURIComponent(id)}/download`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ format, mode: 'export' }),
+        });
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || contentType.includes('application/json')) {
+          const body = await res.json().catch(() => ({}));
+          setStatus(body?.error?.message || 'Download failed');
+          return;
+        }
+        const blob = await res.blob();
+        let filename = format === 'pdf' ? 'worksheet.pdf' : 'worksheet.webp';
+        const disposition = res.headers.get('content-disposition') || '';
+        const named = /filename="?([^"]+)"?/i.exec(disposition);
+        if (named?.[1]) filename = named[1];
+        const href = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = href;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(href);
+        setStatus('');
+      }
+
+      async function searchImages() {
+        if (!state.worksheetId) return;
+        const query = els.imageQuery.value.trim();
+        const path = state.selectedImagePath;
+        const key = cacheKey(query, query ? '' : path);
+        if (state.imageSearchCache.has(key)) {
+          const cached = state.imageSearchCache.get(key);
+          state.lastImageSearch = cached;
+          renderImageResults(cached.results, cached.query);
+          return;
+        }
+        els.searchImagesBtn.disabled = true;
+        els.imageResultsCount.textContent = 'Searching…';
+        const params = new URLSearchParams();
+        if (query) params.set('query', query);
+        if (path) params.set('path', path);
+        params.set('limit', String(state.imagePickerLimit || 10));
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/search?${params}`);
+        const body = await res.json().catch(() => ({}));
+        els.searchImagesBtn.disabled = false;
+        if (!res.ok) {
+          setStatus(body?.error?.message || 'Image search failed');
+          els.imageResultsCount.textContent = 'Search failed';
+          return;
+        }
+        const payload = {
+          query: body.query || query,
+          results: body.results || [],
+          path,
+        };
+        state.imageSearchCache.set(key, payload);
+        if (payload.query) state.imageSearchCache.set(cacheKey(payload.query, ''), payload);
+        state.lastImageSearch = payload;
+        renderImageResults(payload.results, payload.query);
+        payload.results.forEach((item) => {
+          if (item?.imageUrl) cachedImageSrc(item.imageUrl);
+        });
+      }
+
+      els.generateBtn.addEventListener('click', generateSet);
+      els.cancelBtn.addEventListener('click', () => { els.topicInput.value = ''; setStatus(''); });
+      els.backBtn.addEventListener('click', () => { showGrid(); loadGrid(); });
+      els.editBtn.addEventListener('click', async () => {
+        if (!state.editMode) {
+          state.editMode = true;
+          enableInlineEditing(true);
+          els.editBtn.textContent = 'Save';
+          return;
+        }
+        els.editBtn.disabled = true;
+        setStatus('Saving worksheet…');
+        try {
+          await saveInlineEdits();
+          state.editMode = false;
+          els.editBtn.textContent = 'Edit';
+          setStatus('Worksheet saved');
+        } catch (error) {
+          setStatus(error.message || 'Could not save worksheet edits');
+        } finally {
+          els.editBtn.disabled = false;
+        }
+      });
+      els.aiEditBtn.addEventListener('click', () => openAiPanel());
+      els.downloadBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'webp'));
+      els.downloadPdfBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'pdf'));
+      els.imagePickerCloseBtn.addEventListener('click', closeImagePicker);
+      els.imagePickerCancelBtn.addEventListener('click', closeImagePicker);
+      els.searchTabBtn.addEventListener('click', () => setImagePickerTab('search'));
+      els.uploadTabBtn.addEventListener('click', () => setImagePickerTab('upload'));
+      els.imageUploadInput.addEventListener('change', () => {
+        const file = els.imageUploadInput.files?.[0];
+        if (!file) {
+          els.uploadPreview.classList.add('hidden');
+          els.uploadPreview.removeAttribute('src');
+          return;
+        }
+        const previewUrl = URL.createObjectURL(file);
+        state.imageBlobCache.set(previewUrl, previewUrl);
+        els.uploadPreview.src = previewUrl;
+        els.uploadPreview.classList.remove('hidden');
+        state.selectedSearchItem = {
+          assetId: null,
+          imageUrl: previewUrl,
+          file,
+          caption: file.name,
+        };
+      });
+      els.searchImagesBtn.addEventListener('click', searchImages);
+      els.imageQuery.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          searchImages();
+        }
+      });
+      els.selectImageBtn.addEventListener('click', async () => {
+        if (state.imagePickerTab === 'upload') {
+          const file = els.imageUploadInput.files?.[0];
+          if (!file) {
+            setStatus('Choose an image to upload');
+            return;
+          }
+          const previewUrl = els.uploadPreview.src || URL.createObjectURL(file);
+          state.selectedSearchItem = {
+            assetId: null,
+            imageUrl: previewUrl,
+            file,
+            caption: file.name,
+          };
+        }
+        if (!applySelectedImageToPreview()) return;
+        closeImagePicker();
+        setStatus('Image updated. Click Save to keep the change.');
+        if (!els.fieldEditModal.classList.contains('hidden')) renderAiPanel();
+      });
+      els.fieldEditCancelBtn.addEventListener('click', () => {
+        state.imagePickFromAi = false;
+        els.fieldEditModal.classList.add('hidden');
+      });
+      function closeSingleField() {
+        els.singleFieldModal.classList.add('hidden');
+      }
+      els.singleFieldCloseBtn.addEventListener('click', closeSingleField);
+      els.singleFieldCancelBtn.addEventListener('click', closeSingleField);
+      els.singleFieldSaveBtn.addEventListener('click', async () => {
+        const path = state.selectedFieldPath;
+        const value = els.singleFieldCurrent.value;
+        els.singleFieldError.textContent = '';
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, value }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          els.singleFieldError.textContent = body?.error?.message || 'Could not save field';
+          return;
+        }
+        applyTextInFrame(path, value);
+        closeSingleField();
+        setStatus('Text updated');
+      });
+      els.singleFieldRewriteBtn.addEventListener('click', async () => {
+        const path = state.selectedFieldPath;
+        const instruction = els.singleFieldPrompt.value.trim() || 'Rewrite this field for the same age group.';
+        els.singleFieldError.textContent = '';
+        els.singleFieldRewriteBtn.disabled = true;
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fieldPath: path, instruction }),
+        });
+        const body = await res.json().catch(() => ({}));
+        els.singleFieldRewriteBtn.disabled = false;
+        if (!res.ok) {
+          els.singleFieldError.textContent = body?.error?.message || 'AI edit failed';
+          return;
+        }
+        const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
+        const text = typeof next === 'string' || typeof next === 'number' ? String(next) : els.singleFieldCurrent.value;
+        els.singleFieldCurrent.value = text;
+        applyTextInFrame(path, text);
+        setStatus('Text rewritten');
+      });
+      els.aiFieldsList.addEventListener('click', async (event) => {
+        const replaceBtn = event.target.closest('[data-ai-replace]');
+        if (replaceBtn) {
+          state.imagePickFromAi = true;
+          openImagePicker(replaceBtn.getAttribute('data-ai-replace'), replaceBtn.getAttribute('data-slot'), true);
+          return;
+        }
+        const applyBtn = event.target.closest('[data-ai-apply]');
+        if (applyBtn) {
+          const path = applyBtn.getAttribute('data-ai-apply');
+          const value = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`)?.value ?? '';
+          els.fieldEditError.textContent = '';
+          const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, value }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            els.fieldEditError.textContent = body?.error?.message || 'Could not save field';
+            return;
+          }
+          applyTextInFrame(path, value);
+          if (body.structure) state.preview = { ...state.preview, structure: body.structure, html: body.html || state.preview.html };
+          setStatus('Field updated');
+          return;
+        }
+        const rewriteBtn = event.target.closest('[data-ai-rewrite]');
+        if (rewriteBtn) {
+          const path = rewriteBtn.getAttribute('data-ai-rewrite');
+          const instruction = els.aiFieldsList.querySelector(`[data-ai-prompt="${path}"]`)?.value
+            || 'Rewrite this field for the same age group.';
+          els.fieldEditError.textContent = '';
+          rewriteBtn.disabled = true;
+          const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fieldPath: path, instruction }),
+          });
+          const body = await res.json().catch(() => ({}));
+          rewriteBtn.disabled = false;
+          if (!res.ok) {
+            els.fieldEditError.textContent = body?.error?.message || 'AI edit failed';
+            return;
+          }
+          const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
+          const text = typeof next === 'string' || typeof next === 'number' ? String(next) : '';
+          const box = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`);
+          if (box) box.value = text;
+          applyTextInFrame(path, text);
+          if (body.html) {
+            const keepEdit = state.editMode;
+            await openPreview(state.worksheetId);
+            state.editMode = keepEdit;
+            enableInlineEditing(keepEdit);
+            renderAiPanel();
+          }
+          setStatus('Field rewritten');
+        }
+      });
+      els.regenWorksheetBtn.addEventListener('click', async () => {
+        const query = els.regenQuery.value.trim();
+        if (!query) {
+          els.fieldEditError.textContent = 'Enter requirements to regenerate this worksheet';
+          return;
+        }
+        els.fieldEditError.textContent = '';
+        els.regenWorksheetBtn.disabled = true;
+        els.regenWorksheetBtn.textContent = 'Generating…';
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/regenerate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query }),
+        });
+        const body = await res.json().catch(() => ({}));
+        els.regenWorksheetBtn.disabled = false;
+        els.regenWorksheetBtn.textContent = '✦ Regenerate worksheet';
+        if (!res.ok) {
+          els.fieldEditError.textContent = body?.error?.message || 'Regenerate failed';
+          return;
+        }
+        const keepEdit = state.editMode;
+        await openPreview(state.worksheetId);
+        state.editMode = keepEdit;
+        enableInlineEditing(keepEdit);
+        renderAiPanel();
+        setStatus('Worksheet regenerated');
+      });
+      window.addEventListener('resize', scaleFrame);
+
+      function fillCountOptions(defaultCount, maxCount) {
+        state.defaultCount = defaultCount;
+        state.maxCount = maxCount;
+        const options = [];
+        for (let n = 1; n <= maxCount; n += 1) options.push(n);
+        els.countSelect.innerHTML = options.map((n) => `<option value="${n}">${n}</option>`).join('');
+        els.countSelect.value = String(defaultCount);
+      }
+
+      function applySettings(settings) {
+        if (!settings || typeof settings !== 'object') return;
+        if (settings.apiBaseUrl != null) state.apiBaseUrl = String(settings.apiBaseUrl).replace(/\/$/, '');
+        if (settings.apiPrefix) state.apiPrefix = String(settings.apiPrefix).replace(/\/$/, '');
+        if (settings.pageSize) state.pageSize = Number(settings.pageSize) || state.pageSize;
+        if (settings.pagerMaxButtons) state.pagerMaxButtons = Number(settings.pagerMaxButtons) || state.pagerMaxButtons;
+        if (settings.canvas?.width && settings.canvas?.height) state.canvas = settings.canvas;
+        if (settings.imagePickerLimit) state.imagePickerLimit = Number(settings.imagePickerLimit) || 10;
+        if (Array.isArray(settings.ageGroups) && settings.ageGroups.length) {
+          state.ages = settings.ageGroups;
+          state.ageGroup = settings.defaultAgeGroup && state.ages.some((age) => age.id === settings.defaultAgeGroup)
+            ? settings.defaultAgeGroup
+            : state.ages[0].id;
+        }
+        fillCountOptions(settings.defaultCount || state.defaultCount, settings.maxCount || state.maxCount);
+      }
+
+      async function loadSettings() {
+        const res = await apiFetch('/settings');
+        const settings = await res.json();
+        if (!res.ok) throw new Error(settings?.error?.message || 'Could not load settings');
+        applySettings(settings);
+      }
+
+      renderAges();
+      fillCountOptions(state.defaultCount, state.maxCount);
+      loadSettings()
+        .then(() => {
+          renderAges();
+          const params = new URLSearchParams(location.search);
+          if (params.get('id')) return openPreview(params.get('id'));
+          return loadGrid();
+        })
+        .catch((error) => setStatus(error.message || 'Could not load settings'));
+    </script>
+  </body>
+</html>

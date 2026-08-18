@@ -80,11 +80,70 @@ export interface AppConfig {
       apiBaseUrl: string;
     };
   };
+  worksheets: {
+    apiBaseUrl: string;
+    apiPrefix: string;
+    assetImagePath: string;
+    pencilIconUrl: string;
+    imageConcurrency: number;
+    signedUrlTtlSeconds: number;
+    imageSearchLimit: number;
+    imagePickerLimit: number;
+    userUploadS3Prefix: string;
+    generateCountDefault: number;
+    generateCountMax: number;
+    listPageSize: number;
+    listPageSizeMax: number;
+    pagerMaxButtons: number;
+    defaultAgeGroup: string;
+    ageGroups: Array<{ id: string; label: string; age: number; grade: string }>;
+    geminiModel: string;
+    promptVersion: string;
+    renderer: {
+      enabled: boolean;
+      s3KeyPrefix: string;
+      s3Bucket?: string;
+      signedUrlTtlSeconds: number;
+      apiBaseUrl: string;
+      defaultWidth: number;
+      defaultHeight: number;
+    };
+  };
   pipelineTracking: {
     enabled: boolean;
     storeAiPayload: boolean;
     workflowDefault: string;
   };
+}
+
+function envTrim(name: string, fallback = ''): string {
+  const raw = process.env[name];
+  if (raw == null || raw.trim() === '') {
+    return fallback;
+  }
+  return raw.trim();
+}
+
+function parseWorksheetAgeGroups(raw: string | undefined): AppConfig['worksheets']['ageGroups'] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as AppConfig['worksheets']['ageGroups'];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(
+      (item) =>
+        item &&
+        typeof item.id === 'string' &&
+        typeof item.label === 'string' &&
+        typeof item.age === 'number' &&
+        typeof item.grade === 'string',
+    );
+  } catch {
+    return [];
+  }
 }
 
 function envFlagEnabled(primary: string, fallback: string): boolean {
@@ -261,6 +320,76 @@ export default (): AppConfig => ({
       ),
       apiBaseUrl:
         process.env.FLASHCARD_RENDERER_API_BASE_URL || 'http://localhost:3000',
+    },
+  },
+  worksheets: {
+    apiBaseUrl: envTrim('WORKSHEET_API_BASE_URL').replace(/\/$/, ''),
+    apiPrefix: envTrim('WORKSHEET_API_PREFIX', '/worksheets').replace(/\/$/, '') || '/worksheets',
+    assetImagePath: envTrim('WORKSHEET_ASSET_IMAGE_PATH', '/worksheets/assets').replace(
+      /\/$/,
+      '',
+    ),
+    pencilIconUrl: envTrim('WORKSHEET_PENCIL_ICON_URL', '/pencil.png'),
+    imageConcurrency: parseInt(
+      process.env.WORKSHEET_IMAGE_CONCURRENCY ||
+        process.env.FLASHCARD_IMAGE_CONCURRENCY ||
+        '3',
+      10,
+    ),
+    signedUrlTtlSeconds: parseInt(
+      process.env.WORKSHEET_SIGNED_URL_TTL_SECONDS ||
+        process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS ||
+        '3600',
+      10,
+    ),
+    imageSearchLimit: parseInt(
+      process.env.WORKSHEET_IMAGE_SEARCH_LIMIT || '1',
+      10,
+    ),
+    imagePickerLimit: parseInt(
+      process.env.WORKSHEET_IMAGE_PICKER_LIMIT || '10',
+      10,
+    ),
+    userUploadS3Prefix: envTrim(
+      'WORKSHEET_USER_UPLOAD_S3_PREFIX',
+      'worksheets/uploads',
+    ).replace(/\/$/, '') || 'worksheets/uploads',
+    generateCountDefault: parseInt(
+      process.env.WORKSHEET_GENERATE_COUNT_DEFAULT || '1',
+      10,
+    ),
+    generateCountMax: parseInt(
+      process.env.WORKSHEET_GENERATE_COUNT_MAX || '10',
+      10,
+    ),
+    listPageSize: parseInt(process.env.WORKSHEET_LIST_PAGE_SIZE || '10', 10),
+    listPageSizeMax: parseInt(process.env.WORKSHEET_LIST_PAGE_SIZE_MAX || '50', 10),
+    pagerMaxButtons: parseInt(process.env.WORKSHEET_PAGER_MAX_BUTTONS || '8', 10),
+    defaultAgeGroup: envTrim('WORKSHEET_DEFAULT_AGE_GROUP', '3-4'),
+    ageGroups: parseWorksheetAgeGroups(process.env.WORKSHEET_AGE_GROUPS),
+    geminiModel:
+      process.env.WORKSHEET_GEMINI_MODEL ||
+      process.env.FLASHCARD_GEMINI_MODEL ||
+      'gemini-2.5-flash',
+    promptVersion: process.env.WORKSHEET_PROMPT_VERSION || 'v1',
+    renderer: {
+      enabled: process.env.WORKSHEET_RENDERER_ENABLED !== 'false',
+      s3KeyPrefix:
+        process.env.WORKSHEET_RENDERER_S3_KEY_PREFIX || 'worksheets/rendered',
+      s3Bucket: process.env.WORKSHEET_RENDERER_S3_BUCKET || undefined,
+      signedUrlTtlSeconds: parseInt(
+        process.env.WORKSHEET_RENDERER_SIGNED_URL_TTL_SECONDS || '3600',
+        10,
+      ),
+      apiBaseUrl: envTrim(
+        'WORKSHEET_RENDERER_API_BASE_URL',
+        envTrim('WORKSHEET_API_BASE_URL'),
+      ).replace(/\/$/, ''),
+      defaultWidth: parseInt(process.env.WORKSHEET_RENDER_WIDTH || '1016', 10),
+      defaultHeight: parseInt(
+        process.env.WORKSHEET_RENDER_HEIGHT || '1316',
+        10,
+      ),
     },
   },
   pipelineTracking: {
