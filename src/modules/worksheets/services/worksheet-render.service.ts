@@ -1,3 +1,4 @@
+import { toondemyFontUrl } from '../../../common/ui/toondemy-font';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -145,6 +146,7 @@ export class WorksheetRenderService {
       mode: input.mode ?? 'editor',
       canvas,
       pencilIconUrl: this.pencilIconUrl,
+      fontPath: toondemyFontUrl(this.apiBaseUrl),
     });
     return { html, canvas };
   }

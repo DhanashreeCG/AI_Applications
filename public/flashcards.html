@@ -4,12 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI Flash Cards</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="stylesheet" href="/fonts/toondemy.css" />
     <script src="env-config.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -44,9 +39,13 @@
 
       body {
         min-height: 100vh;
-        font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        font-family: 'Toondemy', system-ui, -apple-system, 'Segoe UI', sans-serif;
         color: var(--ink);
         -webkit-font-smoothing: antialiased;
+      }
+
+      button, input, select, textarea {
+        font-family: inherit;
       }
 
       button {
@@ -83,7 +82,7 @@
 
       .page-head h1 {
         margin: 0;
-        font-family: 'Baloo 2', 'Nunito', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-size: 28px;
         font-weight: 700;
         color: var(--primary);
@@ -510,7 +509,7 @@
       }
 
       .empty h2 {
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         margin: 0 0 6px;
         font-size: 22px;
         color: var(--ink);
@@ -599,6 +598,11 @@
         border-radius: 22px;
         box-shadow: 0 10px 26px rgba(42, 27, 74, 0.16);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
+        font-family: 'Toondemy', sans-serif;
+      }
+
+      .uno * {
+        font-family: inherit;
       }
 
       .uno-frame {
@@ -779,7 +783,7 @@
       .uno-hero {
         flex: 0 0 auto;
         text-align: center;
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 800;
         font-size: 38cqw;
         line-height: 0.98;
@@ -829,7 +833,7 @@
         flex: 0 0 auto;
         width: 100%;
         text-align: center;
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 700;
         font-size: 5.2cqw;
         line-height: 1.1;
@@ -876,7 +880,7 @@
         border-radius: 50%;
         background: var(--bubble);
         color: #fff;
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 800;
         font-size: 12cqw;
         line-height: 1;
@@ -922,7 +926,7 @@
       .grid-2x3-cell {
         display: grid;
         place-items: center;
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 800;
         font-size: 12cqw;
         color: #33333f;
@@ -980,7 +984,7 @@
         aspect-ratio: 1;
         border-radius: 50%;
         background: var(--tint, #f5f2ff);
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 800;
         font-size: 5.8cqw;
         line-height: 1;
@@ -1003,13 +1007,13 @@
         color: var(--frame-ink, var(--primary));
         display: grid;
         place-items: center;
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 800;
         font-size: 6cqw;
       }
 
       .schema-plain {
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 800;
         font-size: 7.2cqw;
         line-height: 1.1;
@@ -1345,7 +1349,7 @@
       }
 
       .u-caption {
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 700;
         font-size: 8.6cqw;
         line-height: 1.05;
@@ -1392,7 +1396,7 @@
 
       .u-note .tag {
         flex: 0 0 auto;
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 800;
         font-size: 3.2cqw;
         letter-spacing: 0.08em;
@@ -1411,7 +1415,7 @@
         border-radius: 999px;
         background: var(--frame);
         color: var(--frame-ink);
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 800;
         font-size: 3.6cqw;
       }
@@ -1480,7 +1484,7 @@
       }
 
       .modal-side h3 {
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         margin: 0 0 2px;
         font-size: 21px;
       }
@@ -1751,7 +1755,7 @@
         border-radius: 999px;
         background: var(--tint);
         color: var(--frame-ink);
-        font-family: 'Baloo 2', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-weight: 700;
         font-size: 3.6cqw;
       }
@@ -1820,7 +1824,7 @@
 
       .image-picker-head h2 {
         margin: 0;
-        font-family: 'Baloo 2', 'Nunito', sans-serif;
+        font-family: 'Toondemy', sans-serif;
         font-size: 28px;
         color: var(--ink);
       }

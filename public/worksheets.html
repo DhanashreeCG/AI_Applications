@@ -4,12 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Generate AI Worksheets</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="stylesheet" href="/fonts/toondemy.css" />
     <script src="env-config.js"></script>
     <style>
       :root {
@@ -27,10 +22,11 @@
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; }
       body {
-        font-family: Nunito, Segoe UI, sans-serif;
+        font-family: 'Toondemy', Segoe UI, sans-serif;
         color: var(--text);
         background: #f7f4fb;
       }
+      button, input, select, textarea { font-family: inherit; }
       .main { overflow: auto; min-width: 0; }
       .topbar {
         display: flex;
@@ -201,7 +197,7 @@
       }
       .image-picker-head h2 {
         margin: 0;
-        font-family: 'Baloo 2', cursive;
+        font-family: 'Toondemy', sans-serif;
         font-size: 28px;
         color: #2b2140;
       }

@@ -37,8 +37,9 @@ export function replaceAssetUrlsWithDataUris(
 }
 
 export const WORKSHEET_CAPTURE_CSS = `<style data-worksheet-capture="true">
-html,body{background:#ffffff;}
-*{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+@font-face{font-family:'Toondemy';src:url('/fonts/TOONDEMY%20FONTS.TTF') format('truetype');font-weight:100 900;font-style:normal;font-display:swap;}
+html,body{background:#ffffff;font-family:'Toondemy',sans-serif !important;}
+*{ font-family:'Toondemy',sans-serif !important; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
 </style>`;
 
 export function injectCaptureCss(html: string): string {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { toondemyFontUrl, toondemyTextCss } from '../../../common/ui/toondemy-font';
 import { GENERIC_RENDERER_TYPE } from '../constants/worksheet.constants';
 import { WorksheetRenderInput, WorksheetRenderMode } from '../types/worksheet.types';
 import {
@@ -394,8 +395,12 @@ export function sanitizeComposedHtml(
   return next;
 }
 
-function injectChrome(html: string, mode: WorksheetRenderMode): string {
-  const extras = mode === 'editor' ? `${EDITOR_CHROME}${EDITOR_BRIDGE}` : EDITOR_CHROME;
+function injectChrome(html: string, mode: WorksheetRenderMode, fontPath: string): string {
+  const fontStyle = `<style data-toondemy-font="true">${toondemyTextCss(fontPath)}</style>`;
+  const extras =
+    mode === 'editor'
+      ? `${fontStyle}${EDITOR_CHROME}${EDITOR_BRIDGE}`
+      : `${fontStyle}${EDITOR_CHROME}`;
   if (/<\/head>/i.test(html)) {
     return html.replace(/<\/head>/i, `${extras}</head>`);
   }
@@ -408,13 +413,14 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
 
   render(input: WorksheetRenderInput): string {
     const mode: WorksheetRenderMode = input.mode ?? 'export';
+    const fontPath = input.fontPath?.trim() || toondemyFontUrl();
     const extras: Record<string, unknown> = {
       backgroundAssetUrl: input.backgroundAssetUrl ?? '',
       BACKGROUND_IMAGE: input.backgroundAssetUrl ?? '',
       bodyClass: mode === 'editor' ? 'editor-mode' : 'export-mode',
       BODY_CLASS: mode === 'editor' ? 'editor-mode' : 'export-mode',
-      fontPath: '',
-      FONT_PATH: '',
+      fontPath,
+      FONT_PATH: fontPath,
     };
     const context = flattenTemplateTokens(input.structure, extras);
     let html = restoreNullPlaceholders(input.templateHtml);
@@ -429,7 +435,7 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     if (input.canvas) {
       html = applyCanvasSize(html, input.canvas);
     }
-    html = injectChrome(html, mode);
+    html = injectChrome(html, mode, fontPath);
     html = sanitizeComposedHtml(html, input.pencilIconUrl);
     if (input.baseHref) {
       html = injectBaseHref(html, input.baseHref);
