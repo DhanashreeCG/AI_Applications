@@ -19,7 +19,6 @@ import {
 import { parseEditableComponentsFromLayout } from '../utils/template-layout.util';
 import { expandDefinitionsForAvailableIds } from '../utils/repeat-component.util';
 import { assertAssembledCardComponents } from '../utils/assembled-card.validator';
-import { uniquifyCardImageQueries } from '../utils/distinct-image-subjects.util';
 import { resolveUserRequest } from '../utils/user-request.resolver';
 import {
   FlashcardPipelineEmitter,
@@ -222,15 +221,12 @@ export class FlashcardOrchestratorService {
       telemetry,
     );
 
-    uniquifyCardImageQueries(llmPayload.cards);
-
     this.emitter.emitStageStarted({
       ...telemetry,
       stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
     });
 
     const usedAssetIds = new Set<string>();
-    const usedObjectKeys = new Set<string>();
     const assembleCard = async (
       card: (typeof llmPayload.cards)[number],
     ): Promise<FlashcardCardPayload> => {
@@ -254,7 +250,6 @@ export class FlashcardOrchestratorService {
                 ageMin: selected.ageMin,
                 ageMax: selected.ageMax,
                 usedAssetIds,
-                usedObjectKeys,
               },
               telemetry,
             );

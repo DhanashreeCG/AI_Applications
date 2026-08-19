@@ -19,6 +19,8 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import {
   DEFAULT_IMAGE_CONCURRENCY,
+  DEFAULT_IMAGE_EMBEDDING_MAX_ATTEMPTS,
+  DEFAULT_IMAGE_EMBEDDING_RETRY_DELAY_MS,
   DEFAULT_IMAGE_SEARCH_LIMIT,
   DEFAULT_SIGNED_URL_TTL_SECONDS,
   FLASHCARD_ASSET_IMAGE_PATH,
@@ -33,11 +35,6 @@ import {
   ImageSearchQuery,
 } from '../interfaces/flashcard.interfaces';
 import {
-  hitSubjectKeys,
-  isLetterGlyphSubject,
-  primaryImageSubject,
-} from '../utils/distinct-image-subjects.util';
-import {
   FlashcardPipelineEmitter,
   hashPayload,
 } from '../telemetry/flashcard-pipeline.events';
@@ -48,7 +45,6 @@ interface RetrieveImagesInput {
   ageMin: number | null;
   ageMax: number | null;
   usedAssetIds?: Set<string>;
-  usedObjectKeys?: Set<string>;
 }
 
 @Injectable()
@@ -57,6 +53,8 @@ export class FlashcardImageRetrievalService {
   private readonly concurrency: number;
   private readonly signedUrlTtlSeconds: number;
   private readonly searchLimit: number;
+  private readonly embeddingMaxAttempts: number;
+  private readonly embeddingRetryDelayMs: number;
   private readonly pickerLimit: number;
   private readonly userUploadS3Prefix: string;
   private readonly emitter: FlashcardPipelineEmitter;
@@ -78,6 +76,16 @@ export class FlashcardImageRetrievalService {
     this.searchLimit =
       this.configService.get<number>('flashcards.imageSearchLimit') ??
       DEFAULT_IMAGE_SEARCH_LIMIT;
+    this.embeddingMaxAttempts = Math.max(
+      1,
+      this.configService.get<number>('flashcards.imageEmbeddingMaxAttempts') ??
+        DEFAULT_IMAGE_EMBEDDING_MAX_ATTEMPTS,
+    );
+    this.embeddingRetryDelayMs = Math.max(
+      0,
+      this.configService.get<number>('flashcards.imageEmbeddingRetryDelayMs') ??
+        DEFAULT_IMAGE_EMBEDDING_RETRY_DELAY_MS,
+    );
     this.pickerLimit =
       this.configService.get<number>('flashcards.imagePickerLimit') ?? 10;
     this.userUploadS3Prefix = (
@@ -96,33 +104,25 @@ export class FlashcardImageRetrievalService {
     telemetry?: PipelineTelemetryContext,
   ): Promise<AssetReference> {
     const primary = this.normalizeQuery(input.queries[0]);
-    const cascade = this.buildCascadeQueries(primary, input.topic);
-    const attempts: string[] = [];
-
-    if (!cascade.length) {
-      return this.emptyReference('', attempts, 'IMAGE_NOT_FOUND');
+    if (!primary) {
+      return this.emptyReference('', [], 'IMAGE_NOT_FOUND');
     }
 
-    for (let index = 0; index < cascade.length; index += 1) {
-      const attempt = cascade[index];
-      attempts.push(attempt.label);
-      const hit = await this.searchOnce(
-        attempt.query,
-        input,
-        telemetry,
-        attempts,
-        index === cascade.length - 1,
-      );
-      if (hit) {
-        return hit;
-      }
-    }
-
-    return this.emptyReference(
-      cascade[0]?.query ?? '',
+    // One SearchService call per image slot. Do not cascade extra queries
+    // (style/background/topic) — those were showing up as a second Assets
+    // search even though the LLM emitted a single searchQuery.
+    const attempts = ['semantic'];
+    const hit = await this.searchOnce(
+      primary.searchQuery,
+      input,
+      telemetry,
       attempts,
-      'IMAGE_NOT_FOUND',
     );
+    if (hit) {
+      return hit;
+    }
+
+    return this.emptyReference(primary.searchQuery, attempts, 'IMAGE_NOT_FOUND');
   }
 
   public async mapWithConcurrency<T, R>(
@@ -160,58 +160,11 @@ export class FlashcardImageRetrievalService {
     return raw;
   }
 
-  /**
-   * Search priority when the primary LLM query misses:
-   * primary semantic → enriched → expected object → object name → topic
-   */
-  private buildCascadeQueries(
-    primary: ImageSearchQuery | null,
-    topic?: string,
-  ): Array<{ label: string; query: string }> {
-    const cascade: Array<{ label: string; query: string }> = [];
-    const seen = new Set<string>();
-
-    const push = (label: string, query: string | undefined) => {
-      const trimmed = query?.trim();
-      if (!trimmed) return;
-      const key = trimmed.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      cascade.push({ label, query: trimmed });
-    };
-
-    if (primary) {
-      push('semantic', primary.searchQuery);
-
-      const enriched = [
-        primary.searchQuery,
-        primary.preferredStyle,
-        primary.preferredBackground
-          ? `${primary.preferredBackground} background`
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join(' ');
-      push('semantic_enriched', enriched);
-
-      if (primary.expectedObjects.length) {
-        push('expected_objects', primary.expectedObjects.join(' '));
-        push('object_name', primary.expectedObjects[0]);
-      }
-    }
-
-    push('topic', topic);
-    push('unfiltered', primary?.expectedObjects[0] || primary?.searchQuery);
-
-    return cascade;
-  }
-
   private async searchOnce(
     query: string,
     input: RetrieveImagesInput,
     telemetry: PipelineTelemetryContext | undefined,
     attempts: string[],
-    allowReuse: boolean,
   ): Promise<AssetReference | null> {
     const searchId = randomUUID();
     const startedAt = Date.now();
@@ -226,20 +179,11 @@ export class FlashcardImageRetrievalService {
     }
 
     try {
-      const response = await this.searchService.search({
-        query,
-        limit: this.searchLimit,
-      });
+      const response = await this.searchWithEmbeddingRetry(query);
 
       this.emitEmbeddingUsage(telemetry, query, response);
 
-      const querySubject = primaryImageSubject(input.queries[0]);
-      const candidate = await this.claimHit(
-        response.results,
-        input,
-        querySubject,
-        allowReuse,
-      );
+      const candidate = await this.claimHit(response.results, input);
 
       if (!candidate) {
         if (telemetry) {
@@ -313,8 +257,36 @@ export class FlashcardImageRetrievalService {
           durationMs: Date.now() - startedAt,
         });
       }
-      return null;
+      return this.emptyReference(query, attempts, 'error');
     }
+  }
+
+  /**
+   * Retry the same LLM query when embedding/search throws. Never rewrite the query.
+   */
+  private async searchWithEmbeddingRetry(
+    query: string,
+  ): Promise<SearchAssetsResponse> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.embeddingMaxAttempts; attempt += 1) {
+      try {
+        return await this.searchService.search({
+          query,
+          limit: this.searchLimit,
+        });
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(
+          `Embedding/search attempt ${attempt}/${this.embeddingMaxAttempts} failed for "${query}": ${getErrorMessage(error)}`,
+        );
+        if (attempt < this.embeddingMaxAttempts && this.embeddingRetryDelayMs) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.embeddingRetryDelayMs),
+          );
+        }
+      }
+    }
+    throw lastError;
   }
 
   private emptyReference(
@@ -338,28 +310,20 @@ export class FlashcardImageRetrievalService {
   }
 
   /**
-   * Claim the best unused hit. Concurrent card searches wait on pickLock so two
-   * cards cannot take the same asset or object type. Reuse is allowed only on
-   * the last cascade attempt so a card is not left blank.
+   * Claim the highest-similarity unused asset. If this query's top hit is
+   * already on another card in the set, take 2nd, then 3rd, from the same
+   * ranked list. Never reuse the same assetId and never run a second query.
    */
   private claimHit(
     results: SearchResultItem[],
     input: RetrieveImagesInput,
-    querySubject: string,
-    allowReuse: boolean,
   ): Promise<SearchResultItem | null> {
     const run = this.pickLock.then(() => {
-      const candidate = this.selectTopSimilarityHit(
-        results,
-        input.usedAssetIds,
-        input.usedObjectKeys,
-        allowReuse,
-      );
+      const candidate = this.selectTopUnusedHit(results, input.usedAssetIds);
       if (!candidate) {
         return null;
       }
       input.usedAssetIds?.add(candidate.assetId);
-      this.markUsedSubjects(input.usedObjectKeys, candidate, querySubject);
       return candidate;
     });
     this.pickLock = run.then(
@@ -369,27 +333,9 @@ export class FlashcardImageRetrievalService {
     return run;
   }
 
-  private markUsedSubjects(
-    usedObjectKeys: Set<string> | undefined,
-    hit: SearchResultItem,
-    querySubject: string,
-  ): void {
-    if (!usedObjectKeys) {
-      return;
-    }
-    if (querySubject && !isLetterGlyphSubject(querySubject)) {
-      usedObjectKeys.add(querySubject);
-    }
-    for (const key of hitSubjectKeys(hit)) {
-      usedObjectKeys.add(key);
-    }
-  }
-
-  private selectTopSimilarityHit(
+  private selectTopUnusedHit(
     results: SearchResultItem[],
     usedAssetIds: Set<string> | undefined,
-    usedObjectKeys: Set<string> | undefined,
-    allowReuse: boolean,
   ): SearchResultItem | null {
     if (!results.length) {
       return null;
@@ -399,26 +345,9 @@ export class FlashcardImageRetrievalService {
       (left, right) => (right.similarity ?? 0) - (left.similarity ?? 0),
     );
 
-    const unused = ranked.find(
-      (item) =>
-        !usedAssetIds?.has(item.assetId) &&
-        !this.isSameImageType(item, usedObjectKeys),
+    return (
+      ranked.find((item) => !usedAssetIds?.has(item.assetId)) ?? null
     );
-    if (unused) {
-      return unused;
-    }
-
-    return allowReuse ? ranked[0] : null;
-  }
-
-  private isSameImageType(
-    hit: SearchResultItem,
-    usedObjectKeys: Set<string> | undefined,
-  ): boolean {
-    if (!usedObjectKeys?.size) {
-      return false;
-    }
-    return hitSubjectKeys(hit).some((key) => usedObjectKeys.has(key));
   }
 
   public async searchCandidates(
