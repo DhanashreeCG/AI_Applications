@@ -2,6 +2,10 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@generated/prisma/client';
+import {
+  assertGenerationRequestAllowed,
+  resolveRequestCountryCode,
+} from '../../../common/content-safety/assert-user-query';
 import { joinPublicAssetUrl } from '../../../common/ui/toondemy-font';
 import { getErrorMessage } from '../../../common/utils/error-message';
 import {
@@ -211,17 +215,29 @@ export class WorksheetGenerationService {
       this.emitter,
       telemetry,
       PIPELINE_STAGES.REQUEST_ANALYSIS,
-      () => ({
-        query: dto.query?.trim() || null,
-        grade: dto.grade?.trim() || null,
-        age: dto.age ?? null,
-        ageGroup: dto.ageGroup?.trim() || null,
-        subject: dto.subject?.trim() || null,
-        topic: dto.topic?.trim() || null,
-        difficulty: dto.difficulty?.trim() || null,
-        language: dto.language?.trim() || 'English',
-        explicitTemplateId: dto.templateId?.trim() || null,
-      }),
+      () => {
+        const countryCode = resolveRequestCountryCode(
+          dto.countryCode,
+          this.configService.get<string>('flashcards.defaultCountryCode'),
+        );
+        assertGenerationRequestAllowed({
+          query: dto.query,
+          topic: dto.topic,
+          countryCode,
+        });
+        return {
+          query: dto.query?.trim() || null,
+          grade: dto.grade?.trim() || null,
+          age: dto.age ?? null,
+          ageGroup: dto.ageGroup?.trim() || null,
+          subject: dto.subject?.trim() || null,
+          topic: dto.topic?.trim() || null,
+          difficulty: dto.difficulty?.trim() || null,
+          language: dto.language?.trim() || 'English',
+          explicitTemplateId: dto.templateId?.trim() || null,
+          countryCode: countryCode ?? null,
+        };
+      },
       {
         completeMetadata: (result) => result,
       },

@@ -311,6 +311,7 @@ export class WorksheetAssetService {
   public async searchCandidates(
     query: string,
     limit?: number,
+    countryCode?: string,
   ): Promise<
     Array<{
       assetId: string;
@@ -326,6 +327,7 @@ export class WorksheetAssetService {
     const response = await this.searchService.search({
       query: trimmed,
       limit: limit ?? this.pickerLimit,
+      ...(countryCode ? { countryCode } : {}),
     });
     return response.results.map((hit) => ({
       assetId: hit.assetId,

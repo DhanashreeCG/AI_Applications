@@ -35,6 +35,9 @@ export class SearchFlashcardImagesQueryDto {
 
   @ApiPropertyOptional({ example: 10 })
   limit?: number;
+
+  @ApiPropertyOptional({ example: 'IN' })
+  countryCode?: string;
 }
 
 export class DownloadFlashcardDto {

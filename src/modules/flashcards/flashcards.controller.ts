@@ -129,10 +129,14 @@ export class FlashcardsController {
   @ApiOperation({
     summary: 'Semantic asset search without a saved flashcard set',
   })
-  async searchLibraryImages(@Query() query: SearchFlashcardImagesQueryDto) {
+  async searchLibraryImages(
+    @Query() query: SearchFlashcardImagesQueryDto,
+    @Headers('x-country-code') headerCountryCode?: string,
+  ) {
     return this.editService.searchLibrary({
       query: query.query,
       limit: query.limit != null ? Number(query.limit) : undefined,
+      countryCode: query.countryCode || headerCountryCode,
     });
   }
 
@@ -241,12 +245,14 @@ export class FlashcardsController {
   async searchImages(
     @Param('flashcardId') flashcardId: string,
     @Query() query: SearchFlashcardImagesQueryDto,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
     return this.editService.searchImages(flashcardId, {
       query: query.query,
       cardId: query.cardId,
       componentId: query.componentId,
       limit: query.limit != null ? Number(query.limit) : undefined,
+      countryCode: query.countryCode || headerCountryCode,
     });
   }
 

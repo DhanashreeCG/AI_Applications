@@ -1,5 +1,10 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@generated/prisma/client';
+import {
+  assertSearchQueryAllowed,
+  resolveRequestCountryCode,
+} from '../../common/content-safety/assert-user-query';
 import { PrismaService } from '../database/prisma.service';
 import { OpenAiEmbeddingProvider } from '../ai/providers/openai-embedding.provider';
 import { RedisCacheService } from '../cache/redis-cache.service';
@@ -39,6 +44,7 @@ export class SearchService {
     private readonly vectorStorage: VectorStorageService,
     private readonly redisCache: RedisCacheService,
     private readonly letterDetector: LetterQueryDetectorService,
+    private readonly configService: ConfigService,
   ) {}
 
   public async search(dto: SearchAssetsDto): Promise<SearchAssetsResponse> {
@@ -46,6 +52,12 @@ export class SearchService {
     if (!query) {
       throw new BadRequestException('Search query cannot be empty');
     }
+
+    const countryCode = resolveRequestCountryCode(
+      dto.countryCode,
+      this.configService.get<string>('flashcards.defaultCountryCode'),
+    );
+    assertSearchQueryAllowed(query, countryCode);
 
     const limit = dto.limit ?? this.defaultLimit;
     if (limit <= 0) {

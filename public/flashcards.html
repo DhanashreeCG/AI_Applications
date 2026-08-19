@@ -2219,6 +2219,29 @@
         return normalizeCountryCode(select && select.value);
       }
 
+      function restrictionCountryCode() {
+        return (
+          selectedCountryCode() ||
+          normalizeCountryCode(state.countryCode) ||
+          normalizeCountryCode(
+            state.payload && state.payload.request && state.payload.request.countryCode,
+          )
+        );
+      }
+
+      function withRestrictionHeaders(headers) {
+        const next = Object.assign(
+          {
+            'x-trace-id': uuid(),
+            'x-correlation-id': uuid(),
+          },
+          headers || {},
+        );
+        const countryCode = restrictionCountryCode();
+        if (countryCode) next['x-country-code'] = countryCode;
+        return next;
+      }
+
       function ensureCountryOption(code) {
         const select = el('regionSelect');
         const normalized = normalizeCountryCode(code);
@@ -2532,21 +2555,16 @@
         renderSkeletons(count);
 
         try {
-          const countryCode = selectedCountryCode();
+          const countryCode = restrictionCountryCode();
           const requestBody = { query, ageGroup, count };
           if (templateId) requestBody.templateId = templateId;
           if (countryCode) requestBody.countryCode = countryCode;
 
-          const headers = {
-            'Content-Type': 'application/json',
-            'x-trace-id': uuid(),
-            'x-correlation-id': uuid(),
-          };
-          if (countryCode) headers['x-country-code'] = countryCode;
-
           const response = await fetch(apiBase() + '/flashcards/generate', {
             method: 'POST',
-            headers,
+            headers: withRestrictionHeaders({
+              'Content-Type': 'application/json',
+            }),
             body: JSON.stringify(requestBody),
           });
 
@@ -4692,13 +4710,15 @@
           if (cardId) params.set('cardId', cardId);
           if (state.selectedImageComponentId) params.set('componentId', state.selectedImageComponentId);
           params.set('limit', '10');
+          const countryCode = restrictionCountryCode();
+          if (countryCode) params.set('countryCode', countryCode);
           const setId = state.payload && state.payload.id;
           const searchPath = setId
             ? '/flashcards/' + encodeURIComponent(setId) + '/images/search?'
             : '/flashcards/images/search?';
           const response = await fetch(
             apiBase() + searchPath + params,
-            { headers: { 'x-trace-id': uuid(), 'x-correlation-id': uuid() } },
+            { headers: withRestrictionHeaders() },
           );
           const body = await response.json().catch(() => ({}));
           if (!response.ok) {

@@ -262,6 +262,7 @@ export class FlashcardOrchestratorService {
                 ageMin: selected.ageMin,
                 ageMax: selected.ageMax,
                 usedAssetIds,
+                countryCode,
               },
               telemetry,
             );
