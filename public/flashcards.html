@@ -356,17 +356,23 @@
         background: #fff1f4;
         border: 1px solid #f8ccd8;
         color: #a01340;
+        align-items: flex-start;
       }
 
       .banner.warn {
         background: #fff8ec;
         border: 1px solid #f6e0bb;
         color: #8a5a06;
+        align-items: flex-start;
       }
 
-      .banner code {
-        font-size: 12.5px;
-        opacity: 0.85;
+      .banner .banner-title {
+        font-weight: 800;
+        margin-bottom: 2px;
+      }
+
+      .banner .banner-body {
+        font-weight: 600;
       }
 
       /* ---------- results ---------- */
@@ -2020,7 +2026,7 @@
           </button>
         </div>
 
-        <div class="extra-row">
+        <!-- <div class="extra-row">
           <label for="regionSelect">Region</label>
           <select id="regionSelect" aria-label="Learner region for content restrictions">
             <option value="">Not selected</option>
@@ -2032,7 +2038,7 @@
             <option value="US">United States (US)</option>
             <option value="GB">United Kingdom (GB)</option>
           </select>
-        </div>
+        </div> -->
 
         <div class="extra-row">
           <label for="templateSelect">Template</label>
@@ -2380,7 +2386,64 @@
         node.innerHTML = html;
         node.classList.add('show');
         clearTimeout(node._t);
-        node._t = setTimeout(() => node.classList.remove('show'), ms);
+        node._t = setTimeout(() => node._t && node.classList.remove('show'), ms);
+      }
+
+      function extractErrorText(source) {
+        if (source == null) return '';
+        if (typeof source === 'string') return source;
+        if (source instanceof Error) return source.message || String(source);
+        const nested = source.error;
+        if (nested && typeof nested === 'object' && nested.message) return String(nested.message);
+        if (source.message) return String(source.message);
+        return '';
+      }
+
+      function friendlyError(source, fallback) {
+        const fallbackText = fallback || 'Something went wrong. Please try again.';
+        const raw = extractErrorText(source).trim();
+        const lower = raw.toLowerCase();
+        if (!raw) return fallbackText;
+        if (
+          /signaturedoesnotmatch|signing method|request signature we calculated/.test(lower)
+        ) {
+          return 'The image could not be uploaded. Please try again, or choose a different file.';
+        }
+        if (/nosuchbucket|accessdenied|invalidaccesskey|expiredtoken|credentials/.test(lower)) {
+          return 'Image storage is unavailable right now. Please try again in a moment.';
+        }
+        if (/failed to fetch|networkerror|load failed|err_connection|err_name_not_resolved/.test(lower)) {
+          return 'Could not reach the server. Check your connection and try again.';
+        }
+        if (/timeout|etimedout|timed out/.test(lower)) {
+          return 'The request took too long. Please try again.';
+        }
+        if (/too large|file too large|payload too large|413/.test(lower)) {
+          return 'That image is too large. Please choose a smaller file.';
+        }
+        if (/cors/.test(lower)) {
+          return 'Could not reach the API from this page. Check the API URL and try again.';
+        }
+        if (/jpeg|png|webp|gif/.test(lower) && /upload/.test(lower)) {
+          return 'Please upload a JPEG, PNG, WebP, or GIF image.';
+        }
+        if (/http\s*[45]\d\d/.test(lower) || /^[A-Z][A-Z0-9_]{3,}$/.test(raw)) {
+          return fallbackText;
+        }
+        if (raw.length > 180 || /\n\s*at\s+/.test(raw) || /stack_trace/i.test(raw)) {
+          return fallbackText;
+        }
+        return raw;
+      }
+
+      function errorBannerHtml(source, fallback, title) {
+        return (
+          '<div><div class="banner-title">' +
+          escapeHtml(title || 'Something went wrong') +
+          '</div><div class="banner-body">' +
+          escapeHtml(friendlyError(source, fallback)) +
+          '</div></div>'
+        );
       }
 
       function showBanner(which, html) {
@@ -2586,13 +2649,9 @@
           const body = await response.json().catch(() => null);
 
           if (!response.ok) {
-            const err = body && body.error ? body.error : null;
             showBanner(
               'error',
-              '<div><b>' + escapeHtml(err ? err.code : 'HTTP ' + response.status) + '</b><br>' +
-                escapeHtml(err ? err.message : (body && body.message) || response.statusText) +
-                (err && err.details ? '<br><code>' + escapeHtml(JSON.stringify(err.details)) + '</code>' : '') +
-                '</div>',
+              errorBannerHtml(body, 'Could not generate flashcards. Please try again.', 'Could not generate flashcards'),
             );
             resetResults();
             return;
@@ -2612,8 +2671,7 @@
           resetResults();
           showBanner(
             'error',
-            '<div><b>Could not reach the API</b><br>' + escapeHtml(error.message) +
-              '<br><code>Check the API URL, that the server is running, and that CORS allows this origin.</code></div>',
+            errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
           );
         } finally {
           setBusy(false);
@@ -4764,7 +4822,7 @@
           );
           const body = await response.json().catch(() => ({}));
           if (!response.ok) {
-            throw new Error((body.error && body.error.message) || body.message || 'Image search failed');
+            throw new Error(friendlyError(body, 'Image search failed. Please try a different search.'));
           }
           renderImageResults(body.results || body.images || [], body.query || query);
         } catch (error) {
@@ -4815,7 +4873,7 @@
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error((body.error && body.error.message) || body.message || 'Could not save flashcards');
+          throw new Error(friendlyError(body, 'Could not save flashcards. Please try again.'));
         }
         state.payload.id = body.id;
         state.payload.status = body.status;
@@ -4839,12 +4897,12 @@
           });
           const body = await response.json().catch(() => ({}));
           if (!response.ok) {
-            throw new Error((body.error && body.error.message) || body.message || 'Could not save flashcards');
+            throw new Error(friendlyError(body, 'Could not save flashcards. Please try again.'));
           }
           state.payload.id = body.id;
           toast('All cards saved');
         } catch (error) {
-          toast(error.message || 'Could not save flashcards', 4200);
+          toast(friendlyError(error, 'Could not save flashcards. Please try again.'), 4200);
         } finally {
           setBusy(false);
         }
@@ -4891,7 +4949,7 @@
             );
             const uploadBody = await uploaded.json().catch(() => ({}));
             if (!uploaded.ok) {
-              throw new Error((uploadBody.error && uploadBody.error.message) || uploadBody.message || 'Image upload failed');
+              throw new Error(friendlyError(uploadBody, 'Image upload failed. Please try again.'));
             }
             images.push({
               cardId,
@@ -4918,7 +4976,7 @@
           );
           const body = await response.json().catch(() => ({}));
           if (!response.ok) {
-            throw new Error((body.error && body.error.message) || body.message || 'Could not save flashcard edits');
+            throw new Error(friendlyError(body, 'Could not save your edits. Please try again.'));
           }
           if (body.cards) state.payload.cards = body.cards;
           if (body.id) state.payload.id = body.id;
@@ -4931,7 +4989,7 @@
           }
           toast('Card saved');
         } catch (error) {
-          toast(error.message || 'Could not save flashcard edits', 4200);
+          toast(friendlyError(error, 'Could not save your edits. Please try again.'), 4200);
         } finally {
           setBusy(false);
         }
@@ -5113,9 +5171,7 @@
         });
         if (!response.ok) {
           const errBody = await response.json().catch(() => ({}));
-          throw new Error(
-            (errBody.error && errBody.error.message) || errBody.message || 'Download failed',
-          );
+          throw new Error(friendlyError(errBody, 'Download failed. Please try again.'));
         }
         const blob = await response.blob();
         const disposition = response.headers.get('Content-Disposition') || '';
@@ -5132,7 +5188,7 @@
           await downloadViaApi('png', index);
           toast('Card ' + (index + 1) + ' saved as PNG');
         } catch (error) {
-          toast('PNG export failed: ' + error.message, 4200);
+          toast(friendlyError(error, 'Could not export PNG. Please try again.'), 4200);
         } finally {
           setBusy(false);
         }
@@ -5146,7 +5202,7 @@
           await downloadViaApi('pdf', index);
           toast('Card ' + (index + 1) + ' saved as PDF');
         } catch (error) {
-          toast('PDF export failed: ' + error.message, 4200);
+          toast(friendlyError(error, 'Could not export PDF. Please try again.'), 4200);
         } finally {
           setBusy(false);
         }
@@ -5163,7 +5219,7 @@
           }
           toast(total + ' PNG files saved');
         } catch (error) {
-          toast('Export failed: ' + error.message, 4200);
+          toast(friendlyError(error, 'Could not export the cards. Please try again.'), 4200);
         } finally {
           setBusy(false);
         }
@@ -5177,7 +5233,7 @@
           await downloadViaApi('pdf');
           toast('PDF with ' + state.payload.cards.length + ' cards saved');
         } catch (error) {
-          toast('PDF export failed: ' + error.message, 4200);
+          toast(friendlyError(error, 'Could not export PDF. Please try again.'), 4200);
         } finally {
           setBusy(false);
         }
