@@ -718,43 +718,38 @@
         place-items: center;
         overflow: hidden;
         position: relative;
+        container-type: size;
       }
 
       .img-camera-btn {
         display: none;
         position: absolute;
-        bottom: 10px;
-        right: 10px;
+        bottom: max(4px, 4cqmin);
+        right: max(4px, 4cqmin);
         top: auto;
         z-index: 4;
-        width: 50px;
-        height: 50px;
+        width: clamp(18px, 14cqmin, 30px);
+        height: clamp(18px, 14cqmin, 30px);
         border-radius: 50%;
-        border: 3px solid #fff;
+        border: 1.5px solid #fff;
         background: #6d28d9;
         color: #fff;
-        box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.35), 0 8px 18px rgba(42, 27, 74, 0.28);
+        box-shadow: 0 3px 8px rgba(109, 40, 217, 0.45);
         place-items: center;
+      }
+
+      .img-camera-btn svg {
+        width: 58%;
+        height: 58%;
       }
 
       .modal-card.editing .img-camera-btn {
         display: grid;
-        animation: camera-pulse 1.7s ease-in-out infinite;
       }
 
       .modal-card.editing .img-camera-btn:hover {
         background: #5b21b6;
-        animation: none;
-      }
-
-      @keyframes camera-pulse {
-        0%,
-        100% {
-          box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.35), 0 8px 18px rgba(42, 27, 74, 0.28);
-        }
-        50% {
-          box-shadow: 0 0 0 7px rgba(255, 210, 51, 0.9), 0 10px 22px rgba(109, 40, 217, 0.45);
-        }
+        box-shadow: 0 5px 12px rgba(109, 40, 217, 0.55);
       }
 
       .modal-card.editing [data-editable] {
@@ -4314,7 +4309,7 @@
         camera.type = 'button';
         camera.className = 'img-camera-btn';
         camera.setAttribute('aria-label', 'Change image');
-        camera.innerHTML = svg(ICONS.camera, 22);
+        camera.innerHTML = svg(ICONS.camera, 14);
         camera.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
