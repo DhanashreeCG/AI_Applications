@@ -57,6 +57,8 @@ export interface AppConfig {
     imageConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
+    imageEmbeddingMaxAttempts: number;
+    imageEmbeddingRetryDelayMs: number;
     imagePickerLimit: number;
     userUploadS3Prefix: string;
     templateSelectionAi: {
@@ -266,6 +268,14 @@ export default (): AppConfig => ({
     ),
     imageSearchLimit: parseInt(
       process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '8',
+      10,
+    ),
+    imageEmbeddingMaxAttempts: parseInt(
+      process.env.FLASHCARD_IMAGE_EMBEDDING_MAX_ATTEMPTS || '3',
+      10,
+    ),
+    imageEmbeddingRetryDelayMs: parseInt(
+      process.env.FLASHCARD_IMAGE_EMBEDDING_RETRY_DELAY_MS || '200',
       10,
     ),
     imagePickerLimit: parseInt(
