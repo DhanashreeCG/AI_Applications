@@ -12,7 +12,10 @@ import type {
   SearchAssetsResponse,
   SearchResultItem,
 } from '../../search/interfaces/search-result.interface';
-import { S3StorageService } from '../../storage/s3-storage.service';
+import {
+  S3StorageService,
+  sanitizeUploadFilename,
+} from '../../storage/s3-storage.service';
 import { PrismaService } from '../../database/prisma.service';
 import {
   DEFAULT_IMAGE_CONCURRENCY,
@@ -535,7 +538,10 @@ export class FlashcardImageRetrievalService {
     await this.s3StorageService.uploadFile(file.buffer, {
       key,
       contentType,
-      metadata: { flashcardSetId, originalname: file.originalname || uploadId },
+      metadata: {
+        flashcardSetId,
+        originalname: sanitizeUploadFilename(file.originalname, uploadId),
+      },
     });
     return {
       key,
