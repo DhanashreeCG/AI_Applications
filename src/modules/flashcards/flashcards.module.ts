@@ -3,6 +3,7 @@ import { AiModule } from '../ai/ai.module';
 import { SearchModule } from '../search/search.module';
 import { StorageModule } from '../storage/storage.module';
 import { FlashcardsController } from './flashcards.controller';
+import { ContentRestrictionController } from './content-restriction.controller';
 import { AssetImageService } from './services/asset-image.service';
 import { FlashcardContentService } from './services/flashcard-content.service';
 import { FlashcardDownloadService } from './services/flashcard-download.service';
@@ -24,7 +25,7 @@ import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-
 
 @Module({
   imports: [AiModule, SearchModule, StorageModule],
-  controllers: [FlashcardsController],
+  controllers: [FlashcardsController, ContentRestrictionController],
   providers: [
     AssetImageService,
     TemplateRepository,
@@ -52,6 +53,7 @@ import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-
     FlashcardRendererService,
     BrowserPoolService,
     AssetImageService,
+    ContentRestrictionService,
   ],
 })
 export class FlashcardsModule {}

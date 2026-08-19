@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Content restrictions</title>
+    <style>
+      :root {
+        --bg: #f3f1fd;
+        --ink: #2a1b4a;
+        --muted: #6b6288;
+        --line: #e8e4f7;
+        --primary: #6d28d9;
+        --danger: #e0245e;
+        --ok: #22a06b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      h1 { margin: 0 0 8px; font-size: 22px; }
+      p.hint { color: var(--muted); margin: 0 0 20px; }
+      .card {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      form, .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: end;
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      input, select {
+        font: inherit;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        min-width: 120px;
+      }
+      button {
+        font: inherit;
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
+        background: var(--primary);
+        color: #fff;
+      }
+      button.secondary { background: #ece8f8; color: var(--ink); }
+      button.danger { background: var(--danger); }
+      button:disabled { opacity: 0.55; cursor: not-allowed; }
+      .banner {
+        display: none;
+        margin-bottom: 12px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: #fde8ee;
+        color: #9f1239;
+      }
+      .banner.show { display: block; }
+      .banner.ok { background: #e8f8ef; color: #146c43; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th, td {
+        text-align: left;
+        padding: 8px 6px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: middle;
+      }
+      th { font-size: 12px; color: var(--muted); }
+      td input, td select {
+        min-width: 0;
+        width: 100%;
+      }
+      .row-actions { display: flex; gap: 6px; white-space: nowrap; }
+      .muted { color: var(--muted); }
+      .inactive { opacity: 0.55; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Content restriction terms</h1>
+      <p class="hint">
+        Platform-wide banned and restricted words (flashcards, worksheets, and other modules).
+        <code>*</code> means global. Changes apply immediately (no restart).
+      </p>
+      <div class="banner" id="banner"></div>
+
+      <section class="card">
+        <form id="addForm">
+          <label>Term
+            <input name="term" required placeholder="pork" />
+          </label>
+          <label>Country
+            <input name="countryCode" value="*" placeholder="* or IN" />
+          </label>
+          <label>Severity
+            <select name="severity">
+              <option value="BANNED">BANNED</option>
+              <option value="RESTRICTED">RESTRICTED</option>
+            </select>
+          </label>
+          <label>Category
+            <select name="category">
+              <option value="OTHER">OTHER</option>
+              <option value="RELIGIOUS">RELIGIOUS</option>
+              <option value="ANIMAL_FOOD">ANIMAL_FOOD</option>
+              <option value="VISUAL_MOTIF">VISUAL_MOTIF</option>
+            </select>
+          </label>
+          <label>Notes
+            <input name="notes" placeholder="optional" />
+          </label>
+          <button type="submit">Add</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="filters">
+          <label>Search
+            <input id="search" placeholder="term, country, notes" />
+          </label>
+          <label>Severity
+            <select id="filterSeverity">
+              <option value="">All</option>
+              <option value="BANNED">BANNED</option>
+              <option value="RESTRICTED">RESTRICTED</option>
+            </select>
+          </label>
+          <label>Country
+            <input id="filterCountry" placeholder="IN or *" />
+          </label>
+          <span class="muted" id="count"></span>
+        </div>
+      </section>
+
+      <section class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Term</th>
+              <th>Country</th>
+              <th>Severity</th>
+              <th>Category</th>
+              <th>Active</th>
+              <th>Notes</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </section>
+    </main>
+    <script>
+      const apiBase = () => (localStorage.getItem('apiBase') || window.location.origin).replace(/\/$/, '');
+      const els = {
+        banner: document.getElementById('banner'),
+        addForm: document.getElementById('addForm'),
+        rows: document.getElementById('rows'),
+        search: document.getElementById('search'),
+        filterSeverity: document.getElementById('filterSeverity'),
+        filterCountry: document.getElementById('filterCountry'),
+        count: document.getElementById('count'),
+      };
+      let items = [];
+
+      function showBanner(message, ok) {
+        els.banner.textContent = message;
+        els.banner.className = 'banner show' + (ok ? ' ok' : '');
+      }
+
+      function errorMessage(body, fallback) {
+        return (body && body.error && body.error.message) || fallback;
+      }
+
+      async function api(path, options) {
+        const response = await fetch(apiBase() + path, {
+          headers: { 'Content-Type': 'application/json' },
+          ...options,
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(errorMessage(body, 'HTTP ' + response.status));
+        }
+        return body;
+      }
+
+      function matches(row) {
+        const q = els.search.value.trim().toLowerCase();
+        const severity = els.filterSeverity.value;
+        const country = els.filterCountry.value.trim().toUpperCase();
+        if (severity && row.severity !== severity) return false;
+        if (country && String(row.countryCode).toUpperCase() !== country) return false;
+        if (!q) return true;
+        return [row.term, row.countryCode, row.category, row.notes, row.severity]
+          .join(' ')
+          .toLowerCase()
+          .includes(q);
+      }
+
+      function optionList(values, selected) {
+        return values
+          .map((value) => '<option' + (value === selected ? ' selected' : '') + '>' + value + '</option>')
+          .join('');
+      }
+
+      function render() {
+        const visible = items.filter(matches);
+        els.count.textContent = visible.length + ' of ' + items.length;
+        els.rows.innerHTML = visible
+          .map((row) => {
+            return (
+              '<tr class="' + (row.active ? '' : 'inactive') + '" data-id="' + row.id + '">' +
+              '<td><input data-field="term" value="' + escapeHtml(row.term) + '" /></td>' +
+              '<td><input data-field="countryCode" value="' + escapeHtml(row.countryCode) + '" /></td>' +
+              '<td><select data-field="severity">' + optionList(['BANNED', 'RESTRICTED'], row.severity) + '</select></td>' +
+              '<td><select data-field="category">' +
+                optionList(['RELIGIOUS', 'ANIMAL_FOOD', 'VISUAL_MOTIF', 'OTHER'], row.category) +
+              '</select></td>' +
+              '<td><input data-field="active" type="checkbox"' + (row.active ? ' checked' : '') + ' /></td>' +
+              '<td><input data-field="notes" value="' + escapeHtml(row.notes || '') + '" /></td>' +
+              '<td class="row-actions">' +
+                '<button type="button" class="secondary" data-action="save">Save</button>' +
+                '<button type="button" class="danger" data-action="delete">Delete</button>' +
+              '</td></tr>'
+            );
+          })
+          .join('');
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[ch]);
+      }
+
+      function rowPayload(tr) {
+        return {
+          term: tr.querySelector('[data-field="term"]').value,
+          countryCode: tr.querySelector('[data-field="countryCode"]').value,
+          severity: tr.querySelector('[data-field="severity"]').value,
+          category: tr.querySelector('[data-field="category"]').value,
+          active: tr.querySelector('[data-field="active"]').checked,
+          notes: tr.querySelector('[data-field="notes"]').value,
+        };
+      }
+
+      async function load() {
+        items = await api('/restricted-words');
+        render();
+      }
+
+      els.addForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const data = Object.fromEntries(new FormData(els.addForm).entries());
+        try {
+          await api('/restricted-words', {
+            method: 'POST',
+            body: JSON.stringify(data),
+          });
+          els.addForm.reset();
+          els.addForm.countryCode.value = '*';
+          showBanner('Added ' + data.term, true);
+          await load();
+        } catch (error) {
+          showBanner(error.message);
+        }
+      });
+
+      els.rows.addEventListener('click', async (event) => {
+        const button = event.target.closest('button');
+        if (!button) return;
+        const tr = button.closest('tr');
+        const id = tr.dataset.id;
+        try {
+          if (button.dataset.action === 'save') {
+            await api('/restricted-words/' + encodeURIComponent(id), {
+              method: 'PATCH',
+              body: JSON.stringify(rowPayload(tr)),
+            });
+            showBanner('Saved', true);
+            await load();
+          }
+          if (button.dataset.action === 'delete') {
+            if (!confirm('Delete this term?')) return;
+            await api('/restricted-words/' + encodeURIComponent(id), {
+              method: 'DELETE',
+            });
+            showBanner('Deleted', true);
+            await load();
+          }
+        } catch (error) {
+          showBanner(error.message);
+        }
+      });
+
+      els.search.addEventListener('input', render);
+      els.filterSeverity.addEventListener('change', render);
+      els.filterCountry.addEventListener('input', render);
+
+      load().catch((error) => showBanner(error.message));
+    </script>
+  </body>
+</html>
