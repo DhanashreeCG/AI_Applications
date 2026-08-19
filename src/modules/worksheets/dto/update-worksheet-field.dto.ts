@@ -20,4 +20,7 @@ export class SearchWorksheetImagesQueryDto {
 
   @ApiPropertyOptional({ example: 10 })
   limit?: number;
+
+  @ApiPropertyOptional({ example: 'IN' })
+  countryCode?: string;
 }

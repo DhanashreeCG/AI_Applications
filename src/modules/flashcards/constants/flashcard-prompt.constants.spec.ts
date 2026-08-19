@@ -80,7 +80,7 @@ describe('flashcard template-aware prompt', () => {
     expect(prompt).toContain('"image_primary"');
     expect(prompt).toContain('"image_secondary"');
     expect(prompt).toContain('separate image requirement');
-    expect(prompt).toContain('CROSS-CARD IMAGE UNIQUENESS');
+    expect(prompt).toContain('CROSS-CARD CONTENT UNIQUENESS');
     expect(prompt).toContain('expectedObjects[0] must be unique across cards');
   });
 

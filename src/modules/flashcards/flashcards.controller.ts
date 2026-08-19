@@ -18,6 +18,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { ApiConsumes, ApiOperation, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { FLASHCARD_USER_UPLOAD_MAX_BYTES } from './constants/flashcard.constants';
 import { DownloadFlashcardDto, EditFlashcardDto, SearchFlashcardImagesQueryDto } from './dto/edit-flashcard.dto';
@@ -50,7 +51,24 @@ export class FlashcardsController {
     private readonly persistence: FlashcardPersistenceService,
     private readonly editService: FlashcardEditService,
     private readonly downloadService: FlashcardDownloadService,
+    private readonly configService: ConfigService,
   ) {}
+
+  @Get('settings')
+  @ApiOperation({
+    summary:
+      'UI settings including the env default country used by flashcard generation',
+  })
+  settings() {
+    const defaultCountryCode = (
+      this.configService.get<string>('flashcards.defaultCountryCode') || ''
+    )
+      .trim()
+      .toUpperCase();
+    return {
+      defaultCountryCode: defaultCountryCode || null,
+    };
+  }
 
   @Post('generate')
   @HttpCode(HttpStatus.OK)
@@ -62,10 +80,17 @@ export class FlashcardsController {
     @Body() dto: GenerateFlashcardsDto,
     @Headers('x-trace-id') traceId?: string,
     @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.orchestrator.generate(dto, {
-      correlationId: correlationId || traceId,
-    });
+    return this.orchestrator.generate(
+      {
+        ...dto,
+        countryCode: dto.countryCode || headerCountryCode,
+      },
+      {
+        correlationId: correlationId || traceId,
+      },
+    );
   }
 
   @Post('save')
@@ -104,10 +129,14 @@ export class FlashcardsController {
   @ApiOperation({
     summary: 'Semantic asset search without a saved flashcard set',
   })
-  async searchLibraryImages(@Query() query: SearchFlashcardImagesQueryDto) {
+  async searchLibraryImages(
+    @Query() query: SearchFlashcardImagesQueryDto,
+    @Headers('x-country-code') headerCountryCode?: string,
+  ) {
     return this.editService.searchLibrary({
       query: query.query,
       limit: query.limit != null ? Number(query.limit) : undefined,
+      countryCode: query.countryCode || headerCountryCode,
     });
   }
 
@@ -171,10 +200,18 @@ export class FlashcardsController {
     @Body() dto: EditFlashcardDto,
     @Headers('x-trace-id') traceId?: string,
     @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.editService.edit(flashcardId, dto, {
-      correlationId: correlationId || traceId,
-    });
+    return this.editService.edit(
+      flashcardId,
+      {
+        ...dto,
+        countryCode: dto.countryCode || headerCountryCode,
+      },
+      {
+        correlationId: correlationId || traceId,
+      },
+    );
   }
 
   @Post(':flashcardId/download')
@@ -208,12 +245,14 @@ export class FlashcardsController {
   async searchImages(
     @Param('flashcardId') flashcardId: string,
     @Query() query: SearchFlashcardImagesQueryDto,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
     return this.editService.searchImages(flashcardId, {
       query: query.query,
       cardId: query.cardId,
       componentId: query.componentId,
       limit: query.limit != null ? Number(query.limit) : undefined,
+      countryCode: query.countryCode || headerCountryCode,
     });
   }
 

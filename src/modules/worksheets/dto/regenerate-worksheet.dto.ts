@@ -9,4 +9,7 @@ export class RegenerateWorksheetDto {
 
   @ApiPropertyOptional({ example: 'Farm animals' })
   topic?: string;
+
+  @ApiPropertyOptional({ example: 'IN' })
+  countryCode?: string;
 }

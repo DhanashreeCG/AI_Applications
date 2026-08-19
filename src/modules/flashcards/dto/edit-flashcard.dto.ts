@@ -11,6 +11,13 @@ export class EditFlashcardDto {
     example: 'Make this shorter and easier for a 4-year-old.',
   })
   instruction!: string;
+
+  @ApiPropertyOptional({
+    example: 'IN',
+    description:
+      'ISO 3166-1 alpha-2 country code for region-specific content restrictions',
+  })
+  countryCode?: string;
 }
 
 export class SearchFlashcardImagesQueryDto {
@@ -28,6 +35,9 @@ export class SearchFlashcardImagesQueryDto {
 
   @ApiPropertyOptional({ example: 10 })
   limit?: number;
+
+  @ApiPropertyOptional({ example: 'IN' })
+  countryCode?: string;
 }
 
 export class DownloadFlashcardDto {

@@ -81,10 +81,14 @@ export class WorksheetsController {
     @Body() dto: GenerateWorksheetDto,
     @Headers('x-trace-id') traceId?: string,
     @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.generationService.generate(dto, {
-      correlationId: correlationId || traceId,
-    });
+    return this.generationService.generate(
+      { ...dto, countryCode: dto.countryCode || headerCountryCode },
+      {
+        correlationId: correlationId || traceId,
+      },
+    );
   }
 
   @Post('generate-set')
@@ -97,10 +101,14 @@ export class WorksheetsController {
     @Body() dto: GenerateWorksheetDto,
     @Headers('x-trace-id') traceId?: string,
     @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.generationService.generateSet(dto, {
-      correlationId: correlationId || traceId,
-    });
+    return this.generationService.generateSet(
+      { ...dto, countryCode: dto.countryCode || headerCountryCode },
+      {
+        correlationId: correlationId || traceId,
+      },
+    );
   }
 
   @Get('settings')
@@ -215,10 +223,15 @@ export class WorksheetsController {
     @Body() dto: EditWorksheetDto,
     @Headers('x-trace-id') traceId?: string,
     @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.editService.edit(worksheetId, dto, {
-      correlationId: correlationId || traceId,
-    });
+    return this.editService.edit(
+      worksheetId,
+      { ...dto, countryCode: dto.countryCode || headerCountryCode },
+      {
+        correlationId: correlationId || traceId,
+      },
+    );
   }
 
   @Post(':worksheetId/render')
@@ -302,11 +315,13 @@ export class WorksheetsController {
   async searchImages(
     @Param('worksheetId') worksheetId: string,
     @Query() query: SearchWorksheetImagesQueryDto,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
     return this.editService.searchImages(worksheetId, {
       query: query.query,
       path: query.path,
       limit: query.limit != null ? Number(query.limit) : undefined,
+      countryCode: query.countryCode || headerCountryCode,
     });
   }
 
@@ -375,8 +390,12 @@ export class WorksheetsController {
   async regenerate(
     @Param('worksheetId') worksheetId: string,
     @Body() dto: RegenerateWorksheetDto,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.editService.regenerate(worksheetId, dto);
+    return this.editService.regenerate(worksheetId, {
+      ...dto,
+      countryCode: dto.countryCode || headerCountryCode,
+    });
   }
 
   @Post(':worksheetId/images')

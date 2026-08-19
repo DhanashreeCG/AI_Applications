@@ -35,6 +35,13 @@ export class GenerateWorksheetDto {
   templateId?: string;
 
   @ApiPropertyOptional({
+    example: 'IN',
+    description:
+      'ISO country code for content restrictions. Overrides FLASHCARD_DEFAULT_COUNTRY_CODE.',
+  })
+  countryCode?: string;
+
+  @ApiPropertyOptional({
     example: 1,
     description:
       'How many worksheets to generate. Defaults to WORKSHEET_GENERATE_COUNT_DEFAULT (1).',

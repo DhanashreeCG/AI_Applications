@@ -190,6 +190,7 @@ export interface GenerateFlashcardsResponse {
     learningObjective: string;
     educationalIntent: string;
     count: number;
+    countryCode?: string | null;
   };
   selection: {
     ruleId: string;
@@ -241,4 +242,5 @@ export type FlashcardErrorCode =
   | 'INVALID_FIELD'
   | 'FIELD_NOT_EDITABLE'
   | 'UNSUPPORTED_FORMAT'
+  | 'CONTENT_NOT_ALLOWED'
   | 'DOWNLOAD_NOT_IMPLEMENTED';

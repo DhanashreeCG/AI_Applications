@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
@@ -45,6 +45,7 @@ interface RetrieveImagesInput {
   ageMin: number | null;
   ageMax: number | null;
   usedAssetIds?: Set<string>;
+  countryCode?: string;
 }
 
 @Injectable()
@@ -179,7 +180,10 @@ export class FlashcardImageRetrievalService {
     }
 
     try {
-      const response = await this.searchWithEmbeddingRetry(query);
+      const response = await this.searchWithEmbeddingRetry(
+        query,
+        input.countryCode,
+      );
 
       this.emitEmbeddingUsage(telemetry, query, response);
 
@@ -266,6 +270,7 @@ export class FlashcardImageRetrievalService {
    */
   private async searchWithEmbeddingRetry(
     query: string,
+    countryCode?: string,
   ): Promise<SearchAssetsResponse> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.embeddingMaxAttempts; attempt += 1) {
@@ -273,9 +278,13 @@ export class FlashcardImageRetrievalService {
         return await this.searchService.search({
           query,
           limit: this.searchLimit,
+          ...(countryCode ? { countryCode } : {}),
         });
       } catch (error) {
         lastError = error;
+        if (error instanceof HttpException && error.getStatus() < 500) {
+          throw error;
+        }
         this.logger.warn(
           `Embedding/search attempt ${attempt}/${this.embeddingMaxAttempts} failed for "${query}": ${getErrorMessage(error)}`,
         );
@@ -353,6 +362,7 @@ export class FlashcardImageRetrievalService {
   public async searchCandidates(
     query: string,
     limit?: number,
+    countryCode?: string,
   ): Promise<
     Array<{
       assetId: string;
@@ -368,6 +378,7 @@ export class FlashcardImageRetrievalService {
     const response = await this.searchService.search({
       query: trimmed,
       limit: limit ?? this.pickerLimit,
+      ...(countryCode ? { countryCode } : {}),
     });
     return response.results.map((hit) => ({
       assetId: hit.assetId,
