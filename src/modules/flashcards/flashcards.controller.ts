@@ -62,10 +62,17 @@ export class FlashcardsController {
     @Body() dto: GenerateFlashcardsDto,
     @Headers('x-trace-id') traceId?: string,
     @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.orchestrator.generate(dto, {
-      correlationId: correlationId || traceId,
-    });
+    return this.orchestrator.generate(
+      {
+        ...dto,
+        countryCode: dto.countryCode || headerCountryCode,
+      },
+      {
+        correlationId: correlationId || traceId,
+      },
+    );
   }
 
   @Post('save')
@@ -171,10 +178,18 @@ export class FlashcardsController {
     @Body() dto: EditFlashcardDto,
     @Headers('x-trace-id') traceId?: string,
     @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.editService.edit(flashcardId, dto, {
-      correlationId: correlationId || traceId,
-    });
+    return this.editService.edit(
+      flashcardId,
+      {
+        ...dto,
+        countryCode: dto.countryCode || headerCountryCode,
+      },
+      {
+        correlationId: correlationId || traceId,
+      },
+    );
   }
 
   @Post(':flashcardId/download')

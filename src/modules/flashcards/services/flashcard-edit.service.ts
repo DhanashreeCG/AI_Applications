@@ -129,6 +129,7 @@ export class FlashcardEditService {
           ? component.assetReference?.queryUsed ?? null
           : component.content,
       card,
+      countryCode: dto.countryCode,
       telemetry,
     });
     this.emitter.emitStageCompleted({

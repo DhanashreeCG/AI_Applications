@@ -217,6 +217,10 @@ export class FlashcardOrchestratorService {
         subject: resolved.subject,
         difficulty: resolved.difficulty,
         language: resolved.language,
+        countryCode:
+          dto.countryCode?.trim() ||
+          this.configService.get<string>('flashcards.defaultCountryCode') ||
+          undefined,
       },
       telemetry,
     );

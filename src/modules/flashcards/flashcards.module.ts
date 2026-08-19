@@ -11,6 +11,7 @@ import { FlashcardImageRetrievalService } from './services/flashcard-image-retri
 import { FlashcardOrchestratorService } from './services/flashcard-orchestrator.service';
 import { FlashcardPersistenceService } from './services/flashcard-persistence.service';
 import { FlashcardSeedService } from './services/flashcard-seed.service';
+import { ContentRestrictionService } from './services/content-restriction.service';
 import { FlashcardTemplateService } from './services/flashcard-template.service';
 import { TemplateCatalogCacheService } from './services/template-catalog-cache.service';
 import { TemplateRepository } from './services/template.repository';
@@ -38,6 +39,7 @@ import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-
     FlashcardEditService,
     FlashcardDownloadService,
     FlashcardSeedService,
+    ContentRestrictionService,
     BrowserPoolService,
     FlashcardStorageService,
     FlashcardPdfService,

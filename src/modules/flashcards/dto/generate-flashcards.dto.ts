@@ -48,4 +48,11 @@ export class GenerateFlashcardsDto {
       'When set, skips objective determination and template selection and uses this template directly',
   })
   templateId?: string;
+
+  @ApiPropertyOptional({
+    example: 'IN',
+    description:
+      'ISO 3166-1 alpha-2 country code used for region-specific content restrictions',
+  })
+  countryCode?: string;
 }
