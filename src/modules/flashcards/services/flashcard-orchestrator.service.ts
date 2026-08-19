@@ -21,6 +21,10 @@ import { expandDefinitionsForAvailableIds } from '../utils/repeat-component.util
 import { assertAssembledCardComponents } from '../utils/assembled-card.validator';
 import { resolveUserRequest } from '../utils/user-request.resolver';
 import {
+  assertContentRequestIsAllowed,
+  ForbiddenContentError,
+} from '../constants/flashcard-prompt.constants';
+import {
   FlashcardPipelineEmitter,
   createTelemetryContext,
 } from '../telemetry/flashcard-pipeline.events';
@@ -161,11 +165,16 @@ export class FlashcardOrchestratorService {
         difficulty: dto.difficulty,
         language: dto.language,
       });
+      this.assertRequestContentAllowed(resolved.query, resolved.topic, countryCode);
     } catch (error) {
       this.emitter.emitStageFailed({
         ...telemetry,
         stageName: PIPELINE_STAGES.REQUEST_ANALYSIS,
         errorMessage: getErrorMessage(error),
+        metadata:
+          error instanceof FlashcardException
+            ? { code: error.code, ...(error.details ?? {}) }
+            : undefined,
       });
       throw error;
     }
@@ -727,5 +736,25 @@ export class FlashcardOrchestratorService {
       .trim()
       .toUpperCase();
     return /^[A-Z]{2}$/.test(fromEnv) ? fromEnv : undefined;
+  }
+
+  private assertRequestContentAllowed(
+    query: string,
+    topic: string,
+    countryCode?: string,
+  ): void {
+    try {
+      assertContentRequestIsAllowed({ query, topic, countryCode });
+    } catch (error) {
+      if (error instanceof ForbiddenContentError) {
+        throw new FlashcardException(
+          'CONTENT_NOT_ALLOWED',
+          error.message,
+          HttpStatus.BAD_REQUEST,
+          { matchedTerm: error.matchedTerm, field: error.field, countryCode },
+        );
+      }
+      throw error;
+    }
   }
 }
