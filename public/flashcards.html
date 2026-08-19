@@ -726,18 +726,35 @@
         bottom: 10px;
         right: 10px;
         top: auto;
-        z-index: 3;
-        width: 44px;
-        height: 44px;
+        z-index: 4;
+        width: 50px;
+        height: 50px;
         border-radius: 50%;
-        background: rgba(255, 255, 255, 0.94);
-        color: var(--primary);
-        box-shadow: 0 2px 8px rgba(42, 27, 74, 0.16);
+        border: 3px solid #fff;
+        background: #6d28d9;
+        color: #fff;
+        box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.35), 0 8px 18px rgba(42, 27, 74, 0.28);
         place-items: center;
       }
 
       .modal-card.editing .img-camera-btn {
         display: grid;
+        animation: camera-pulse 1.7s ease-in-out infinite;
+      }
+
+      .modal-card.editing .img-camera-btn:hover {
+        background: #5b21b6;
+        animation: none;
+      }
+
+      @keyframes camera-pulse {
+        0%,
+        100% {
+          box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.35), 0 8px 18px rgba(42, 27, 74, 0.28);
+        }
+        50% {
+          box-shadow: 0 0 0 7px rgba(255, 210, 51, 0.9), 0 10px 22px rgba(109, 40, 217, 0.45);
+        }
       }
 
       .modal-card.editing [data-editable] {
@@ -4646,6 +4663,31 @@
         el('uploadPane').classList.toggle('hidden', tab !== 'upload');
       }
 
+      function imageSearchQueryFor(card, componentId) {
+        const hit = findComponentById(card, componentId);
+        const slot = hit && hit.component;
+        const ref = slot && slot.assetReference;
+        const fromSlot = [
+          ref && ref.queryUsed,
+          ref && ref.caption,
+          slot && slot.content,
+          slot && slot.caption,
+        ]
+          .map((value) => (value == null ? '' : String(value).trim()))
+          .find(Boolean);
+        if (fromSlot) return fromSlot;
+
+        const preferred = ['title', 'word', 'caption', 'heading', 'letter', 'number', 'question'];
+        for (const id of preferred) {
+          const comp = ((card && card.components) || []).find(
+            (item) => String(item.componentId || item.id || '').toLowerCase() === id,
+          );
+          const text = contentFromComponent(comp);
+          if (text && String(text).trim()) return String(text).trim();
+        }
+        return (((state.payload || {}).request || {}).topic || '').trim();
+      }
+
       function openImagePicker(cardIndex, componentId) {
         if (cardIndex == null) cardIndex = state.editingIndex;
         if (cardIndex == null) {
@@ -4656,14 +4698,16 @@
         state.imagePickerCardIndex = cardIndex;
         state.selectedImageComponentId = componentId || '';
         state.selectedSearchItem = null;
-        el('imageQuery').value = '';
+        const card = state.payload && state.payload.cards[cardIndex];
+        el('imageQuery').value = imageSearchQueryFor(card, componentId);
         el('imageUploadInput').value = '';
         el('uploadPreview').classList.add('hidden');
         el('uploadPreview').removeAttribute('src');
         el('imageBank').innerHTML = '';
-        el('imageResultsCount').textContent = 'No search yet';
+        el('imageResultsCount').textContent = 'Searching…';
         setImagePickerTab('search');
         el('imagePickerModal').classList.add('show');
+        searchImages();
       }
 
       function renderImageResults(results, query) {
