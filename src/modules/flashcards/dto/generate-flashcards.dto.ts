@@ -52,7 +52,7 @@ export class GenerateFlashcardsDto {
   @ApiPropertyOptional({
     example: 'IN',
     description:
-      'ISO 3166-1 alpha-2 country code used for region-specific content restrictions',
+      'ISO 3166-1 alpha-2 country code. When omitted, FLASHCARD_DEFAULT_COUNTRY_CODE is used on the server. A request value always overrides the env default.',
   })
   countryCode?: string;
 }

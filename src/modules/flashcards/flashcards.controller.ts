@@ -18,6 +18,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { ApiConsumes, ApiOperation, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { FLASHCARD_USER_UPLOAD_MAX_BYTES } from './constants/flashcard.constants';
 import { DownloadFlashcardDto, EditFlashcardDto, SearchFlashcardImagesQueryDto } from './dto/edit-flashcard.dto';
@@ -50,7 +51,24 @@ export class FlashcardsController {
     private readonly persistence: FlashcardPersistenceService,
     private readonly editService: FlashcardEditService,
     private readonly downloadService: FlashcardDownloadService,
+    private readonly configService: ConfigService,
   ) {}
+
+  @Get('settings')
+  @ApiOperation({
+    summary:
+      'UI settings including the env default country used by flashcard generation',
+  })
+  settings() {
+    const defaultCountryCode = (
+      this.configService.get<string>('flashcards.defaultCountryCode') || ''
+    )
+      .trim()
+      .toUpperCase();
+    return {
+      defaultCountryCode: defaultCountryCode || null,
+    };
+  }
 
   @Post('generate')
   @HttpCode(HttpStatus.OK)

@@ -190,6 +190,7 @@ export interface GenerateFlashcardsResponse {
     learningObjective: string;
     educationalIntent: string;
     count: number;
+    countryCode?: string | null;
   };
   selection: {
     ruleId: string;

@@ -75,6 +75,7 @@ export class FlashcardOrchestratorService {
         grade: dto.grade,
         count: dto.count ?? DEFAULT_FLASHCARD_COUNT,
         templateId: dto.templateId?.trim() || undefined,
+        countryCode: dto.countryCode,
       },
     });
 
@@ -114,6 +115,7 @@ export class FlashcardOrchestratorService {
       stageName: PIPELINE_STAGES.REQUEST_VALIDATION,
     });
     const count = dto.count ?? DEFAULT_FLASHCARD_COUNT;
+    const countryCode = this.resolveCountryCode(dto.countryCode);
     const explicitTemplateId = dto.templateId?.trim() || null;
     if (dto.templateId !== undefined && dto.templateId !== null && !explicitTemplateId) {
       this.emitter.emitStageFailed({
@@ -217,10 +219,7 @@ export class FlashcardOrchestratorService {
         subject: resolved.subject,
         difficulty: resolved.difficulty,
         language: resolved.language,
-        countryCode:
-          dto.countryCode?.trim() ||
-          this.configService.get<string>('flashcards.defaultCountryCode') ||
-          undefined,
+        countryCode,
       },
       telemetry,
     );
@@ -331,6 +330,7 @@ export class FlashcardOrchestratorService {
         learningObjective: selected.learningObjective,
         educationalIntent: resolved.educationalIntent,
         count,
+        countryCode: countryCode ?? null,
       },
       selection: {
         ruleId: selected.selection.ruleId,
@@ -710,5 +710,22 @@ export class FlashcardOrchestratorService {
       content: contentById[definition.componentId] ?? null,
       validationRules: definition.validationRules,
     };
+  }
+
+  /**
+   * Request countryCode (body/header) always wins when it is a real ISO code.
+   * If the request omits it, FLASHCARD_DEFAULT_COUNTRY_CODE is used for the LLM.
+   */
+  private resolveCountryCode(requested?: string | null): string | undefined {
+    const fromRequest = requested?.trim().toUpperCase();
+    if (fromRequest && /^[A-Z]{2}$/.test(fromRequest)) {
+      return fromRequest;
+    }
+    const fromEnv = (
+      this.configService.get<string>('flashcards.defaultCountryCode') || ''
+    )
+      .trim()
+      .toUpperCase();
+    return /^[A-Z]{2}$/.test(fromEnv) ? fromEnv : undefined;
   }
 }
