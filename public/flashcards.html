@@ -998,8 +998,21 @@
       }
 
       .uno.number-tracing .uno-dots {
+        display: flex;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-content: center;
         max-width: 86%;
-        gap: 2cqw 2.4cqw;
+        gap: 1.8cqw;
+        padding-top: 0;
+      }
+
+      .uno.number-tracing .uno-dots-row {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 2.4cqw;
       }
 
       .uno.number-tracing .uno-dots i {
@@ -3820,6 +3833,32 @@
         return words[text] || 0;
       }
 
+      function dotRowSizes(count) {
+        const n = Math.max(0, Math.min(20, Number(count) || 0));
+        if (n <= 0) return [];
+        if (n <= 5) return [n];
+        const rows = Math.ceil(n / 5);
+        const base = Math.floor(n / rows);
+        const extra = n % rows;
+        const sizes = [];
+        for (let i = 0; i < rows; i += 1) {
+          sizes.push(base + (i < extra ? 1 : 0));
+        }
+        return sizes;
+      }
+
+      function fillDotRows(host, count) {
+        host.innerHTML = '';
+        dotRowSizes(count).forEach((size) => {
+          const row = document.createElement('div');
+          row.className = 'uno-dots-row';
+          for (let i = 0; i < size; i += 1) {
+            row.appendChild(document.createElement('i'));
+          }
+          host.appendChild(row);
+        });
+      }
+
       function renderCountDots(merged, ctx) {
         const count = parseCountValue(merged.content);
         const wrap = document.createElement('div');
@@ -3832,9 +3871,7 @@
         dots.setAttribute('aria-hidden', 'true');
         const color = tracingImageColor(ctx);
         if (color) dots.style.setProperty('--dot-color', color);
-        for (let i = 0; i < count; i += 1) {
-          dots.appendChild(document.createElement('i'));
-        }
+        fillDotRows(dots, count);
         wrap.appendChild(dots);
 
         const editor = document.createElement('span');
@@ -3844,10 +3881,7 @@
         editor.addEventListener('input', () => {
           const next = parseCountValue(editor.textContent);
           wrap.dataset.count = String(next);
-          dots.innerHTML = '';
-          for (let i = 0; i < next; i += 1) {
-            dots.appendChild(document.createElement('i'));
-          }
+          fillDotRows(dots, next);
         });
         wrap.appendChild(editor);
         return wrap;
