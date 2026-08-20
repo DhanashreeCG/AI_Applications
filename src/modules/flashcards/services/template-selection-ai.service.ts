@@ -479,6 +479,7 @@ export class TemplateSelectionAiService {
   }
 
   private parseResponse(text: string): {
+    detectedIntent: string | null;
     selectedTemplateId: string;
     confidenceScore: number;
     reasoning: string;
@@ -487,6 +488,10 @@ export class TemplateSelectionAiService {
     if (!text) return null;
     try {
       const parsed = JSON.parse(text) as Record<string, unknown>;
+      const detectedIntent =
+        typeof parsed.detectedIntent === 'string'
+          ? parsed.detectedIntent.trim().toLowerCase()
+          : '';
       const selectedTemplateId =
         typeof parsed.selectedTemplateId === 'string'
           ? parsed.selectedTemplateId.trim()
@@ -512,6 +517,7 @@ export class TemplateSelectionAiService {
       }
 
       return {
+        detectedIntent: detectedIntent || null,
         selectedTemplateId,
         confidenceScore,
         reasoning,
