@@ -728,9 +728,9 @@ export function scanPerCardTitleImageMismatches(
   return mismatches;
 }
 
-const BARE_EXACT_QUERY_IMAGE_ROLES = new Set(['phonics.letter.image']);
+const BARE_EXACT_QUERY_IMAGE_ROLES = new Set(['phonics.letter.image', 'math.number.tracing.image']);
 
-const BARE_EXACT_QUERY_IMAGE_ID_PATTERN = /^(letterImage|letter_image)$/i;
+const BARE_EXACT_QUERY_IMAGE_ID_PATTERN = /^(letterImage|letter_image|numberImage|number_image)$/i;
 
 /**
  * Letter-glyph image slots whose searchQuery must be ONLY the letter phrase
