@@ -17,4 +17,7 @@ export class EditWorksheetDto {
     example: 'Make this shorter and easier for a 4-year-old.',
   })
   instruction!: string;
+
+  @ApiPropertyOptional({ example: 'IN' })
+  countryCode?: string;
 }

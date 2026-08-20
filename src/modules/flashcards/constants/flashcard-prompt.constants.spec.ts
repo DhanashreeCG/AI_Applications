@@ -80,7 +80,7 @@ describe('flashcard template-aware prompt', () => {
     expect(prompt).toContain('"image_primary"');
     expect(prompt).toContain('"image_secondary"');
     expect(prompt).toContain('separate image requirement');
-    expect(prompt).toContain('CROSS-CARD IMAGE UNIQUENESS');
+    expect(prompt).toContain('CROSS-CARD CONTENT UNIQUENESS');
     expect(prompt).toContain('expectedObjects[0] must be unique across cards');
   });
 
@@ -137,6 +137,48 @@ describe('flashcard template-aware prompt', () => {
     expect(prompt).toContain('"letterImage"');
     expect(prompt).toMatch(/searchQuery MUST be ONLY the requested letter/i);
     expect(prompt).toContain('NEVER add styles, adjectives, or extra words');
+  });
+
+  it('asks STANDARD image searchQuery to follow title and skillLabel', () => {
+    const prompt = buildFlashcardContentPrompt({
+      query: 'Animals flashcards',
+      topic: 'animals',
+      ageMin: 5,
+      ageMax: 6,
+      learningObjective: 'vocabulary',
+      count: 2,
+      selectedTemplate,
+      textComponents: [
+        {
+          componentId: 'skillLabel',
+          componentType: 'title',
+          editable: true,
+          required: true,
+        },
+        {
+          componentId: 'title',
+          componentType: 'title',
+          editable: true,
+          required: true,
+        },
+      ],
+      imageComponents: [
+        {
+          componentId: 'hero',
+          componentType: 'image',
+          editable: true,
+          required: true,
+        },
+      ],
+      subject: 'EVS',
+    });
+
+    expect(prompt).toContain('STANDARD image searchQuery fields');
+    expect(prompt).toContain('"skillLabel"');
+    expect(prompt).toContain('"title"');
+    expect(prompt).toContain('6 to 14 words');
+    expect(prompt).toContain('Do NOT emit a one-word object name');
+    expect(prompt).not.toContain('naming ONLY the bare object');
   });
 });
 

@@ -7,6 +7,7 @@ import {
   PipelineTelemetryContext,
 } from '../../../common/events/pipeline-tracker.events';
 import { PrismaService } from '../../database/prisma.service';
+import { assertGenerationRequestAllowed } from '../../../common/content-safety/assert-user-query';
 import { WORKSHEET_WORKFLOW_EDIT } from '../constants/worksheet.constants';
 import { EditWorksheetDto } from '../dto/edit-worksheet.dto';
 import { GenerateWorksheetDto } from '../dto/generate-worksheet.dto';
@@ -127,6 +128,10 @@ export class WorksheetEditService {
             'instruction is required',
           );
         }
+        assertGenerationRequestAllowed({
+          query: instruction,
+          countryCode: dto.countryCode,
+        });
         return path;
       },
     );
@@ -402,7 +407,7 @@ export class WorksheetEditService {
 
   public async searchImages(
     worksheetId: string,
-    options: { query?: string; path?: string; limit?: number },
+    options: { query?: string; path?: string; limit?: number; countryCode?: string },
   ): Promise<{
     query: string;
     results: Array<{
@@ -434,7 +439,11 @@ export class WorksheetEditService {
         'Provide query or a path whose slot has imageQuery',
       );
     }
-    const results = await this.assetService.searchCandidates(query, options.limit);
+    const results = await this.assetService.searchCandidates(
+      query,
+      options.limit,
+      options.countryCode,
+    );
     return { query, results };
   }
 
@@ -550,6 +559,11 @@ export class WorksheetEditService {
         'Provide requirements to regenerate this worksheet',
       );
     }
+    assertGenerationRequestAllowed({
+      query,
+      topic: dto.topic,
+      countryCode: dto.countryCode,
+    });
     const worksheet = await this.requireWorksheet(worksheetId);
     const template = await this.templateService.getById(worksheet.templateId);
     const previousRequest = asStructureRecord(worksheet.request);

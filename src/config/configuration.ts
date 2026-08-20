@@ -57,8 +57,12 @@ export interface AppConfig {
     imageConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
+    imageEmbeddingMaxAttempts: number;
+    imageEmbeddingRetryDelayMs: number;
     imagePickerLimit: number;
     userUploadS3Prefix: string;
+    defaultCountryCode?: string;
+    contentRestrictionInputRatio: number;
     templateSelectionAi: {
       enabled: boolean;
       provider: string;
@@ -268,6 +272,14 @@ export default (): AppConfig => ({
       process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '8',
       10,
     ),
+    imageEmbeddingMaxAttempts: parseInt(
+      process.env.FLASHCARD_IMAGE_EMBEDDING_MAX_ATTEMPTS || '3',
+      10,
+    ),
+    imageEmbeddingRetryDelayMs: parseInt(
+      process.env.FLASHCARD_IMAGE_EMBEDDING_RETRY_DELAY_MS || '200',
+      10,
+    ),
     imagePickerLimit: parseInt(
       process.env.FLASHCARD_IMAGE_PICKER_LIMIT || '10',
       10,
@@ -276,6 +288,10 @@ export default (): AppConfig => ({
       'FLASHCARD_USER_UPLOAD_S3_PREFIX',
       'flashcards/uploads',
     ).replace(/\/$/, '') || 'flashcards/uploads',
+    defaultCountryCode: envTrim('FLASHCARD_DEFAULT_COUNTRY_CODE') || undefined,
+    contentRestrictionInputRatio: parseFloat(
+      process.env.CONTENT_RESTRICTION_INPUT_RATIO || '0.2',
+    ),
     templateSelectionAi: {
       enabled: process.env.FLASHCARD_TEMPLATE_SELECTION_AI_ENABLED !== 'false',
       provider:

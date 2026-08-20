@@ -5,6 +5,7 @@ import {
   PIPELINE_STAGES,
   PipelineTelemetryContext,
 } from '../../../common/events/pipeline-tracker.events';
+import { assertGenerationRequestAllowed } from '../../../common/content-safety/assert-user-query';
 import { FLASHCARD_WORKFLOW_EDIT } from '../constants/flashcard.constants';
 import { EditFlashcardDto } from '../dto/edit-flashcard.dto';
 import { SaveFlashcardEditsDto } from '../dto/save-flashcards.dto';
@@ -115,6 +116,11 @@ export class FlashcardEditService {
       );
     }
 
+    assertGenerationRequestAllowed({
+      query: instruction,
+      countryCode: dto.countryCode,
+    });
+
     this.emitter.emitStageStarted({
       ...telemetry,
       stageName: PIPELINE_STAGES.LLM_CONTENT_GENERATION,
@@ -129,6 +135,7 @@ export class FlashcardEditService {
           ? component.assetReference?.queryUsed ?? null
           : component.content,
       card,
+      countryCode: dto.countryCode,
       telemetry,
     });
     this.emitter.emitStageCompleted({
@@ -143,6 +150,7 @@ export class FlashcardEditService {
         topic: current.request.topic,
         ageMin: current.request.ageMin,
         ageMax: current.request.ageMax,
+        countryCode: dto.countryCode ?? current.request.countryCode ?? undefined,
       });
       component.assetReference = assetReference;
       component.content = null;
@@ -217,7 +225,7 @@ export class FlashcardEditService {
   }
 
   public async searchLibrary(
-    options: { query?: string; limit?: number },
+    options: { query?: string; limit?: number; countryCode?: string },
   ): Promise<{
     query: string;
     results: Array<{
@@ -237,6 +245,7 @@ export class FlashcardEditService {
     const results = await this.imageRetrievalService.searchCandidates(
       query,
       options.limit,
+      options.countryCode,
     );
     return { query, results };
   }
@@ -248,6 +257,7 @@ export class FlashcardEditService {
       cardId?: string;
       componentId?: string;
       limit?: number;
+      countryCode?: string;
     },
   ): Promise<{
     query: string;
@@ -276,6 +286,7 @@ export class FlashcardEditService {
     const results = await this.imageRetrievalService.searchCandidates(
       query,
       options.limit,
+      options.countryCode,
     );
     return { query, results };
   }

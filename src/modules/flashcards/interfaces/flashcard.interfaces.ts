@@ -106,6 +106,10 @@ export interface AssetReference {
   status: ImageRetrievalStatus;
   queryUsed: string;
   attempts: string[];
+  /** Raw AssetMetadata.colors from image retrieval. */
+  colors?: string[] | null;
+  /** Brand-matched frame hex. White/near-white metadata colors are ignored. */
+  color?: string | null;
 }
 
 export interface EditableComponentPayload {
@@ -190,6 +194,7 @@ export interface GenerateFlashcardsResponse {
     learningObjective: string;
     educationalIntent: string;
     count: number;
+    countryCode?: string | null;
   };
   selection: {
     ruleId: string;
@@ -241,4 +246,5 @@ export type FlashcardErrorCode =
   | 'INVALID_FIELD'
   | 'FIELD_NOT_EDITABLE'
   | 'UNSUPPORTED_FORMAT'
+  | 'CONTENT_NOT_ALLOWED'
   | 'DOWNLOAD_NOT_IMPLEMENTED';

@@ -33,6 +33,13 @@ export class SearchAssetsDto {
   @ApiProperty({ example: 'cartoon elephant' })
   query!: string;
 
+  @ApiPropertyOptional({
+    example: 'IN',
+    description:
+      'ISO country code for content restrictions. Overrides FLASHCARD_DEFAULT_COUNTRY_CODE.',
+  })
+  countryCode?: string;
+
   @ApiPropertyOptional({ example: 10, default: 10 })
   limit?: number;
 

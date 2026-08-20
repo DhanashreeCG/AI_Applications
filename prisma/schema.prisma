@@ -519,3 +519,34 @@ enum FlashcardOutputFormat {
   WEBP
   PDF
 }
+
+enum ContentRestrictionSeverity {
+  BANNED
+  RESTRICTED
+}
+
+enum ContentRestrictionCategory {
+  ANIMAL_FOOD
+  VISUAL_MOTIF
+  RELIGIOUS
+  OTHER
+}
+
+/// Runtime content-safety terms for flashcards (and similar generation).
+/// `countryCode` is ISO 3166-1 alpha-2, or "*" for global terms.
+model ContentRestrictionTerm {
+  id          String                       @id @default(cuid())
+  term        String
+  category    ContentRestrictionCategory
+  severity    ContentRestrictionSeverity
+  countryCode String                       @default("*")
+  active      Boolean                      @default(true)
+  notes       String?
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+
+  @@unique([term, countryCode, severity])
+  @@index([active, countryCode])
+  @@index([active, severity])
+  @@index([category])
+}

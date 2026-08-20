@@ -14,9 +14,11 @@ import { CircuitBreaker } from '../../ai/utils/circuit-breaker.util';
 import { RateLimiter } from '../../ai/utils/rate-limiter.util';
 import {
   DEFAULT_FLASHCARD_PROMPT_VERSION,
+  ForbiddenContentError,
   buildFlashcardContentPrompt,
   buildFlashcardContentSchema,
   buildFlashcardEditPrompt,
+  scanCardsForForbiddenContent,
 } from '../constants/flashcard-prompt.constants';
 import { FLASHCARD_CONTENT_STAGE, FLASHCARD_EDIT_STAGE } from '../constants/flashcard.constants';
 import { FlashcardException } from '../errors/flashcard.exception';
@@ -48,6 +50,7 @@ export interface GenerateContentInput {
   subject?: string | null;
   difficulty?: string | null;
   language?: string;
+  countryCode?: string;
 }
 
 @Injectable()
@@ -243,6 +246,7 @@ export class FlashcardContentService {
     componentType: string;
     currentValue: unknown;
     card: unknown;
+    countryCode?: string;
     telemetry?: PipelineTelemetryContext;
   }): Promise<unknown> {
     if (this.provider === 'gemini' && !this.client) {
@@ -260,7 +264,7 @@ export class FlashcardContentService {
       );
     }
 
-    const prompt = buildFlashcardEditPrompt(input);
+    const prompt = this.buildEditPromptOrThrow(input);
     const invocationId = randomUUID();
     const startedAt = new Date();
     let latencyMs = 0;
@@ -429,7 +433,7 @@ export class FlashcardContentService {
       });
     }
 
-    const basePrompt = buildFlashcardContentPrompt(input);
+    const basePrompt = this.buildContentPromptOrThrow(input);
     const prompt = correction
       ? `${basePrompt}\n\nYour previous response was rejected: ${correction}\nReturn corrected JSON using the exact component keys listed above.`
       : basePrompt;
@@ -586,6 +590,19 @@ export class FlashcardContentService {
           });
         }
         throw validationError;
+      }
+
+      const violations = scanCardsForForbiddenContent(
+        payload.cards,
+        input.countryCode,
+      );
+      if (violations.length > 0) {
+        throw new FlashcardException(
+          'INVALID_LLM_OUTPUT',
+          `Generated content included forbidden term "${violations[0].matchedTerm}"`,
+          HttpStatus.BAD_GATEWAY,
+          { violations },
+        );
       }
 
       if (telemetry) {
@@ -762,6 +779,7 @@ export class FlashcardContentService {
                 subject: input.subject,
                 difficulty: input.difficulty,
                 language: input.language,
+                countryCode: input.countryCode,
               },
               index,
               reason,
@@ -773,5 +791,35 @@ export class FlashcardContentService {
 
       return { cards };
     }
+  }
+
+  private buildContentPromptOrThrow(input: GenerateContentInput): string {
+    try {
+      return buildFlashcardContentPrompt(input);
+    } catch (error) {
+      return this.rethrowForbiddenContent(error);
+    }
+  }
+
+  private buildEditPromptOrThrow(
+    input: Parameters<typeof buildFlashcardEditPrompt>[0],
+  ): string {
+    try {
+      return buildFlashcardEditPrompt(input);
+    } catch (error) {
+      return this.rethrowForbiddenContent(error);
+    }
+  }
+
+  private rethrowForbiddenContent(error: unknown): never {
+    if (error instanceof ForbiddenContentError) {
+      throw new FlashcardException(
+        'CONTENT_NOT_ALLOWED',
+        error.message,
+        HttpStatus.BAD_REQUEST,
+        { matchedTerm: error.matchedTerm, field: error.field },
+      );
+    }
+    throw error;
   }
 }

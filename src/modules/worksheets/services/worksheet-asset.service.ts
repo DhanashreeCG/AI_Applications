@@ -4,7 +4,10 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
 import { SearchService } from '../../search/search.service';
 import type { SearchAssetsResponse } from '../../search/interfaces/search-result.interface';
-import { S3StorageService } from '../../storage/s3-storage.service';
+import {
+  S3StorageService,
+  sanitizeUploadFilename,
+} from '../../storage/s3-storage.service';
 import { PrismaService } from '../../database/prisma.service';
 import {
   PIPELINE_STAGES,
@@ -308,6 +311,7 @@ export class WorksheetAssetService {
   public async searchCandidates(
     query: string,
     limit?: number,
+    countryCode?: string,
   ): Promise<
     Array<{
       assetId: string;
@@ -323,6 +327,7 @@ export class WorksheetAssetService {
     const response = await this.searchService.search({
       query: trimmed,
       limit: limit ?? this.pickerLimit,
+      ...(countryCode ? { countryCode } : {}),
     });
     return response.results.map((hit) => ({
       assetId: hit.assetId,
@@ -419,7 +424,10 @@ export class WorksheetAssetService {
     await this.s3StorageService.uploadFile(file.buffer, {
       key,
       contentType,
-      metadata: { worksheetId, originalname: file.originalname || uploadId },
+      metadata: {
+        worksheetId,
+        originalname: sanitizeUploadFilename(file.originalname, uploadId),
+      },
     });
     return {
       key,

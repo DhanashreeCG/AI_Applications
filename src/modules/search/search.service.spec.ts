@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, HttpException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../database/prisma.service';
 import { OpenAiEmbeddingProvider } from '../ai/providers/openai-embedding.provider';
@@ -60,6 +61,7 @@ describe('SearchService', () => {
         { provide: VectorStorageService, useValue: mockVectorStorage },
         { provide: RedisCacheService, useValue: mockRedisCache },
         LetterQueryDetectorService,
+        { provide: ConfigService, useValue: { get: () => undefined } },
       ],
     }).compile();
 
@@ -197,10 +199,11 @@ describe('SearchService', () => {
     expect(mockEmbeddingProvider.generateEmbedding).toHaveBeenCalled();
   });
 
-  it('should reject empty search queries', async () => {
-    await expect(service.search({ query: '   ' })).rejects.toBeInstanceOf(
-      BadRequestException,
+  it('should reject forbidden search queries before embedding', async () => {
+    await expect(service.search({ query: 'jesus christ' })).rejects.toBeInstanceOf(
+      HttpException,
     );
+    expect(mockEmbeddingProvider.generateEmbedding).not.toHaveBeenCalled();
   });
 
   it('should flush search cache entries', async () => {
