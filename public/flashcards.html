@@ -939,7 +939,97 @@
         width: 10.4cqw;
         height: 10.4cqw;
         border-radius: 50%;
-        background: var(--frame);
+        background: var(--dot-color, var(--frame));
+        display: block;
+      }
+
+      /* Number-tracing only: word centered under the glyph, count → dots */
+      .uno.number-tracing .layout-region[data-region-id='body'],
+      .uno.number-tracing .uno-main {
+        align-items: stretch;
+      }
+
+      .uno.number-tracing .layout-region[data-region-id='footer'],
+      .uno.number-tracing .layout-region[data-region-id='bottom'],
+      .uno.number-tracing .uno-text {
+        align-items: center;
+        text-align: center;
+        width: 100%;
+      }
+
+      .uno.number-tracing [data-component-id='word'] {
+        width: 100%;
+        text-align: center;
+        align-self: center;
+      }
+
+      .uno.number-tracing .uno-figure[data-component-id='numberImage'],
+      .uno.number-tracing .uno-figure[data-component-id='numberTracingImage'],
+      .uno.number-tracing .uno-figure[data-component-id='image'],
+      .uno.number-tracing .schema-letter-hero .uno-figure {
+        width: 100%;
+        flex: 1 1 auto;
+        min-height: 46cqw;
+        align-self: stretch;
+      }
+
+      .uno.number-tracing .schema-letter-hero {
+        min-height: 46cqw;
+      }
+
+      .uno.number-tracing .tracing-caption {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        width: 100%;
+        flex: 0 0 auto;
+        gap: 1.6cqw;
+        text-align: center;
+        padding-top: 1cqw;
+      }
+
+      .uno.number-tracing .uno-dots-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        max-width: 100%;
+      }
+
+      .uno.number-tracing .uno-dots {
+        display: flex;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-content: center;
+        max-width: 86%;
+        gap: 1.8cqw;
+        padding-top: 0;
+      }
+
+      .uno.number-tracing .uno-dots-row {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 2.4cqw;
+      }
+
+      .uno.number-tracing .uno-dots i {
+        width: clamp(7cqw, 8.4cqw, 11cqw);
+        height: clamp(7cqw, 8.4cqw, 11cqw);
+        flex: 0 0 auto;
+      }
+
+      .uno.number-tracing .uno-dots-edit {
+        display: none;
+        margin-top: 1cqw;
+        font-size: 3.4cqw;
+        font-weight: 800;
+        color: var(--frame-ink, #4b3b73);
+      }
+
+      .modal-card.editing .uno.number-tracing .uno-dots-edit {
         display: block;
       }
 
@@ -3297,6 +3387,12 @@
       }
 
       function renderTextComponent(def, merged, ctx) {
+        if (
+          String(merged.componentId || '').toLowerCase() === 'count' &&
+          isNumberTracingContext(ctx)
+        ) {
+          return renderCountDots(merged, ctx);
+        }
         const className = textClassForComponent(merged.componentId, merged.type);
         const node = document.createElement('div');
         node.className = className + (isLongText(merged.content, className) ? ' long' : '');
@@ -3648,10 +3744,236 @@
         );
       }
 
-      function isLetterHeroComponent(compDef, data) {
+      function isLetterHeroComponent(compDef, data, ctx) {
         const id = String((compDef && compDef.id) || (data && data.componentId) || '').toLowerCase();
         const role = semanticRoleOf(compDef, data);
-        return id === 'letterimage' || /phonics\.letter\.image/i.test(role);
+        if (id === 'letterimage' || /phonics\.letter\.image/i.test(role)) return true;
+        return (
+          id === 'numberimage' ||
+          id === 'numbertracingimage' ||
+          /number\.tracing\.image/i.test(role)
+        );
+      }
+
+      function tracingComponentIds(ctx) {
+        const ids = [];
+        ((ctx && ctx.card && ctx.card.components) || []).forEach((item) => {
+          const id = String(item.componentId || item.id || '').toLowerCase();
+          if (id) ids.push(id);
+        });
+        if (ctx && ctx.componentMap) {
+          for (const key of ctx.componentMap.keys()) {
+            const id = String(key || '').toLowerCase();
+            if (id) ids.push(id);
+          }
+        }
+        return ids;
+      }
+
+      function isNumberTracingContext(ctx) {
+        const ids = tracingComponentIds(ctx);
+        if (!ids.includes('count') || !ids.includes('word')) return false;
+        const blockers = [
+          'options',
+          'question',
+          'chips',
+          'objectgrid',
+          'imagecollection',
+          'categories',
+          'answerbox',
+        ];
+        if (ids.some((id) => blockers.includes(id))) return false;
+        if (
+          ids.includes('numberimage') ||
+          ids.includes('numbertracingimage') ||
+          ids.includes('image')
+        ) {
+          return true;
+        }
+        const images = ((ctx && ctx.card && ctx.card.components) || []).filter(
+          (item) => isImageComponent(item) && !isImageCollection(item),
+        );
+        return images.length === 1;
+      }
+
+      function safeCssColor(value) {
+        const text = String(value || '').trim();
+        if (!text) return '';
+        if (/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(text)) return text;
+        if (/^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i.test(text)) {
+          return text;
+        }
+        if (/^[a-z]{3,20}$/i.test(text)) return text;
+        return '';
+      }
+
+      function tracingImageComponent(ctx) {
+        return ((ctx && ctx.card && ctx.card.components) || []).find((item) =>
+          ['numberimage', 'numbertracingimage', 'image'].includes(
+            String(item.componentId || item.id || '').toLowerCase(),
+          ),
+        );
+      }
+
+      function isSkippedTraceColor(value) {
+        const text = String(value || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, '');
+        return !text || /^(white|offwhite|off-white|ivory|cream|snow|beige|#fff|#ffffff|#ffffffff)$/.test(text);
+      }
+
+      function brandThemeFromAssetColors(colors) {
+        const names = {
+          yellow: 0, gold: 0, sunshine: 0, orange: 0, amber: 0,
+          pink: 1, magenta: 1, rose: 1, fuchsia: 1,
+          blue: 2, cyan: 2, sky: 2, teal: 2, aqua: 2,
+          red: 3, coral: 3, scarlet: 3, crimson: 3,
+          green: 4, lime: 4, mint: 4, emerald: 4, olive: 4,
+          purple: 5, violet: 5, lavender: 5, lilac: 5, indigo: 5,
+        };
+        for (const raw of colors || []) {
+          if (isSkippedTraceColor(raw)) continue;
+          const named = String(raw).toLowerCase();
+          for (const key of Object.keys(names)) {
+            if (named.indexOf(key) !== -1) return THEMES[names[key]];
+          }
+          const hex = safeCssColor(raw);
+          if (hex && hex.charAt(0) === '#') {
+            let best = THEMES[0];
+            let bestDistance = Infinity;
+            THEMES.forEach((theme) => {
+              const distance = hexDistance(hex, theme.frame);
+              if (distance < bestDistance) {
+                best = theme;
+                bestDistance = distance;
+              }
+            });
+            return best;
+          }
+        }
+        return null;
+      }
+
+      function hexDistance(a, b) {
+        const pa = parseHexRgb(a);
+        const pb = parseHexRgb(b);
+        if (!pa || !pb) return Infinity;
+        return (pa.r - pb.r) * (pa.r - pb.r) + (pa.g - pb.g) * (pa.g - pb.g) + (pa.b - pb.b) * (pa.b - pb.b);
+      }
+
+      function parseHexRgb(value) {
+        const match = String(value || '').trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+        if (!match) return null;
+        let hex = match[1];
+        if (hex.length === 3) hex = hex.split('').map((ch) => ch + ch).join('');
+        return {
+          r: parseInt(hex.slice(0, 2), 16),
+          g: parseInt(hex.slice(2, 4), 16),
+          b: parseInt(hex.slice(4, 6), 16),
+        };
+      }
+
+      function tracingBrandTheme(ctx) {
+        if (!isNumberTracingContext(ctx)) return null;
+        const image = tracingImageComponent(ctx);
+        const ref = image && image.assetReference;
+        const colors = []
+          .concat(ref && ref.color ? [ref.color] : [])
+          .concat((ref && ref.colors) || [])
+          .concat(image && image.color ? [image.color] : []);
+        return brandThemeFromAssetColors(colors);
+      }
+
+      function tracingImageColor(ctx) {
+        const theme = tracingBrandTheme(ctx);
+        return theme ? theme.frame : '';
+      }
+
+      function parseCountValue(value) {
+        const text = String(value == null ? '' : value).trim().toLowerCase();
+        const numeric = parseInt(text, 10);
+        if (Number.isFinite(numeric) && numeric > 0) return Math.min(20, numeric);
+        const words = {
+          one: 1, two: 2, three: 3, four: 4, five: 5,
+          six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+          eleven: 11, twelve: 12,
+        };
+        return words[text] || 0;
+      }
+
+      function dotRowSizes(count) {
+        const n = Math.max(0, Math.min(20, Number(count) || 0));
+        if (n <= 0) return [];
+        if (n <= 5) return [n];
+        const rows = Math.ceil(n / 5);
+        const base = Math.floor(n / rows);
+        const extra = n % rows;
+        const sizes = [];
+        for (let i = 0; i < rows; i += 1) {
+          sizes.push(base + (i < extra ? 1 : 0));
+        }
+        return sizes;
+      }
+
+      function fillDotRows(host, count) {
+        host.innerHTML = '';
+        dotRowSizes(count).forEach((size) => {
+          const row = document.createElement('div');
+          row.className = 'uno-dots-row';
+          for (let i = 0; i < size; i += 1) {
+            row.appendChild(document.createElement('i'));
+          }
+          host.appendChild(row);
+        });
+      }
+
+      function renderCountDots(merged, ctx) {
+        const count = parseCountValue(merged.content);
+        const wrap = document.createElement('div');
+        wrap.className = 'uno-dots-wrap';
+        wrap.dataset.componentId = merged.componentId || 'count';
+        wrap.dataset.count = String(count);
+
+        const dots = document.createElement('div');
+        dots.className = 'uno-dots';
+        dots.setAttribute('aria-hidden', 'true');
+        const color = tracingImageColor(ctx);
+        if (color) dots.style.setProperty('--dot-color', color);
+        fillDotRows(dots, count);
+        wrap.appendChild(dots);
+
+        const editor = document.createElement('span');
+        editor.className = 'uno-dots-edit';
+        editor.textContent = merged.content || String(count || '');
+        makeEditable(editor, merged, ctx);
+        editor.addEventListener('input', () => {
+          const next = parseCountValue(editor.textContent);
+          wrap.dataset.count = String(next);
+          fillDotRows(dots, next);
+        });
+        wrap.appendChild(editor);
+        return wrap;
+      }
+
+      function decorateNumberTracingCard(root) {
+        if (!root || !root.classList.contains('number-tracing')) return;
+        const figure =
+          root.querySelector('.uno-figure[data-component-id="numberImage"]') ||
+          root.querySelector('.uno-figure[data-component-id="numberTracingImage"]') ||
+          root.querySelector('.uno-figure[data-component-id="image"]') ||
+          root.querySelector('.uno-figure');
+        const word = root.querySelector('[data-component-id="word"]');
+        const dots = root.querySelector('.uno-dots-wrap');
+        if (!figure || !word) return;
+        let stack = figure.parentElement && figure.parentElement.querySelector(':scope > .tracing-caption');
+        if (!stack) {
+          stack = document.createElement('div');
+          stack.className = 'tracing-caption';
+          figure.parentNode.insertBefore(stack, figure.nextSibling);
+        }
+        if (word.parentElement !== stack) stack.appendChild(word);
+        if (dots && dots.parentElement !== stack) stack.appendChild(dots);
       }
 
       function entryIsImage(entry) {
@@ -3666,6 +3988,12 @@
       function renderSchemaGridItem(entry, ctx, options) {
         const merged = mergeComponentDef(entry.def, entry.data);
         if (merged.visible === false) return null;
+        if (
+          String(merged.componentId || entry.id || '').toLowerCase() === 'count' &&
+          isNumberTracingContext(ctx)
+        ) {
+          return renderCountDots(merged, ctx);
+        }
 
         /* Images must never be treated as blank text cells. */
         if (entryIsImage(entry)) {
@@ -3835,7 +4163,7 @@
           if (id === 'brandinglogo') continue;
           if (pairedTargets.has(compDef.id)) continue;
           const data = ctx.componentMap.get(compDef.id);
-          if (isLetterHeroComponent(compDef, data)) {
+          if (isLetterHeroComponent(compDef, data, ctx)) {
             heroDefs.push({ compDef, data });
             continue;
           }
@@ -4272,12 +4600,15 @@
         const ctx = buildRenderContext(card, payload, theme, index);
 
         const root = document.createElement('article');
-        root.className = 'uno';
-        root.style.setProperty('--frame', theme.frame);
-        root.style.setProperty('--frame-ink', theme.ink);
-        root.style.setProperty('--tint', theme.tint);
-        root.style.setProperty('--dash', theme.dash);
-        root.style.setProperty('--bubble', theme.bubble);
+        root.className = 'uno' + (isNumberTracingContext(ctx) ? ' number-tracing' : '');
+        const tracingTheme = isNumberTracingContext(ctx) ? tracingBrandTheme(ctx) : null;
+        const palette = tracingTheme || theme;
+        root.style.setProperty('--frame', palette.frame);
+        root.style.setProperty('--dot-color', palette.frame);
+        root.style.setProperty('--frame-ink', palette.ink);
+        root.style.setProperty('--tint', palette.tint);
+        root.style.setProperty('--dash', palette.dash);
+        root.style.setProperty('--bubble', palette.bubble);
 
         const frame = document.createElement('div');
         frame.className = 'uno-frame';
@@ -4295,6 +4626,7 @@
             console.warn('Layout validation:', issues);
           }
           sheet.appendChild(LayoutFactory.render(layoutType, layoutDef, card, ctx));
+          decorateNumberTracingCard(root);
         }
 
         frame.appendChild(sheet);
@@ -4638,6 +4970,16 @@
           }
         });
 
+        root.querySelectorAll('.uno-dots-wrap[data-component-id]').forEach((wrap) => {
+          const componentId = wrap.getAttribute('data-component-id');
+          if (!componentId) return;
+          const editor = wrap.querySelector('.uno-dots-edit');
+          const text = editor ? editor.textContent.trim() : wrap.getAttribute('data-count') || '';
+          fields.push({ cardId, path: componentId, componentId, value: text });
+          const hit = findComponentById(card, componentId);
+          if (hit && hit.component) hit.component.content = text;
+        });
+
         root.querySelectorAll('.comp-chips[data-component-id]').forEach((wrap) => {
           const componentId = wrap.getAttribute('data-component-id');
           if (!componentId) return;
@@ -4655,6 +4997,7 @@
 
       function applyImageToCardData(card, componentId, item) {
         const hit = findComponentById(card, componentId);
+        const previous = hit && hit.component && hit.component.assetReference;
         const imageUrl = item.imageUrl || '';
         const ref = {
           assetId: item.assetId || null,
@@ -4668,6 +5011,8 @@
           queryUsed: item.caption || item.queryUsed || '',
           attempts: [],
           userUploadedKey: item.userUploadedKey || null,
+          colors: item.colors || (previous && previous.colors) || [],
+          color: item.color || (previous && previous.color) || null,
         };
         if (hit && hit.component) {
           hit.component.assetReference = ref;

@@ -106,6 +106,10 @@ export interface AssetReference {
   status: ImageRetrievalStatus;
   queryUsed: string;
   attempts: string[];
+  /** Raw AssetMetadata.colors from image retrieval. */
+  colors?: string[] | null;
+  /** Brand-matched frame hex. White/near-white metadata colors are ignored. */
+  color?: string | null;
 }
 
 export interface EditableComponentPayload {

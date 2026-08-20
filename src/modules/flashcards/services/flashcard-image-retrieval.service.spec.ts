@@ -25,15 +25,21 @@ describe('FlashcardImageRetrievalService', () => {
   const eventEmitter = {
     emit: jest.fn(),
   };
+  const prisma = {
+    assetMetadata: {
+      findUnique: jest.fn().mockResolvedValue({ colors: ['white', 'green'] }),
+    },
+  };
 
   let service: FlashcardImageRetrievalService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.assetMetadata.findUnique.mockResolvedValue({ colors: ['white', 'green'] });
     service = new FlashcardImageRetrievalService(
       searchService as unknown as SearchService,
       s3StorageService as unknown as S3StorageService,
-      {} as PrismaService,
+      prisma as unknown as PrismaService,
       configService as unknown as ConfigService,
       eventEmitter as unknown as EventEmitter2,
     );
@@ -87,6 +93,12 @@ describe('FlashcardImageRetrievalService', () => {
     expect(result.status).toBe('found');
     expect(result.assetId).toBe('asset-1');
     expect(result.attempts).toEqual(['semantic']);
+    expect(prisma.assetMetadata.findUnique).toHaveBeenCalledWith({
+      where: { assetId: 'asset-1' },
+      select: { colors: true },
+    });
+    expect(result.colors).toEqual(['white', 'green']);
+    expect(result.color).toBe('#3DD68C');
   });
 
   it('always selects the highest-similarity hit, never a random lower-ranked one', async () => {
