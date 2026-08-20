@@ -3807,18 +3807,87 @@
         return '';
       }
 
-      function tracingImageColor(ctx) {
-        const card = ctx && ctx.card;
-        const images = ((card && card.components) || []).filter(
-          (item) =>
-            isImageComponent(item) ||
-            ['image', 'numberimage', 'numbertracingimage'].includes(
-              String(item.componentId || item.id || '').toLowerCase(),
-            ),
+      function tracingImageComponent(ctx) {
+        return ((ctx && ctx.card && ctx.card.components) || []).find((item) =>
+          ['numberimage', 'numbertracingimage', 'image'].includes(
+            String(item.componentId || item.id || '').toLowerCase(),
+          ),
         );
-        const image = images[0];
+      }
+
+      function isSkippedTraceColor(value) {
+        const text = String(value || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, '');
+        return !text || /^(white|offwhite|off-white|ivory|cream|snow|beige|#fff|#ffffff|#ffffffff)$/.test(text);
+      }
+
+      function brandThemeFromAssetColors(colors) {
+        const names = {
+          yellow: 0, gold: 0, sunshine: 0, orange: 0, amber: 0,
+          pink: 1, magenta: 1, rose: 1, fuchsia: 1,
+          blue: 2, cyan: 2, sky: 2, teal: 2, aqua: 2,
+          red: 3, coral: 3, scarlet: 3, crimson: 3,
+          green: 4, lime: 4, mint: 4, emerald: 4, olive: 4,
+          purple: 5, violet: 5, lavender: 5, lilac: 5, indigo: 5,
+        };
+        for (const raw of colors || []) {
+          if (isSkippedTraceColor(raw)) continue;
+          const named = String(raw).toLowerCase();
+          for (const key of Object.keys(names)) {
+            if (named.indexOf(key) !== -1) return THEMES[names[key]];
+          }
+          const hex = safeCssColor(raw);
+          if (hex && hex.charAt(0) === '#') {
+            let best = THEMES[0];
+            let bestDistance = Infinity;
+            THEMES.forEach((theme) => {
+              const distance = hexDistance(hex, theme.frame);
+              if (distance < bestDistance) {
+                best = theme;
+                bestDistance = distance;
+              }
+            });
+            return best;
+          }
+        }
+        return null;
+      }
+
+      function hexDistance(a, b) {
+        const pa = parseHexRgb(a);
+        const pb = parseHexRgb(b);
+        if (!pa || !pb) return Infinity;
+        return (pa.r - pb.r) * (pa.r - pb.r) + (pa.g - pb.g) * (pa.g - pb.g) + (pa.b - pb.b) * (pa.b - pb.b);
+      }
+
+      function parseHexRgb(value) {
+        const match = String(value || '').trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+        if (!match) return null;
+        let hex = match[1];
+        if (hex.length === 3) hex = hex.split('').map((ch) => ch + ch).join('');
+        return {
+          r: parseInt(hex.slice(0, 2), 16),
+          g: parseInt(hex.slice(2, 4), 16),
+          b: parseInt(hex.slice(4, 6), 16),
+        };
+      }
+
+      function tracingBrandTheme(ctx) {
+        if (!isNumberTracingContext(ctx)) return null;
+        const image = tracingImageComponent(ctx);
         const ref = image && image.assetReference;
-        return safeCssColor((ref && (ref.color || ref.dominantColor)) || (image && image.color));
+        const colors = []
+          .concat(ref && ref.color ? [ref.color] : [])
+          .concat((ref && ref.colors) || [])
+          .concat(image && image.color ? [image.color] : []);
+        return brandThemeFromAssetColors(colors);
+      }
+
+      function tracingImageColor(ctx) {
+        const theme = tracingBrandTheme(ctx);
+        return theme ? theme.frame : '';
       }
 
       function parseCountValue(value) {
@@ -4532,13 +4601,14 @@
 
         const root = document.createElement('article');
         root.className = 'uno' + (isNumberTracingContext(ctx) ? ' number-tracing' : '');
-        root.style.setProperty('--frame', theme.frame);
-        const tracingColor = tracingImageColor(ctx);
-        if (tracingColor) root.style.setProperty('--dot-color', tracingColor);
-        root.style.setProperty('--frame-ink', theme.ink);
-        root.style.setProperty('--tint', theme.tint);
-        root.style.setProperty('--dash', theme.dash);
-        root.style.setProperty('--bubble', theme.bubble);
+        const tracingTheme = isNumberTracingContext(ctx) ? tracingBrandTheme(ctx) : null;
+        const palette = tracingTheme || theme;
+        root.style.setProperty('--frame', palette.frame);
+        root.style.setProperty('--dot-color', palette.frame);
+        root.style.setProperty('--frame-ink', palette.ink);
+        root.style.setProperty('--tint', palette.tint);
+        root.style.setProperty('--dash', palette.dash);
+        root.style.setProperty('--bubble', palette.bubble);
 
         const frame = document.createElement('div');
         frame.className = 'uno-frame';
@@ -4941,6 +5011,7 @@
           queryUsed: item.caption || item.queryUsed || '',
           attempts: [],
           userUploadedKey: item.userUploadedKey || null,
+          colors: item.colors || (previous && previous.colors) || [],
           color: item.color || (previous && previous.color) || null,
         };
         if (hit && hit.component) {

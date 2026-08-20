@@ -38,6 +38,7 @@ import {
   FlashcardPipelineEmitter,
   hashPayload,
 } from '../telemetry/flashcard-pipeline.events';
+import { resolveFlashcardBrandColor } from '../utils/brand-color.util';
 
 interface RetrieveImagesInput {
   queries: Array<ImageSearchQuery | string>;
@@ -232,6 +233,7 @@ export class FlashcardImageRetrievalService {
         });
       }
 
+      const colors = await this.loadAssetColors(candidate.assetId, candidate.colors);
       return {
         assetId: candidate.assetId,
         s3ObjectKey: candidate.s3ObjectKey,
@@ -244,6 +246,8 @@ export class FlashcardImageRetrievalService {
         status: 'found',
         queryUsed: query,
         attempts: [...attempts],
+        colors,
+        color: resolveFlashcardBrandColor(colors),
       };
     } catch (error) {
       const message = getErrorMessage(error);
@@ -315,6 +319,8 @@ export class FlashcardImageRetrievalService {
       status,
       queryUsed,
       attempts,
+      colors: [],
+      color: null,
     };
   }
 
@@ -369,6 +375,8 @@ export class FlashcardImageRetrievalService {
       caption: string;
       searchDescription: string;
       imageUrl: string;
+      colors: string[];
+      color: string | null;
     }>
   > {
     const trimmed = query.trim();
@@ -385,6 +393,8 @@ export class FlashcardImageRetrievalService {
       caption: hit.caption,
       searchDescription: hit.searchDescription,
       imageUrl: `${FLASHCARD_ASSET_IMAGE_PATH}/${hit.assetId}/image`,
+      colors: hit.colors || [],
+      color: resolveFlashcardBrandColor(hit.colors),
     }));
   }
 
@@ -398,7 +408,7 @@ export class FlashcardImageRetrievalService {
         id: true,
         s3ObjectKey: true,
         mimeType: true,
-        metadata: { select: { caption: true } },
+        metadata: { select: { caption: true, colors: true } },
       },
     });
     if (!asset) {
@@ -420,6 +430,8 @@ export class FlashcardImageRetrievalService {
       status: 'found',
       queryUsed,
       attempts: [],
+      colors: asset.metadata?.colors ?? [],
+      color: resolveFlashcardBrandColor(asset.metadata?.colors),
     };
   }
 
@@ -443,6 +455,8 @@ export class FlashcardImageRetrievalService {
       status: 'found',
       queryUsed: previous?.queryUsed ?? '',
       attempts: previous?.attempts ?? [],
+      colors: previous?.colors ?? [],
+      color: previous?.color ?? null,
     };
   }
 
@@ -520,6 +534,20 @@ export class FlashcardImageRetrievalService {
         HttpStatus.NOT_FOUND,
       );
     }
+  }
+
+  private async loadAssetColors(
+    assetId: string,
+    fallback?: string[] | null,
+  ): Promise<string[]> {
+    const row = await this.prisma.assetMetadata.findUnique({
+      where: { assetId },
+      select: { colors: true },
+    });
+    if (row?.colors?.length) {
+      return row.colors;
+    }
+    return Array.isArray(fallback) ? fallback.filter(Boolean) : [];
   }
 
   private emitEmbeddingUsage(
