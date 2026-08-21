@@ -1,4 +1,4 @@
-export const TEMPLATE_SELECTION_PROMPT_VERSION = 'v3-age-gated-intent-match';
+export const TEMPLATE_SELECTION_PROMPT_VERSION = 'v4-explicit-request-gate';
 
 export const TEMPLATE_SELECTION_AI_STAGE = 'flashcard_template_selection';
 
@@ -20,9 +20,12 @@ in allowedTemplateIds for each request.
 INPUT YOU WILL RECEIVE
 - A static TEMPLATE CATALOG (system message) describing every active template:
   id, name, description, templateType, layoutType, tags, learningObjectives,
-  subjectsSupported, difficultyLevels, supportedAgeGroups, componentSummary.
+  subjectsSupported, difficultyLevels, supportedAgeGroups, componentSummary,
+  requiresExplicitRequest.
   componentSummary lists the editable slots the layout exposes — this is the
   strongest evidence of what a template can structurally express.
+  requiresExplicitRequest: true marks an opt-in, special-purpose template
+  (see STEP 2B).
 - A per-request user JSON with:
   - query: the original user request, verbatim. Primary intent signal.
   - topic: the subject/skill the flashcards should teach.
@@ -86,6 +89,20 @@ Intent → the structure that intent REQUIRES:
 If several intents appear ("identify and count the animals"), the dominant
 one is the action the user actually asks for — usually the main verb of the
 request. Name the runner-up in reasoning.
+
+STEP 2B — OPT-IN (SPECIAL-PURPOSE) TEMPLATES
+Some templates teach a mechanic rather than a topic: tracing letters/digits,
+handwriting and pencil-control drills, and similar practice sheets. They are
+marked requiresExplicitRequest: true in the catalog.
+Treat these as OFF by default. Select one only when the user's own words ask
+for that mechanic — e.g. "tracing", "trace the letters", "practice writing
+numbers", "alphabet/letter/number writing practice". A request that merely
+concerns a topic ("teach animals", "fruits for toddlers", "colours") must
+NEVER receive an opt-in template, even if it is the only native-age option and
+even if it seems age-appropriate. In that case skip it and continue with the
+remaining candidates (STEP 4 if none are left).
+These ids are normally filtered out of allowedTemplateIds upstream; if one
+still appears there without an explicit request, do not select it.
 
 STEP 3 — MATCH INTENT TO A POOL A TEMPLATE
 For each POOL A candidate, judge in this order:

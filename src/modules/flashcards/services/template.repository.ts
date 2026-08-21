@@ -87,6 +87,10 @@ export class TemplateRepository {
     learningObjectives: string[];
     difficultyLevels: string[];
     templateVersion: string;
+    templateType: string;
+    tags: string[];
+    requiresExplicitRequest: boolean;
+    explicitRequestKeywords: string[];
   }): SelectableRule {
     const ageBounds = parseAgeGroupBounds(template.supportedAgeGroups);
     return {
@@ -111,6 +115,10 @@ export class TemplateRepository {
       templateObjectives: template.learningObjectives,
       templateDifficulties: template.difficultyLevels,
       templateVersion: template.templateVersion,
+      templateTags: template.tags,
+      templateType: template.templateType,
+      requiresExplicitRequest: template.requiresExplicitRequest,
+      explicitRequestKeywords: template.explicitRequestKeywords,
     };
   }
 
@@ -138,6 +146,10 @@ export class TemplateRepository {
       learningObjectives: string[];
       difficultyLevels: string[];
       templateVersion: string;
+      templateType: string;
+      tags: string[];
+      requiresExplicitRequest: boolean;
+      explicitRequestKeywords: string[];
     },
   ): SelectableRule {
     const ageBounds = parseAgeGroupBounds(template.supportedAgeGroups);
@@ -163,6 +175,10 @@ export class TemplateRepository {
       templateObjectives: template.learningObjectives,
       templateDifficulties: template.difficultyLevels,
       templateVersion: template.templateVersion,
+      templateTags: template.tags,
+      templateType: template.templateType,
+      requiresExplicitRequest: template.requiresExplicitRequest,
+      explicitRequestKeywords: template.explicitRequestKeywords,
     };
   }
 
@@ -196,6 +212,8 @@ export class TemplateRepository {
     thumbnail: string | null;
     templateVersion: string;
     active: boolean;
+    requiresExplicitRequest?: boolean;
+    explicitRequestKeywords?: string[];
   }): Promise<SelectedTemplatePayload> {
     const created = await this.createTemplates([input]);
     return created[0];
@@ -219,6 +237,8 @@ export class TemplateRepository {
       thumbnail: string | null;
       templateVersion: string;
       active: boolean;
+      requiresExplicitRequest?: boolean;
+      explicitRequestKeywords?: string[];
     }>,
   ): Promise<SelectedTemplatePayload[]> {
     const templates = await this.prisma.$transaction(
@@ -242,6 +262,8 @@ export class TemplateRepository {
             thumbnail: input.thumbnail,
             templateVersion: input.templateVersion,
             active: input.active,
+            requiresExplicitRequest: input.requiresExplicitRequest ?? false,
+            explicitRequestKeywords: input.explicitRequestKeywords ?? [],
           },
         }),
       ),

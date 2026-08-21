@@ -220,6 +220,12 @@ model FlashcardTemplate {
   pageSize           String                  @default("A6")
   orientation        String                  @default("PORTRAIT")
   thumbnail          String?
+  /// Opt-in layouts (tracing, handwriting drills). Excluded from automatic
+  /// selection unless the request explicitly asks for them.
+  requiresExplicitRequest  Boolean           @default(false) @map("requires_explicit_request")
+  /// Query terms that count as explicitly asking for this template.
+  /// Falls back to tags + templateType when left empty.
+  explicitRequestKeywords  String[]          @default([]) @map("explicit_request_keywords")
   selectionRules     TemplateSelectionRule[]
   flashcardSets      FlashcardSet[]
 

@@ -46,6 +46,8 @@ export interface TemplateSelectionCriteria {
   grade?: string;
   subject?: string;
   topic?: string;
+  /** Raw user request. Used only to unlock opt-in templates, never to rank. */
+  query?: string;
   learningObjective?: string;
   intent?: string;
   difficulty?: string;
