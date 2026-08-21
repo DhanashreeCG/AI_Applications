@@ -589,6 +589,8 @@ export class FlashcardOrchestratorService {
         grade: resolved.grade,
         subject: resolved.subject,
         difficulty: resolved.difficulty,
+        subjectConfidence: resolved.subjectConfidence,
+        difficultyConfidence: resolved.difficultyConfidence,
         query: resolved.query,
         telemetry,
       });

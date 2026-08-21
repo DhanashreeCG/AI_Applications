@@ -48,6 +48,13 @@ export interface TemplateSelectionCriteria {
   topic?: string;
   /** Raw user request. Used only to unlock opt-in templates, never to rank. */
   query?: string;
+  /**
+   * Whether subject / difficulty were supplied by the caller or guessed from
+   * the query. Only caller-supplied values gate eligibility; guessed ones are
+   * ranking signals. Defaults to hard-filtering when omitted.
+   */
+  subjectConfidence?: 'explicit' | 'inferred' | 'age_default';
+  difficultyConfidence?: 'explicit' | 'inferred' | 'age_default';
   learningObjective?: string;
   intent?: string;
   difficulty?: string;

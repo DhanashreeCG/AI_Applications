@@ -510,7 +510,20 @@ function collectEligibleRules(
       normalizeDifficulty,
     );
 
-    if (!grade.passes || !subject.passes || !difficulty.passes) {
+    // A subject/difficulty guessed from the query is topic in disguise, so it
+    // may only influence rank. Gating on it collapses the pool to whichever
+    // template happens to declare the guessed subject.
+    const subjectGates = (criteria.subjectConfidence ?? 'explicit') === 'explicit';
+    const difficultyGates =
+      (criteria.difficultyConfidence ?? 'explicit') === 'explicit';
+
+    if (!grade.passes) {
+      continue;
+    }
+    if (subjectGates && !subject.passes) {
+      continue;
+    }
+    if (difficultyGates && !difficulty.passes) {
       continue;
     }
 

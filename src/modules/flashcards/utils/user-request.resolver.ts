@@ -12,6 +12,15 @@ import { FlashcardException } from '../errors/flashcard.exception';
 
 export type ObjectiveConfidence = 'exact_keyword' | 'age_default';
 
+/**
+ * Where a dimension came from. `explicit` = the caller passed it on the
+ * request; `inferred` = guessed from the query wording; `age_default` =
+ * derived from the age band. Only `explicit` values may gate eligibility —
+ * an inferred subject is really the topic in disguise, and topic must not
+ * decide the template.
+ */
+export type DimensionConfidence = 'explicit' | 'inferred' | 'age_default';
+
 export interface LearningObjectiveResolution {
   learningObjective: LearningObjective;
   objectiveConfidence: ObjectiveConfidence;
@@ -194,6 +203,8 @@ export interface ResolvedUserRequest {
   learningObjective: LearningObjective;
   objectiveConfidence: ObjectiveConfidence;
   educationalIntent: LearningObjective;
+  subjectConfidence: DimensionConfidence;
+  difficultyConfidence: DimensionConfidence;
 }
 
 /**
@@ -573,14 +584,26 @@ export function resolveUserRequest(input: {
     );
   }
 
+  const explicitDifficulty = normalizeDifficulty(input.difficulty);
+  const queryDifficulty = explicitDifficulty
+    ? null
+    : resolveDifficultyFromQuery(query);
   const difficulty =
-    normalizeDifficulty(input.difficulty) ??
-    resolveDifficultyFromQuery(query) ??
+    explicitDifficulty ??
+    queryDifficulty ??
     (grade ? ageDefaultsForGrade(grade)?.difficulty : null) ??
     difficultyFromAge(ageMin, ageMax);
+  const difficultyConfidence: DimensionConfidence = explicitDifficulty
+    ? 'explicit'
+    : queryDifficulty
+      ? 'inferred'
+      : 'age_default';
 
-  const subject =
-    normalizeSubject(input.subject) ?? resolveSubjectFromQuery(query);
+  const explicitSubject = normalizeSubject(input.subject);
+  const subject = explicitSubject ?? resolveSubjectFromQuery(query);
+  const subjectConfidence: DimensionConfidence = explicitSubject
+    ? 'explicit'
+    : 'inferred';
 
   const language =
     input.language?.trim() ||
@@ -600,5 +623,7 @@ export function resolveUserRequest(input: {
     learningObjective,
     objectiveConfidence: objectiveResolution.objectiveConfidence,
     educationalIntent: learningObjective,
+    subjectConfidence,
+    difficultyConfidence,
   };
 }
