@@ -921,18 +921,37 @@
         box-shadow: 0 1.4cqw 3cqw rgba(0, 0, 0, 0.12);
       }
 
-      /* FOUR_QUADRANT_CENTER only: keep the center pill inside the
-         dashed-cross gap so top-row labels (Spring / Summer) stay visible.
-         Overlay and other layouts still use the default .uno-bubble. */
+      /* FOUR_QUADRANT_CENTER only: cluster each image+label toward the
+         center pill (not the outer corner of its quadrant) so top and
+         bottom items share the same clearance. Other layouts unchanged. */
+      .layout-four-quadrant {
+        --fq-around-center: 8.5cqw;
+      }
+
       .layout-four-quadrant .uno-cells.quad {
-        gap: 9cqw 3.2cqw;
+        gap: var(--fq-around-center) 2.8cqw;
+      }
+
+      .layout-four-quadrant .uno-cell {
+        justify-content: center;
+        gap: 0.8cqw;
+      }
+
+      .layout-four-quadrant .uno-cell:nth-child(-n+2) {
+        justify-content: flex-end;
+        padding-bottom: 0;
+      }
+
+      .layout-four-quadrant .uno-cell:nth-child(n+3) {
+        justify-content: flex-start;
+        padding-top: 0;
       }
 
       .layout-four-quadrant .uno-cell .uno-figure {
-        flex: 0 1 auto;
-        width: 78%;
+        flex: 0 0 auto;
+        width: 68%;
         aspect-ratio: 1;
-        max-height: 62%;
+        max-height: 48%;
       }
 
       .layout-four-quadrant .uno-cells.quad .cell-label {
@@ -942,10 +961,10 @@
       }
 
       .layout-four-quadrant .uno-bubble {
-        min-width: 20cqw;
-        max-width: 40cqw;
-        padding: 1.4cqw 3.4cqw;
-        font-size: 5.8cqw;
+        min-width: 18cqw;
+        max-width: 38cqw;
+        padding: 1.2cqw 3cqw;
+        font-size: 5.2cqw;
         line-height: 1.05;
         border-radius: 999px;
         z-index: 2;
