@@ -921,6 +921,37 @@
         box-shadow: 0 1.4cqw 3cqw rgba(0, 0, 0, 0.12);
       }
 
+      /* FOUR_QUADRANT_CENTER only: keep the center pill inside the
+         dashed-cross gap so top-row labels (Spring / Summer) stay visible.
+         Overlay and other layouts still use the default .uno-bubble. */
+      .layout-four-quadrant .uno-cells.quad {
+        gap: 9cqw 3.2cqw;
+      }
+
+      .layout-four-quadrant .uno-cell .uno-figure {
+        flex: 0 1 auto;
+        width: 78%;
+        aspect-ratio: 1;
+        max-height: 62%;
+      }
+
+      .layout-four-quadrant .uno-cells.quad .cell-label {
+        position: relative;
+        z-index: 3;
+        font-size: 4.2cqw;
+      }
+
+      .layout-four-quadrant .uno-bubble {
+        min-width: 20cqw;
+        max-width: 40cqw;
+        padding: 1.4cqw 3.4cqw;
+        font-size: 5.8cqw;
+        line-height: 1.05;
+        border-radius: 999px;
+        z-index: 2;
+        pointer-events: none;
+      }
+
       /* counting dots (number-concept templates) — max 5 per row like the
          printed reference cards, so 8 reads as 5 + 3 */
       .uno-dots {
