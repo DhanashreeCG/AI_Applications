@@ -74,11 +74,16 @@ Also decide the SHAPE of the content the topic implies:
 - Closed set — the topic is a small, naturally complete group whose members
   belong together (a handful of items, typically 3-6). The teaching value is
   seeing the members side by side.
+- Pattern set — the topic is a group of examples that share one feature: a
+  sound, a rhyme, a letter, a spelling pattern, a prefix or suffix, a word
+  ending. The feature is the lesson and the examples only make sense next to
+  each other, so this behaves like a closed set: show several examples
+  together in separate cells, never one example per card.
 - Open set — the topic is an unbounded category with many members, taught one
   example at a time.
-A closed set wants a multi-cell layout that shows the members together. An
-open set wants one item per card. This shape decision matters more than any
-label in the template's description.
+A closed or pattern set wants a multi-cell layout that shows the members
+together. An open set wants one item per card. This shape decision matters
+more than any label in the template's description.
 
 Intent → the structure that intent REQUIRES:
 - vocabulary / naming ("teach words", "name the", one thing per card)
