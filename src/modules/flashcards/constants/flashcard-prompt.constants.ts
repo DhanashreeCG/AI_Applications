@@ -7,9 +7,10 @@ import {
   containsForbiddenContent,
   topicIsPrimarilyForbidden,
 } from '../utils/content-restriction.registry';
+import { requestWantsLineArt } from '../utils/image-query.util';
 
 export const DEFAULT_FLASHCARD_PROMPT_VERSION =
-  'v6-content-safety-no-adjectives-topic-lock-variety';
+  'v7-asset-shaped-image-queries-line-art-gating';
 
 function ageBandGuidance(ageMin: number, ageMax: number): string {
   const midpoint = (ageMin + ageMax) / 2;
@@ -923,7 +924,7 @@ export function buildFlashcardContentPrompt(input: {
         }`;
       }
       return `        "${component.componentId}": {
-          "searchQuery": "<detailed retrieval phrase: this card's title subject + skillLabel/topic domain + what the picture must clearly show>",
+          "searchQuery": "<visual phrase only, 2-6 words: art style + this card's bare object noun + its category noun, e.g. \\"cartoon ant insect\\" — no teaching-purpose words, no invented scenery>",
           "expectedObjects": ["<primary expected object, bare noun matching the title>"],
           "preferredStyle": "cartoon",
           "preferredBackground": "white",
@@ -963,7 +964,7 @@ GENERIC SKILL LABEL fields (e.g. ${genericSkillLabelComponents.map((c) => `"${c.
       ? `
 PER-CARD OBJECT TITLE fields (e.g. ${perCardObjectTitleComponents.map((c) => `"${c.componentId}"`).join(', ')}):
 - This is NOT the generic topic label. It must name the SPECIFIC object, animal, word, or number that THIS card is actually about — a bare noun only, no adjectives (e.g. "Lion", "Strawberry", "Seven" — not "Big Lion", not the generic topic word "Animals"/"Fruits").
-- It MUST exactly match, in singular bare-noun form, this same card's image expectedObjects[0]. If the image on this card shows a lion, this field must say "Lion" — never the generic category name, and never a different animal. The image searchQuery may be a longer phrase, but it must still be about that same title subject.
+- It MUST exactly match, in singular bare-noun form, this same card's image expectedObjects[0]. If the image on this card shows a lion, this field must say "Lion" — never the generic category name, and never a different animal. The image searchQuery names that same subject with a style word and category noun.
 - Must be different for each card in the set (see CROSS-CARD CONTENT UNIQUENESS below) — it is the per-card counterpart to the set-wide GENERIC SKILL LABEL, not a duplicate of it.
 - Still respects the TOPIC DOMAIN LOCK and STRICTLY FORBIDDEN CONTENT rules below.
 - Ignore age-band sentence/narrative guidelines for this field — it is a short label, not a sentence.`
@@ -984,18 +985,38 @@ BARE_EXACT_QUERY image fields (e.g. ${bareExactQueryImages
   const titleIds = perCardObjectTitleComponents.map((c) => `"${c.componentId}"`);
   const standardImageIds = standardImages.map((c) => `"${c.componentId}"`);
 
+  // The library holds both finished coloured pictures and uncoloured line art
+  // (tracing/colouring sheets). Line art is only correct when the request is
+  // actually about tracing or colouring, so the decision is made here rather
+  // than left to the model.
+  const wantsLineArt = requestWantsLineArt({
+    query: input.query,
+    topic: input.topic,
+    learningObjective: input.learningObjective,
+    subject: input.subject,
+  });
+
+  const imageMediumRules = wantsLineArt
+    ? `- IMAGE MEDIUM — this request IS about tracing / colouring / outline work. The library holds both finished coloured pictures and uncoloured line-art outlines. Put exactly one line-art term ("line art" or "outline") in searchQuery ONLY for slots that must show the uncoloured drawing to be traced or coloured. Any slot that should still show a normal coloured picture must contain no line-art term at all. Never put a line-art term on every slot by default.`
+    : `- IMAGE MEDIUM — this request is NOT about tracing or colouring, so every slot must retrieve a finished coloured picture. searchQuery MUST NOT contain "line art", "lineart", "outline", "black and white", "coloring", "colouring", "sketch", "silhouette", "trace", or "tracing". Use "cartoon" as the style word.`;
+
   const standardImageQueryRules =
     standardImages.length > 0
       ? `
 STANDARD image searchQuery fields (e.g. ${standardImageIds.join(', ')}):
-- Do NOT emit a one-word object name. Write a detailed semantic retrieval phrase (typically 6 to 14 words) so search can find the correct educational picture for THIS card.
-- ${titleIds.length > 0 ? `The primary subject MUST be the object named in ${titleIds.join(', ')} on this card (the PER_CARD_OBJECT_TITLE).` : `The primary subject MUST be the specific object this card teaches (the per-card title/label), not a generic category.`}
-- ${skillLabelIds.length > 0 ? `The scene MUST stay inside the domain named by ${skillLabelIds.join(', ')} (the GENERIC SKILL LABEL) and the requested topic "${input.topic}". Never retrieve an image from a different skill.` : `The scene MUST stay inside the requested topic "${input.topic}"${input.subject ? ` and subject "${input.subject}"` : ''}.`}
-- Include concrete visual/educational detail: what is shown (whole identifiable subject), typical setting or use that belongs to that skill, and enough nouns that the picture cannot be confused with a sibling topic (e.g. fruit vs vegetable, letter glyph vs object that starts with the letter).
-- expectedObjects[0] remains the bare singular noun that matches the title (e.g. "strawberry"). searchQuery is the longer retrieval phrase ABOUT that noun.
-- Correct: title "Lion", skillLabel "Animals" → searchQuery "lion wild animal standing in grassland". Forbidden: "lion" alone, "juicy strawberry", a query about a different animal than the title, or boilerplate like "educational flashcard".
-- Still follow NO ADJECTIVES RULE for the object's own name (no "friendly", "juicy", "cute"). Scene nouns and skill nouns are required; decorative fluff is not.
-- Never put style words like cartoon/colorful/white background into searchQuery — those belong in preferredStyle/preferredBackground.`
+- Images are NOT generated. They are retrieved from a fixed library by comparing your searchQuery against each stored picture's own description. That stored description is built from the picture's visual facts: caption, object nouns, category nouns, actions, style words, colours, background, composition — plus generic teaching-purpose lines.
+- Write searchQuery the way that description names the picture VISUALLY: art style, then the bare object noun, then its category noun. Typically 2 to 6 words. Nothing else.
+- Correct: "cartoon ant insect", "cartoon lion wild animal", "cartoon strawberry fruit", "cartoon school bus land vehicle".
+- FORBIDDEN — teaching-purpose, curriculum, and audience words: "flashcard", "educational", "learning", "learn", "teaching", "lesson", "vocabulary", "recognition", "identification", "practice", "activity", "worksheet", "curriculum", "study", "for kids", "for children", "preschool", "nursery", "kindergarten", "LKG", "UKG", "toddler". EVERY stored picture already carries words like these, so they match the entire library equally and push retrieval onto an unrelated worksheet instead of the object you named.
+- FORBIDDEN — invented scenery, props, settings, or narrative the card never asked for: "on a green leaf", "in a classroom", "on a wooden table", "in the jungle", "holding a book", "standing in grassland". Every extra scene noun moves the query away from the plain picture of the subject.
+- This is the exact failure to avoid: "ant insect on green leaf for letter tracing vocabulary learning" retrieves a wrong, unrelated picture. "cartoon ant insect" retrieves the correct ant. Shorter and purely visual wins.
+- ${titleIds.length > 0 ? `The subject MUST be the object named in ${titleIds.join(', ')} on this card (the PER_CARD_OBJECT_TITLE).` : `The subject MUST be the specific object this card teaches (the per-card title/label), not a generic category.`}
+- ${skillLabelIds.length > 0 ? `The subject MUST stay inside the domain named by ${skillLabelIds.join(', ')} (the GENERIC SKILL LABEL) and the requested topic "${input.topic}". Never name an object from a different skill.` : `The subject MUST stay inside the requested topic "${input.topic}"${input.subject ? ` and subject "${input.subject}"` : ''}.`}
+- Add the category noun (insect, wild animal, fruit, vegetable, land vehicle, farm animal, ...) so a sibling topic cannot match instead (fruit vs vegetable, letter glyph vs an object starting with that letter). The category noun is the ONLY extra noun allowed.
+- expectedObjects[0] remains the bare singular noun that matches the title (e.g. "strawberry").
+- Still follow NO ADJECTIVES RULE for the object's own name (no "friendly", "juicy", "cute"). Art-style and colour words are not adjectives on the name and are allowed.
+- Keep preferredStyle/preferredBackground populated as well; they are metadata, but searchQuery is what retrieval actually compares, so the style word must appear in searchQuery too.
+${imageMediumRules}`
       : '';
 
   const crossCardUniquenessRules =
@@ -1005,7 +1026,7 @@ CROSS-CARD CONTENT UNIQUENESS (count is ${input.count}):
 - Every card in this set must be distinct. Never repeat the same object, word, fact, sentence, or number across two different cards.
 - Each card must show a DIFFERENT primary image subject. Never repeat the same object, animal, food, or scene across cards (forbidden: strawberry on card 1 and strawberry on card 2).
 - expectedObjects[0] must be unique across cards in this response.
-- searchQuery must name that distinct title subject (plus skill/domain detail) so retrieval does not return the same image type twice.
+- searchQuery must name that distinct title subject (plus its category noun) so retrieval does not return the same image type twice.
 - Any PER_CARD_OBJECT_TITLE field must change accordingly on every card, always naming that card's own distinct subject (e.g. card 1 "Lion", card 2 "Elephant") — never the same value twice, and never the generic set-wide skill label.
 - For narrative/description/fact/question fields, use a different sentence structure and a different true fact for each card — never copy the same phrasing with only the noun swapped.
 - Exception 1: BARE_EXACT_QUERY letter-glyph slots may repeat the same letter phrase when teaching that letter.
@@ -1026,7 +1047,7 @@ Rules:
 - Keep language age-appropriate for ages ${ageLabel}.
 - Write all educational text in ${language}.
 - ${ageBandGuidance(input.ageMin, input.ageMax)} (applies only to NARRATIVE-style fields — see per-field style below; never applies to RAW_VALUE, GENERIC_SKILL_LABEL, or PER_CARD_OBJECT_TITLE fields.)
-- NO ADJECTIVES RULE: Never attach a descriptive, decorative, evaluative, or emotional adjective to an object's name, in ANY field — text or image. Use the bare noun only. Correct: "cow", "strawberry", "lion". Forbidden: "friendly cow", "juicy strawberry", "big lion". This applies to labels, titles, raw values, the subject noun inside narrative sentences, and expectedObjects. STANDARD image searchQuery may add extra skill/scene nouns around that bare name (see STANDARD image rules) but must still not decorate the object name itself. A narrative fact sentence may still state true educational information about the object (what it does, where it lives, what it is used for) as a separate predicate — it just must not decorate the object's own name with adjectives. This rule is about NOT decorating the name — it does NOT mean omitting the object's name itself (see PER-CARD OBJECT TITLE rules below: the specific object must still be named, just without adjectives).
+- NO ADJECTIVES RULE: Never attach a descriptive, decorative, evaluative, or emotional adjective to an object's name, in ANY field — text or image. Use the bare noun only. Correct: "cow", "strawberry", "lion". Forbidden: "friendly cow", "juicy strawberry", "big lion". This applies to labels, titles, raw values, the subject noun inside narrative sentences, and expectedObjects. STANDARD image searchQuery may add an art-style word and a category noun around that bare name (see STANDARD image rules) but must still not decorate the object name itself. A narrative fact sentence may still state true educational information about the object (what it does, where it lives, what it is used for) as a separate predicate — it just must not decorate the object's own name with adjectives. This rule is about NOT decorating the name — it does NOT mean omitting the object's name itself (see PER-CARD OBJECT TITLE rules below: the specific object must still be named, just without adjectives).
 - TOPIC DOMAIN LOCK: Every object, word, number, or image named anywhere across all cards MUST belong strictly to the requested topic ("${input.topic}") and subject ("${input.subject ?? 'unspecified'}"). Never drift into an adjacent or unrelated category (e.g. if the topic is fruits, never include vegetables, drinks, packaged snacks, or any non-fruit item).
 - SUBJECT FAMILIARITY: unless the request explicitly asks for rare, exotic, or extinct subjects, choose commonly recognized members of the topic category with clear, unambiguous, easy-to-illustrate identities (e.g. for "animals": lion, elephant, tiger, monkey, giraffe, zebra, bear, rabbit, cow, horse — not obscure or extinct picks like dodo). Images are matched from an existing dataset by semantic search, not generated fresh, so an obscure or ambiguous subject is much more likely to return an irrelevant or wrong image.
 - TITLE-IMAGE CONSISTENCY: whenever a card has both a per-card object title/label field and an image field, they must refer to the exact same object. Never let a card's image show one thing while its title/label names a different thing or only the generic topic word. The STANDARD searchQuery must be relevant to that title AND remain inside the skillLabel/topic domain.
@@ -1062,7 +1083,7 @@ Inside "imageComponents", use these exact component IDs verbatim. Each ID repres
 ${imageContract || '- No image components in this template.'}
 
 Every image component value must contain:
-- searchQuery: for style=STANDARD use a detailed retrieval phrase tied to this card's title subject and skillLabel/topic (see STANDARD image rules); for style=BARE_EXACT_QUERY use ONLY the letter phrase (e.g. "Letter Q") with no extra adjectives
+- searchQuery: for style=STANDARD use a short purely visual phrase — art style + this card's bare object noun + its category noun (see STANDARD image rules); for style=BARE_EXACT_QUERY use ONLY the letter phrase (e.g. "Letter Q") with no extra adjectives
 - expectedObjects: array of expected object names, bare nouns only (no adjectives)
 - preferredStyle: e.g. cartoon
 - preferredBackground: e.g. white

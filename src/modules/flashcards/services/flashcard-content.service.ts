@@ -35,6 +35,10 @@ import {
   validateLlmCardContent,
   validateLlmFlashcardPayload,
 } from '../utils/llm-content.validator';
+import {
+  requestWantsLineArt,
+  sanitizeCardImageQueries,
+} from '../utils/image-query.util';
 
 export interface GenerateContentInput {
   query: string;
@@ -592,6 +596,8 @@ export class FlashcardContentService {
         throw validationError;
       }
 
+      this.stripRetrievalNoiseFromImageQueries(payload, input);
+
       const violations = scanCardsForForbiddenContent(
         payload.cards,
         input.countryCode,
@@ -790,6 +796,32 @@ export class FlashcardContentService {
       }
 
       return { cards };
+    }
+  }
+
+  /**
+   * Safety net for the STANDARD image rules in the prompt. Removal-only: strips
+   * teaching-purpose boilerplate (and line-art terms unless the request is about
+   * tracing/colouring) from each slot's own searchQuery, so the card, telemetry,
+   * and asset search all carry the identical single query string.
+   */
+  private stripRetrievalNoiseFromImageQueries(
+    payload: LlmFlashcardPayload,
+    input: GenerateContentInput,
+  ): void {
+    const changes = sanitizeCardImageQueries(payload.cards, {
+      allowLineArt: requestWantsLineArt({
+        query: input.query,
+        topic: input.topic,
+        learningObjective: input.learningObjective,
+        subject: input.subject,
+      }),
+    });
+
+    for (const change of changes) {
+      this.logger.warn(
+        `Image query noise stripped on card ${change.cardIndex} "${change.componentId}": "${change.from}" -> "${change.to}"`,
+      );
     }
   }
 
