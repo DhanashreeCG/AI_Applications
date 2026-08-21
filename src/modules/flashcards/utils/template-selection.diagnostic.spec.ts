@@ -227,17 +227,14 @@ describe('template selection diagnostics', () => {
     const stableLabels = fragile.map((result) => result.label).sort();
     expect(stableLabels).toEqual([
       'about noise word does not hijack objective',
-      'classify categories',
-      'difference comparison phrasing',
+      'general knowledge age default 10-12',
       'grade 1 vegetables EVS',
       'match pairs',
       'no keyword age default vocabulary',
-      'quiz keyword',
       'reading in range phrasing',
       'reading story',
       'recognition age default 2-3',
       'spot recognition',
-      'vs comparison shorthand',
     ]);
   });
 
@@ -293,6 +290,7 @@ describe('template selection rule-id tie-break', () => {
         difficulties: [],
         intents: [],
         topics: [],
+        isFallback: false,
         templateId: 'tmpl_a',
         templateActive: true,
         templateAgeGroups: ['3-4'],
@@ -315,6 +313,7 @@ describe('template selection rule-id tie-break', () => {
         difficulties: [],
         intents: [],
         topics: [],
+        isFallback: false,
         templateId: 'tmpl_b',
         templateActive: true,
         templateAgeGroups: ['3-4'],

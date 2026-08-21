@@ -119,6 +119,13 @@ export class TemplateSelectionService {
     const allowedTemplateIds = [
       ...new Set(ranked.map((candidate) => candidate.templateId)),
     ];
+    const nativeTemplateIds = [
+      ...new Set(
+        ranked
+          .filter((candidate) => candidate.breakdown.ageTier >= 3)
+          .map((candidate) => candidate.templateId),
+      ),
+    ];
 
     const aiOutcome = await this.templateSelectionAi.select({
       topic: input.topic,
@@ -129,6 +136,8 @@ export class TemplateSelectionService {
       learningObjective: input.learningObjective,
       objectiveConfidence: input.objectiveConfidence,
       allowedTemplateIds,
+      nativeTemplateIds,
+      query: input.query,
       telemetry: input.telemetry,
     });
 

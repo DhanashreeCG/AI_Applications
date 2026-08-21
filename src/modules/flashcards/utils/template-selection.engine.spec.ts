@@ -27,6 +27,7 @@ function rule(
     templateObjectives: overrides.templateObjectives ?? [],
     templateDifficulties: overrides.templateDifficulties ?? [],
     templateVersion: overrides.templateVersion ?? '1.0',
+    isFallback: overrides.isFallback ?? false,
     id: overrides.id,
     templateId: overrides.templateId,
   };
@@ -191,7 +192,7 @@ describe('selectBestTemplate', () => {
     expect(match?.templateId).toBe('t-exact');
   });
 
-  it('selects comparison objective within age range over vocabulary', () => {
+  it('selects comparison objective within the same native age band over vocabulary', () => {
     const rules = [
       rule({
         id: 'vocabulary-exact-age',
@@ -201,9 +202,9 @@ describe('selectBestTemplate', () => {
         templateVersion: '2.0',
       }),
       rule({
-        id: 'comparison-overlap',
+        id: 'comparison-native',
         templateId: 't-comparison',
-        templateAgeGroups: ['3-5'],
+        templateAgeGroups: ['3-4'],
         templateObjectives: ['comparison'],
         templateVersion: '1.0',
       }),
@@ -402,16 +403,17 @@ describe('selectBestTemplate', () => {
         ageMax: 3,
         learningObjectives: ['recognition'],
         templateObjectives: ['recognition'],
-        templateAgeGroups: ['2-3'],
-        templateAgeMin: 2,
-        templateAgeMax: 3,
+        templateAgeGroups: ['8-10'],
+        templateAgeMin: 8,
+        templateAgeMax: 10,
       }),
     ];
 
     const match = selectBestTemplate(rules, {
       learningObjective: 'question_answer',
-      ageMin: 10,
-      ageMax: 12,
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
     });
 
     expect(match).toBeNull();
@@ -622,5 +624,207 @@ describe('selectBestTemplate', () => {
     // Template objectives should still be used for synthetic rules.
     expect(ranked[0].breakdown.effectiveObjectiveRank).toBe(3);
     expect(ranked[0].breakdown.exactObjective).toBe(true);
+  });
+
+  it('does not give generic-tag templates a tier-1 bonus when another candidate has an objective match', () => {
+    const rules = [
+      rule({
+        id: 'counting-rule',
+        templateId: 't-counting',
+        learningObjectives: ['counting'],
+        templateObjectives: ['counting'],
+        templateAgeGroups: ['5-6'],
+        priority: 5,
+      }),
+      rule({
+        id: 'generic-vocab',
+        templateId: 't-vocab',
+        name: 'Fallback - Default Vocabulary Card',
+        learningObjectives: ['general_knowledge'],
+        templateObjectives: ['general_knowledge'],
+        templateAgeGroups: ['5-6'],
+        priority: 1000,
+      }),
+    ];
+
+    const ranked = rankTemplateCandidates(rules, {
+      learningObjective: 'counting',
+      ageGroup: '5-6',
+      ageMin: 5,
+      ageMax: 6,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    const vocab = ranked.find((row) => row.ruleId === 'generic-vocab');
+    expect(ranked[0].templateId).toBe('t-counting');
+    expect(vocab?.breakdown.effectiveObjectiveRank).toBe(0);
+  });
+
+  it('picks a specific counting template over generic vocabulary on age-default vocabulary', () => {
+    const rules = [
+      rule({
+        id: 'counting-rule',
+        templateId: 't-counting',
+        learningObjectives: ['counting'],
+        templateObjectives: ['counting', 'matching'],
+        templateAgeGroups: ['3-4'],
+        priority: 5,
+      }),
+      rule({
+        id: 'matching-rule',
+        templateId: 't-matching',
+        learningObjectives: ['matching', 'classification'],
+        templateObjectives: ['matching'],
+        templateAgeGroups: ['3-4'],
+        priority: 10,
+      }),
+      rule({
+        id: 'fallback-vocab',
+        templateId: 't-vocab',
+        name: 'Fallback - Default Vocabulary Card',
+        learningObjectives: ['vocabulary', 'recognition', 'general_knowledge'],
+        templateObjectives: ['vocabulary'],
+        templateAgeGroups: ['3-4'],
+        priority: 1000,
+        isFallback: true,
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+      objectiveConfidence: 'age_default',
+    });
+
+    expect(match?.templateId).not.toBe('t-vocab');
+    expect(match?.templateId).toBe('t-counting');
+  });
+
+  it('uses isFallback vocabulary only when the main pool is empty', () => {
+    const rules = [
+      rule({
+        id: 'fallback-vocab',
+        templateId: 't-vocab',
+        name: 'Fallback - Default Vocabulary Card',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateAgeGroups: ['8-10'],
+        priority: 1000,
+        isFallback: true,
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '8-10',
+      ageMin: 8,
+      ageMax: 10,
+      objectiveConfidence: 'age_default',
+    });
+
+    expect(match?.templateId).toBe('t-vocab');
+    expect(match?.ruleId).toBe('fallback-vocab');
+  });
+
+  it('breaks remaining ties with lower rule priority (more specific)', () => {
+    const rules = [
+      rule({
+        id: 'catch-all',
+        templateId: 't-generic',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateAgeGroups: ['3-4'],
+        priority: 1000,
+      }),
+      rule({
+        id: 'specific',
+        templateId: 't-specific',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateAgeGroups: ['3-4'],
+        priority: 5,
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '3-4',
+      ageMin: 3,
+      ageMax: 4,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    expect(match?.templateId).toBe('t-specific');
+  });
+
+  it('excludes older-only templates and prefers native 4-5 over younger 3-4', () => {
+    const rules = [
+      rule({
+        id: 'older',
+        templateId: 't-older',
+        learningObjectives: ['counting'],
+        templateObjectives: ['counting'],
+        templateAgeGroups: ['6-8'],
+        priority: 5,
+      }),
+      rule({
+        id: 'younger',
+        templateId: 't-younger',
+        learningObjectives: ['counting'],
+        templateObjectives: ['counting'],
+        templateAgeGroups: ['3-4'],
+        priority: 5,
+      }),
+      rule({
+        id: 'native-4-5',
+        templateId: 't-native',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateAgeGroups: ['4-5'],
+        priority: 100,
+      }),
+    ];
+
+    const ranked = rankTemplateCandidates(rules, {
+      learningObjective: 'counting',
+      ageGroup: '4-5',
+      ageMin: 4,
+      ageMax: 5,
+      objectiveConfidence: 'exact_keyword',
+    });
+
+    expect(ranked.map((row) => row.templateId)).toEqual(['t-native', 't-younger']);
+    expect(ranked[0].breakdown.ageTier).toBe(3);
+    expect(ranked[1].breakdown.ageTier).toBe(1);
+  });
+
+  it('ranks closer younger bands before farther ones when no native template exists', () => {
+    const rules = [
+      rule({
+        id: 'age-2-3',
+        templateId: 't-2-3',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateAgeGroups: ['2-3'],
+      }),
+      rule({
+        id: 'age-3-4',
+        templateId: 't-3-4',
+        learningObjectives: ['vocabulary'],
+        templateObjectives: ['vocabulary'],
+        templateAgeGroups: ['3-4'],
+      }),
+    ];
+
+    const match = selectBestTemplate(rules, {
+      learningObjective: 'vocabulary',
+      ageGroup: '4-5',
+      ageMin: 4,
+      ageMax: 5,
+    });
+
+    expect(match?.templateId).toBe('t-3-4');
   });
 });

@@ -34,6 +34,7 @@ import { FlashcardRendererService } from '../flashcard-renderer/renderer/flashca
 import { FlashcardRenderResult } from '../flashcard-renderer/interfaces/render-result.interface';
 import { TemplateSelectionService } from './template-selection.service';
 import type { SelectTemplateResult } from './template-selection.service';
+import { TemplateRepository } from './template.repository';
 
 export interface GenerateFlashcardsOptions {
   correlationId?: string;
@@ -48,6 +49,7 @@ export class FlashcardOrchestratorService {
 
   constructor(
     private readonly templateSelectionService: TemplateSelectionService,
+    private readonly templateRepository: TemplateRepository,
     private readonly contentService: FlashcardContentService,
     private readonly imageRetrievalService: FlashcardImageRetrievalService,
     private readonly rendererService: FlashcardRendererService,
@@ -157,6 +159,7 @@ export class FlashcardOrchestratorService {
 
     let resolved;
     try {
+      const ruleSignals = await this.templateRepository.listRuleSignals();
       resolved = resolveUserRequest({
         query: dto.query,
         ageGroup: dto.ageGroup,
@@ -164,6 +167,8 @@ export class FlashcardOrchestratorService {
         subject: dto.subject,
         difficulty: dto.difficulty,
         language: dto.language,
+        ruleIntents: ruleSignals.intents,
+        ruleTags: ruleSignals.tags,
       });
       this.assertRequestContentAllowed(resolved.query, resolved.topic, countryCode);
     } catch (error) {

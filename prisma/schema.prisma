@@ -234,6 +234,9 @@ model TemplateSelectionRule {
   id                 String            @id @default(cuid())
   name               String
   priority           Int               @default(100)
+  /// Lower number = more specific. Catch-all rows use high values (e.g. 1000).
+  /// Last-resort vocabulary card; excluded from merit ranking unless the main pool is empty.
+  isFallback         Boolean           @default(false) @map("is_fallback")
   active             Boolean           @default(true)
   ageMin             Int?
   ageMax             Int?

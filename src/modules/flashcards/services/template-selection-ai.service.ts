@@ -174,6 +174,7 @@ export class TemplateSelectionAiService {
     const snapshot = await this.catalogCache.getSnapshot();
     const userPayload = {
       topic: input.topic,
+      query: input.query ?? null,
       ageGroup: input.ageGroup,
       grade: input.grade ?? null,
       subject: input.subject ?? null,
@@ -181,6 +182,9 @@ export class TemplateSelectionAiService {
       learningObjective: input.learningObjective,
       objectiveConfidence: input.objectiveConfidence ?? null,
       allowedTemplateIds: [...allowed].sort(),
+      nativeTemplateIds: [...new Set(input.nativeTemplateIds ?? [])]
+        .filter((id) => allowed.includes(id))
+        .sort(),
       promptVersion: TEMPLATE_SELECTION_PROMPT_VERSION,
     };
     const userContent = JSON.stringify(userPayload);
@@ -475,6 +479,7 @@ export class TemplateSelectionAiService {
   }
 
   private parseResponse(text: string): {
+    detectedIntent: string | null;
     selectedTemplateId: string;
     confidenceScore: number;
     reasoning: string;
@@ -483,6 +488,10 @@ export class TemplateSelectionAiService {
     if (!text) return null;
     try {
       const parsed = JSON.parse(text) as Record<string, unknown>;
+      const detectedIntent =
+        typeof parsed.detectedIntent === 'string'
+          ? parsed.detectedIntent.trim().toLowerCase()
+          : '';
       const selectedTemplateId =
         typeof parsed.selectedTemplateId === 'string'
           ? parsed.selectedTemplateId.trim()
@@ -508,6 +517,7 @@ export class TemplateSelectionAiService {
       }
 
       return {
+        detectedIntent: detectedIntent || null,
         selectedTemplateId,
         confidenceScore,
         reasoning,
