@@ -453,9 +453,26 @@ export class AssetPipelineService {
 
         let metadata = existing;
         if (!metadata) {
+          const [job, ingestionFile] = await Promise.all([
+            this.prisma.ingestionJob.findUnique({
+              where: { id: message.jobId },
+              select: { readFileNames: true },
+            }),
+            this.prisma.ingestionFile.findUnique({
+              where: { id: message.ingestionFileId },
+              select: { filename: true },
+            }),
+          ]);
+          const readFileNames = job?.readFileNames === true;
+
           metadata = await this.visionMetadataService.generateAndSaveForAsset(
             message.assetId,
-            { skipIfExists: true, retryCount: message.attempt - 1 },
+            {
+              skipIfExists: true,
+              retryCount: message.attempt - 1,
+              readFileNames,
+              filename: readFileNames ? ingestionFile?.filename : undefined,
+            },
           );
         } else {
           await this.aiUsage.record({

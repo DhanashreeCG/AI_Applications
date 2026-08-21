@@ -39,6 +39,7 @@ export class IngestionController {
       jobId: job.id,
       status: job.status,
       mode: job.mode,
+      readFileNames: job.readFileNames,
       message:
         job.mode === 'DRY_RUN'
           ? 'Dry-run ingestion job started'

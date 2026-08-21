@@ -12,7 +12,7 @@ import {
 import {
   DEFAULT_GEMINI_VISION_MODEL,
   DEFAULT_VISION_PROMPT_VERSION,
-  VISION_ANALYSIS_PROMPT,
+  buildVisionAnalysisPrompt,
   VISION_METADATA_JSON_SCHEMA,
 } from '../constants/vision-prompt.constants';
 import { buildSearchDescription } from '../utils/search-description.builder';
@@ -106,7 +106,7 @@ export class GeminiVisionProvider implements VisionProvider {
           {
             role: 'user',
             parts: [
-              { text: VISION_ANALYSIS_PROMPT },
+              { text: buildVisionAnalysisPrompt(input.filename) },
               {
                 inlineData: {
                   mimeType: input.mimeType,

@@ -112,8 +112,30 @@ describe('IngestionJobService', () => {
         sourceType: 'GOOGLE_DRIVE',
         rootFolderId: 'folder-abc',
         mode: 'FULL',
+        readFileNames: false,
         status: JobState.CREATED,
       },
+    });
+  });
+
+  it('should persist readFileNames when requested', async () => {
+    const dto = {
+      sourceType: 'GOOGLE_DRIVE' as const,
+      rootFolderId: 'folder-abc',
+      readFileNames: true,
+    };
+    mockPrisma.ingestionJob.create.mockResolvedValue({
+      id: 'job-002',
+      status: JobState.CREATED,
+      mode: 'FULL',
+      readFileNames: true,
+      ...dto,
+    });
+
+    await service.createJob(dto);
+
+    expect(mockPrisma.ingestionJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ readFileNames: true }),
     });
   });
 

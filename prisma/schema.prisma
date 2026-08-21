@@ -26,6 +26,7 @@ model IngestionJob {
   createdAt              DateTime        @default(now())
   updatedAt              DateTime        @updatedAt
   mode                   String          @default("FULL")
+  readFileNames          Boolean         @default(false)
   expectedGeminiCalls    Int?
   expectedEmbeddingCalls Int?
   estimatedGeminiCostUsd Float?
