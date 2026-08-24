@@ -5671,7 +5671,6 @@
         stage.style.background = '#fff';
         stage.innerHTML = '';
 
-        await preloadImages(state.payload);
         const width = spec.width || 900;
         const indexes =
           spec.cardIndex == null || spec.cardIndex === ''
@@ -5687,16 +5686,23 @@
           stage.appendChild(node);
         }
 
+        const images = Array.from(stage.querySelectorAll('img'));
+        for (const img of images) {
+          img.loading = 'eager';
+        }
+
         if (document.fonts && document.fonts.ready) await document.fonts.ready;
         await Promise.all(
-          Array.from(stage.querySelectorAll('img')).map((img) =>
-            img.complete
-              ? Promise.resolve()
-              : new Promise((resolve) => {
-                  img.onload = resolve;
-                  img.onerror = resolve;
-                }),
-          ),
+          images.map((img) => {
+            if (typeof img.decode === 'function') {
+              return img.decode().catch(() => undefined);
+            }
+            if (img.complete) return Promise.resolve();
+            return new Promise((resolve) => {
+              img.onload = resolve;
+              img.onerror = resolve;
+            });
+          }),
         );
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         window.__FLASHCARD_CAPTURE_DONE__ = true;
