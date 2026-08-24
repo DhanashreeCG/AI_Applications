@@ -39,7 +39,7 @@ RESPONSE_ASSEMBLY
 
 `IMAGE_QUERY_GENERATION` is a telemetry-only stage. The queries are produced inside the content LLM call — there is no separate query-generation model.
 
-Orchestration lives in [`flashcard-orchestrator.service.ts`](../../src/modules/flashcards/services/flashcard-orchestrator.service.ts): cards are assembled **sequentially**, and within a card the image slots run **concurrently** through `mapWithConcurrency` (bounded by `FLASHCARD_IMAGE_CONCURRENCY`).
+Orchestration lives in [`flashcard-orchestrator.service.ts`](../../src/modules/flashcards/services/flashcard-orchestrator.service.ts): cards are assembled **in parallel** (bounded by `FLASHCARD_CARD_CONCURRENCY`), and within a card the image slots also run concurrently through `mapWithConcurrency` (bounded by `FLASHCARD_IMAGE_CONCURRENCY`). Cross-card uniqueness is still serialised by `claimHit` / `pickLock` against one shared `usedAssetIds` set. Progressive delivery of each assembled card is tracked in [`PROGRESSIVE_CARD_DELIVERY.md`](./PROGRESSIVE_CARD_DELIVERY.md).
 
 ---
 
@@ -233,6 +233,7 @@ Redis-cached searches return `fromCache: true` with zeroed usage, and the embedd
 |---|---|---|
 | `FLASHCARD_IMAGE_SEARCH_LIMIT` | `8` | Ranked hits per query; supplies 2nd/3rd choice for dedupe. Setting `1` breaks dedupe. |
 | `FLASHCARD_IMAGE_CONCURRENCY` | `3` | Parallel image slots within one card. |
+| `FLASHCARD_CARD_CONCURRENCY` | `3` | Parallel cards during assembly. Worst-case in-flight searches ≈ this × image concurrency. |
 | `FLASHCARD_IMAGE_EMBEDDING_MAX_ATTEMPTS` | `3` | Total attempts for the same query on failure. |
 | `FLASHCARD_IMAGE_EMBEDDING_RETRY_DELAY_MS` | `200` | Delay between those attempts. |
 | `FLASHCARD_IMAGE_PICKER_LIMIT` | `10` | Results for the manual library picker. |

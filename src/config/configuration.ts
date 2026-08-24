@@ -55,6 +55,7 @@ export interface AppConfig {
   };
   flashcards: {
     imageConcurrency: number;
+    cardConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
     imageEmbeddingMaxAttempts: number;
@@ -262,6 +263,10 @@ export default (): AppConfig => ({
   flashcards: {
     imageConcurrency: parseInt(
       process.env.FLASHCARD_IMAGE_CONCURRENCY || '3',
+      10,
+    ),
+    cardConcurrency: parseInt(
+      process.env.FLASHCARD_CARD_CONCURRENCY || '3',
       10,
     ),
     signedUrlTtlSeconds: parseInt(
