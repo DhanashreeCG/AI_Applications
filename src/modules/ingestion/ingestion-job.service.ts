@@ -46,11 +46,13 @@ export class IngestionJobService {
 
   async createJob(dto: CreateIngestionJobDto) {
     const mode: IngestionJobMode = dto.mode ?? 'FULL';
+    const readFileNames = dto.readFileNames === true;
     const job = await this.prisma.ingestionJob.create({
       data: {
         sourceType: dto.sourceType,
         rootFolderId: dto.rootFolderId,
         mode,
+        readFileNames,
         status: DatabaseJobState.CREATED,
       },
     });
@@ -59,6 +61,7 @@ export class IngestionJobService {
       job_id: job.id,
       root_folder_id: dto.rootFolderId,
       mode,
+      read_file_names: readFileNames,
       status: 'created',
     });
     return job;

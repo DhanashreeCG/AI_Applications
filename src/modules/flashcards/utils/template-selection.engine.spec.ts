@@ -28,6 +28,10 @@ function rule(
     templateDifficulties: overrides.templateDifficulties ?? [],
     templateVersion: overrides.templateVersion ?? '1.0',
     isFallback: overrides.isFallback ?? false,
+    templateTags: overrides.templateTags ?? [],
+    templateType: overrides.templateType ?? '',
+    requiresExplicitRequest: overrides.requiresExplicitRequest ?? false,
+    explicitRequestKeywords: overrides.explicitRequestKeywords ?? [],
     id: overrides.id,
     templateId: overrides.templateId,
   };
@@ -826,5 +830,189 @@ describe('selectBestTemplate', () => {
     });
 
     expect(match?.templateId).toBe('t-3-4');
+  });
+});
+
+describe('subject / difficulty gating', () => {
+  const specific = rule({
+    id: 'r-phonics',
+    templateId: 't-phonics',
+    subjects: ['English'],
+    difficulties: ['Intermediate'],
+    learningObjectives: ['phonics'],
+    templateObjectives: ['phonics'],
+    templateAgeGroups: ['4-5'],
+  });
+  const generic = rule({
+    id: 'r-vocab',
+    templateId: 't-vocab',
+    subjects: ['EVS'],
+    difficulties: ['Beginner'],
+    learningObjectives: ['vocabulary'],
+    templateObjectives: ['vocabulary'],
+    templateAgeGroups: ['4-5'],
+  });
+  const criteria = {
+    learningObjective: 'vocabulary',
+    ageGroup: '4-5',
+    ageMin: 4,
+    ageMax: 5,
+    subject: 'EVS',
+    difficulty: 'beginner',
+  };
+
+  it('keeps templates whose subject does not match a guess from the query', () => {
+    const ranked = rankTemplateCandidates([specific, generic], {
+      ...criteria,
+      subjectConfidence: 'inferred',
+      difficultyConfidence: 'age_default',
+    });
+
+    expect(ranked.map((row) => row.templateId)).toEqual(
+      expect.arrayContaining(['t-phonics', 't-vocab']),
+    );
+  });
+
+  it('still ranks the subject/difficulty match first', () => {
+    const ranked = rankTemplateCandidates([specific, generic], {
+      ...criteria,
+      subjectConfidence: 'inferred',
+      difficultyConfidence: 'age_default',
+    });
+
+    expect(ranked[0].templateId).toBe('t-vocab');
+    expect(ranked[0].breakdown.exactSubject).toBe(true);
+  });
+
+  it('hard-filters on subject and difficulty the caller supplied explicitly', () => {
+    const ranked = rankTemplateCandidates([specific, generic], {
+      ...criteria,
+      subjectConfidence: 'explicit',
+      difficultyConfidence: 'explicit',
+    });
+
+    expect(ranked.map((row) => row.templateId)).toEqual(['t-vocab']);
+  });
+
+  it('hard-filters by default so existing callers are unaffected', () => {
+    const ranked = rankTemplateCandidates([specific, generic], criteria);
+
+    expect(ranked.map((row) => row.templateId)).toEqual(['t-vocab']);
+  });
+
+  it('lets a guessed subject keep a structurally different template in the pool', () => {
+    // "seasons" resolves to EVS, but the four-cell English template must stay
+    // available for the AI to repurpose.
+    const ranked = rankTemplateCandidates([specific], {
+      ...criteria,
+      query: 'teach the four seasons',
+      topic: 'four seasons',
+      subjectConfidence: 'inferred',
+      difficultyConfidence: 'age_default',
+    });
+
+    expect(ranked.map((row) => row.templateId)).toEqual(['t-phonics']);
+  });
+});
+
+describe('explicit-request gate', () => {
+  const tracing = rule({
+    id: 'r-tracing',
+    templateId: 't-tracing',
+    name: 'Tracing letters and digits',
+    learningObjectives: ['vocabulary'],
+    templateObjectives: ['vocabulary'],
+    templateAgeGroups: ['4-5'],
+    templateType: 'TRACING',
+    templateTags: ['tracing', 'handwriting'],
+    requiresExplicitRequest: true,
+    explicitRequestKeywords: [
+      'tracing',
+      'trace',
+      'letters',
+      'alphabets',
+      'numbers',
+      'digits',
+    ],
+  });
+  const vocabulary = rule({
+    id: 'r-vocab',
+    templateId: 't-vocab',
+    learningObjectives: ['vocabulary'],
+    templateObjectives: ['vocabulary'],
+    templateAgeGroups: ['4-5'],
+  });
+  const criteria = {
+    learningObjective: 'vocabulary',
+    ageGroup: '4-5',
+    ageMin: 4,
+    ageMax: 5,
+  };
+
+  it('excludes an opt-in template when the query does not ask for it', () => {
+    const ranked = rankTemplateCandidates([tracing, vocabulary], {
+      ...criteria,
+      query: 'teach my 4 year old about farm animals',
+      topic: 'farm animals',
+    });
+
+    expect(ranked.map((row) => row.templateId)).toEqual(['t-vocab']);
+  });
+
+  it('excludes an opt-in template even when it is the only native candidate', () => {
+    const ranked = rankTemplateCandidates([tracing], {
+      ...criteria,
+      query: 'flashcards about fruits',
+      topic: 'fruits',
+    });
+
+    expect(ranked).toHaveLength(0);
+  });
+
+  it('admits an opt-in template when the query explicitly asks for it', () => {
+    const match = selectBestTemplate([tracing, vocabulary], {
+      ...criteria,
+      query: 'tracing practice for letters',
+      topic: 'letters',
+    });
+
+    expect(match?.templateId).toBe('t-tracing');
+  });
+
+  it('matches gate keywords on whole words only', () => {
+    const ranked = rankTemplateCandidates([tracing, vocabulary], {
+      ...criteria,
+      query: 'teach about tracks and trains',
+      topic: 'trains',
+    });
+
+    expect(ranked.map((row) => row.templateId)).toEqual(['t-vocab']);
+  });
+
+  it('falls back to tags and templateType when no keywords are configured', () => {
+    const withoutKeywords = rule({
+      ...tracing,
+      explicitRequestKeywords: [],
+    });
+
+    const blocked = rankTemplateCandidates([withoutKeywords], {
+      ...criteria,
+      query: 'colours for toddlers',
+      topic: 'colours',
+    });
+    const allowed = rankTemplateCandidates([withoutKeywords], {
+      ...criteria,
+      query: 'handwriting practice',
+      topic: 'handwriting',
+    });
+
+    expect(blocked).toHaveLength(0);
+    expect(allowed.map((row) => row.templateId)).toEqual(['t-tracing']);
+  });
+
+  it('leaves ungated templates untouched when no query is supplied', () => {
+    const ranked = rankTemplateCandidates([tracing, vocabulary], criteria);
+
+    expect(ranked.map((row) => row.templateId)).toEqual(['t-vocab']);
   });
 });

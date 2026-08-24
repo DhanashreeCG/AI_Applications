@@ -127,7 +127,7 @@ All Nest modules live under `src/modules/` and are wired in `AppModule`.
 | `TemplateRepository` / `FlashcardTemplateService` | Load/persist templates & selection rules |
 | `FlashcardContentService` + prompt constants | Gemini structured content bound to template component IDs |
 | `llm-content.validator` | Reject extras / missing required / layout inventing |
-| `FlashcardImageRetrievalService` | Per-slot search cascade → top-1 asset |
+| `FlashcardImageRetrievalService` | One search per image slot → top unused asset |
 | `flashcard-renderer/` | Browser pool + HTML/WebP/PDF render + S3/local storage |
 
 ---
@@ -168,7 +168,7 @@ REQUEST_VALIDATION
   → EDUCATIONAL_OBJECTIVE_DETERMINATION # keyword-based; never LLM
   → TEMPLATE_SELECTION                  # hard filter + rank (+ optional AI among eligibles)
   → LLM_CONTENT_GENERATION              # Gemini fills template component IDs only
-  → IMAGE_RETRIEVAL                     # SearchService, limit=1 per slot
+  → IMAGE_RETRIEVAL                     # SearchService, one call per slot
   → RESPONSE_ASSEMBLY / FINAL_VALIDATION
   → RESPONSE_RETURN                     # rendering-ready JSON
   → optional POST /flashcards/render    # HTML / WebP / PDF
@@ -281,7 +281,7 @@ Without a healthy ingestion + embedding corpus, flashcard image slots degrade or
 3. **BullMQ payloads stay minimal** — IDs, not bulky blobs.
 4. **Prisma 7 client** — import from `@generated/prisma/client`.
 5. **Flashcards: LLM never invents layout or picks templates from the full catalog** — eligibility is deterministic; LLM may only rank among already-eligible candidates.
-6. **Flashcards: image retrieval is top-1** (`FLASHCARD_IMAGE_SEARCH_LIMIT=1`), not random top-N rotation.
+6. **Flashcards: exactly one asset search per image slot**, using the LLM's `searchQuery` verbatim (never rewritten or cascaded). `FLASHCARD_IMAGE_SEARCH_LIMIT` (default 8) is a ranked window so a card whose top hit is already used can take the next unused one — not random top-N rotation. See [`docs/flashcards/FLASHCARD_IMAGE_RETRIEVAL.md`](./flashcards/FLASHCARD_IMAGE_RETRIEVAL.md).
 7. **QueueModule** re-exports BullMQ only (SQS removed from runtime).
 8. **No commits** unless explicitly requested.
 

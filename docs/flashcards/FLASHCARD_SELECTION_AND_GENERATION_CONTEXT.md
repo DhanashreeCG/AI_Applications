@@ -340,21 +340,16 @@ Validated LLM card shape:
 For each card, for each selected-template image component:
 
 1. Read that component’s `ImageSearchQuery` by `componentId`
-2. Build cascade queries:
-   1. `searchQuery` (semantic)
-   2. enriched (`searchQuery` + style + background)
-   3. `expectedObjects` joined
-   4. first expected object name
-   5. topic
-   6. unfiltered fallback
-3. Call Search Service with **`limit: 1`**
-4. Keep the **single top similarity / least-distance** hit
-5. No random rotation among top-N
-6. Attach signed URL / proxy `imageUrl`
-7. On miss after cascade → `assetReference: null`, status `IMAGE_NOT_FOUND`
-8. One image failure does not fail the whole pipeline
+2. Call Search Service **exactly once**, with that slot’s `searchQuery` verbatim and `limit: FLASHCARD_IMAGE_SEARCH_LIMIT` (default 8). No cascade, no enriched/topic variants, no query rewriting.
+3. Rank the hits by similarity and claim the **top hit not already used elsewhere in this set** (2nd/3rd from the same result list if the top is taken) — no similarity threshold, no random rotation
+4. Attach signed URL / proxy `imageUrl`, asset colours, and brand colour
+5. Zero results, or every ranked hit already used → status `IMAGE_NOT_FOUND`
+6. Embedding/search throwing is retried with the **same** query (default 3 attempts); exhausted → status `error`
+7. One image failure does not fail the whole pipeline
 
 Important: image slots are independent. Two image components never share one query by position; each uses its own keyed description.
+
+Full detail — including why query wording drives accuracy, line-art gating, and telemetry — is in [`FLASHCARD_IMAGE_RETRIEVAL.md`](./FLASHCARD_IMAGE_RETRIEVAL.md).
 
 ---
 
@@ -427,7 +422,7 @@ Rendering engine should require **zero AI processing** after this JSON.
 - Related-objective fallback ranking
 - Difficulty aliases
 - Prompt structure / schema builder
-- Image cascade + top-1 similarity selection
+- Single-search image retrieval + top-unused similarity selection
 
 Adding a new flashcard layout should only require template + selection-rule configuration, not orchestrator/prompt/image-pipeline rewrites, as long as component types stay within the supported set.
 
@@ -578,7 +573,7 @@ User query
   → selected template defines exact text/image slots
   → Gemini fills only those slots (+ semantic image queries)
   → validate against template IDs
-  → search top-1 image per image component
+  → one image search per image component (top unused asset)
   → assemble template-shaped response JSON
 ```
 

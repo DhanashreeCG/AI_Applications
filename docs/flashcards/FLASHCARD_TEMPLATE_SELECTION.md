@@ -106,9 +106,35 @@ A candidate is dropped if:
 - Template `supportedAgeGroups` is non-empty **and** does not overlap the requested age band. Empty `supportedAgeGroups` = **legacy wildcard**: still eligible, never counts as exact age.
 - Rule lists grades / subjects / difficulties **and** the request supplies that field **and** it does not match (case-insensitive; difficulty aliases). Empty rule lists = wildcard. Missing request field when the rule lists values = **pass but not exact** (so age-only requests still resolve).
 
+- Template has `requiresExplicitRequest = true` **and** the raw `query` + `topic` contain none of its trigger terms. See below.
+
 Learning objective is **not** a hard gate. A phonics request can still keep a vocabulary-only rule in the pool and rank it lower.
 
-**Topic / intents on the rule are unused** in the current engine.
+**Topic / intents on the rule are unused** in the current engine, apart from the opt-in gate below.
+
+### Opt-in templates (`requiresExplicitRequest`)
+
+Some layouts teach a mechanic rather than a topic — letter/digit tracing,
+handwriting drills. They must never win on generic requests, so they are
+excluded from the ranked pool unless the user's own words ask for them.
+
+- `FlashcardTemplate.requiresExplicitRequest` turns the gate on.
+- `FlashcardTemplate.explicitRequestKeywords` lists the unlocking terms.
+  Matching is whole-word (multi-word entries match as phrases) against
+  `query` + `topic`. When the list is empty, the template's `tags` +
+  `templateType` are used instead, so a newly flagged template is never
+  permanently unreachable.
+- Both fields can be set at upload time.
+- Because the gate runs before ranking, gated ids never enter
+  `allowedTemplateIds`, so the AI selector cannot pick them. The catalog also
+  exposes `requiresExplicitRequest` and the prompt treats those templates as
+  off by default (defense in depth).
+- Explicitly passing `templateId` bypasses selection entirely and is therefore
+  unaffected.
+
+Seeded gates: the digit-tracing layout unlocks on tracing/handwriting/number/
+digit terms; the alphabet-tracing layout unlocks on tracing/handwriting/letter/
+alphabet/phonics terms.
 
 ---
 

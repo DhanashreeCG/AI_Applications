@@ -13,6 +13,8 @@ export interface CatalogTemplateEntry {
   difficultyLevels: string[];
   supportedAgeGroups: string[];
   componentSummary: string;
+  /** Opt-in layout: only valid when the request explicitly asks for it. */
+  requiresExplicitRequest: boolean;
 }
 
 export interface TemplateCatalogSnapshot {

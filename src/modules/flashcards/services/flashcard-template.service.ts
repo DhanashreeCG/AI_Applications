@@ -95,6 +95,8 @@ export class FlashcardTemplateService {
     thumbnail: string | null;
     templateVersion: string;
     active: boolean;
+    requiresExplicitRequest: boolean;
+    explicitRequestKeywords: string[];
   } {
     const prefix = `templates[${index}]`;
     try {
@@ -148,6 +150,10 @@ export class FlashcardTemplateService {
         thumbnail: this.optionalString(dto.thumbnail) ?? null,
         templateVersion: this.optionalString(dto.templateVersion) || '1.0',
         active: dto.active !== false,
+        requiresExplicitRequest: dto.requiresExplicitRequest === true,
+        explicitRequestKeywords: this.optionalStringArray(
+          dto.explicitRequestKeywords,
+        ),
       };
     } catch (error) {
       if (error instanceof FlashcardException) {

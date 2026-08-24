@@ -1,5 +1,5 @@
 import { TemplateSelectionCriteria } from '../interfaces/flashcard.interfaces';
-import { ObjectiveConfidence } from './user-request.resolver';
+import { ObjectiveConfidence, keywordMatches } from './user-request.resolver';
 
 export interface SelectableRule {
   id: string;
@@ -23,6 +23,12 @@ export interface SelectableRule {
   templateObjectives: string[];
   templateDifficulties: string[];
   templateVersion: string;
+  templateTags?: string[];
+  templateType?: string;
+  /** Opt-in layout (e.g. tracing): only eligible when the request asks for it. */
+  requiresExplicitRequest?: boolean;
+  /** Terms that count as an explicit request. Defaults to tags + templateType. */
+  explicitRequestKeywords?: string[];
 }
 
 export interface SelectionResult {
@@ -175,6 +181,54 @@ function templateAgeFit(
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
+}
+
+/**
+ * Terms that unlock an opt-in template. Explicit keywords win; otherwise fall
+ * back to the template's own tags + templateType so a newly flagged template
+ * is never permanently unreachable.
+ */
+export function gateKeywordsFor(rule: SelectableRule): string[] {
+  const configured = (rule.explicitRequestKeywords ?? [])
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+  if (configured.length) {
+    return configured;
+  }
+
+  return [...(rule.templateTags ?? []), rule.templateType ?? '']
+    .flatMap((value) => value.split(/[^\p{L}\p{N}]+/u))
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2);
+}
+
+/**
+ * Opt-in templates (tracing, handwriting drills) teach a mechanic rather than a
+ * topic, so they must never be auto-selected. They become eligible only when the
+ * user's own words name them.
+ */
+function passesExplicitRequestGate(
+  rule: SelectableRule,
+  criteria: { query?: string; topic?: string },
+): boolean {
+  if (!rule.requiresExplicitRequest) {
+    return true;
+  }
+
+  const haystack = [criteria.query ?? '', criteria.topic ?? '']
+    .join(' ')
+    .trim()
+    .toLowerCase();
+  if (!haystack) {
+    return false;
+  }
+
+  const keywords = gateKeywordsFor(rule);
+  if (!keywords.length) {
+    return false;
+  }
+
+  return keywords.some((keyword) => keywordMatches(haystack, keyword));
 }
 
 function normalizeDifficulty(value: string): string {
@@ -376,6 +430,9 @@ interface RankedCandidate extends RankedTemplateCandidate {}
  * templates are never eligible. Learning objective / user intent is
  * the next rank key within the same age tier.
  *
+ * Templates flagged requiresExplicitRequest are dropped before ranking unless
+ * the raw query names them, so opt-in layouts never reach the AI selector.
+ *
  * Rank priority:
  * 1. age tier (native > covering > younger)
  * 2. closer younger band (higher youngerMax)
@@ -441,6 +498,10 @@ function collectEligibleRules(
       continue;
     }
 
+    if (!passesExplicitRequestGate(rule, criteria)) {
+      continue;
+    }
+
     const grade = ruleDimensionMatch(rule.grades, criteria.grade);
     const subject = ruleDimensionMatch(rule.subjects, criteria.subject);
     const difficulty = ruleDimensionMatch(
@@ -449,7 +510,20 @@ function collectEligibleRules(
       normalizeDifficulty,
     );
 
-    if (!grade.passes || !subject.passes || !difficulty.passes) {
+    // A subject/difficulty guessed from the query is topic in disguise, so it
+    // may only influence rank. Gating on it collapses the pool to whichever
+    // template happens to declare the guessed subject.
+    const subjectGates = (criteria.subjectConfidence ?? 'explicit') === 'explicit';
+    const difficultyGates =
+      (criteria.difficultyConfidence ?? 'explicit') === 'explicit';
+
+    if (!grade.passes) {
+      continue;
+    }
+    if (subjectGates && !subject.passes) {
+      continue;
+    }
+    if (difficultyGates && !difficulty.passes) {
       continue;
     }
 

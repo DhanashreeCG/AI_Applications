@@ -1,4 +1,4 @@
-export const TEMPLATE_SELECTION_PROMPT_VERSION = 'v3-age-gated-intent-match';
+export const TEMPLATE_SELECTION_PROMPT_VERSION = 'v5-structural-fit';
 
 export const TEMPLATE_SELECTION_AI_STAGE = 'flashcard_template_selection';
 
@@ -20,9 +20,12 @@ in allowedTemplateIds for each request.
 INPUT YOU WILL RECEIVE
 - A static TEMPLATE CATALOG (system message) describing every active template:
   id, name, description, templateType, layoutType, tags, learningObjectives,
-  subjectsSupported, difficultyLevels, supportedAgeGroups, componentSummary.
+  subjectsSupported, difficultyLevels, supportedAgeGroups, componentSummary,
+  requiresExplicitRequest.
   componentSummary lists the editable slots the layout exposes — this is the
   strongest evidence of what a template can structurally express.
+  requiresExplicitRequest: true marks an opt-in, special-purpose template
+  (see STEP 2B).
 - A per-request user JSON with:
   - query: the original user request, verbatim. Primary intent signal.
   - topic: the subject/skill the flashcards should teach.
@@ -33,7 +36,9 @@ INPUT YOU WILL RECEIVE
   - nativeTemplateIds: the subset of allowedTemplateIds whose
     supportedAgeGroups match the requested ageGroup exactly.
   - optional: grade, subject, difficulty, learningObjective,
-    objectiveConfidence. learningObjective is a deterministic keyword guess
+    objectiveConfidence. subject and difficulty are often guessed from the
+    query wording, so treat them as hints and never as a restriction on which
+    template may be used. learningObjective is a deterministic keyword guess
     made upstream, NOT ground truth. When objectiveConfidence is
     "age_default" it was inferred from age alone with no keyword evidence —
     then treat it as a weak hint and rely on query/topic instead.
@@ -58,6 +63,27 @@ Identify the ONE teaching action the user is asking for. Read query first,
 then topic, then learningObjective (respecting objectiveConfidence above).
 Infer meaning semantically — paraphrases, other languages, and phrasings not
 listed below still count. Do not rely on literal keyword presence.
+
+Real teachers do not use pedagogy vocabulary. They write "-ly words",
+"vowels", "seasons", "things that fly", "days of the week", "th sound" — not
+"phonics", "classification", or "recognition". Never require a technical term
+to appear before you infer the matching intent, and never fall back to plain
+vocabulary just because no technical term was used.
+
+Also decide the SHAPE of the content the topic implies:
+- Closed set — the topic is a small, naturally complete group whose members
+  belong together (a handful of items, typically 3-6). The teaching value is
+  seeing the members side by side.
+- Pattern set — the topic is a group of examples that share one feature: a
+  sound, a rhyme, a letter, a spelling pattern, a prefix or suffix, a word
+  ending. The feature is the lesson and the examples only make sense next to
+  each other, so this behaves like a closed set: show several examples
+  together in separate cells, never one example per card.
+- Open set — the topic is an unbounded category with many members, taught one
+  example at a time.
+A closed or pattern set wants a multi-cell layout that shows the members
+together. An open set wants one item per card. This shape decision matters
+more than any label in the template's description.
 
 Intent → the structure that intent REQUIRES:
 - vocabulary / naming ("teach words", "name the", one thing per card)
@@ -87,22 +113,56 @@ If several intents appear ("identify and count the animals"), the dominant
 one is the action the user actually asks for — usually the main verb of the
 request. Name the runner-up in reasoning.
 
+STEP 2B — OPT-IN (SPECIAL-PURPOSE) TEMPLATES
+Some templates teach a mechanic rather than a topic: tracing letters/digits,
+handwriting and pencil-control drills, and similar practice sheets. They are
+marked requiresExplicitRequest: true in the catalog.
+Treat these as OFF by default. Select one only when the user's own words ask
+for that mechanic — e.g. "tracing", "trace the letters", "practice writing
+numbers", "alphabet/letter/number writing practice". A request that merely
+concerns a topic ("teach animals", "fruits for toddlers", "colours") must
+NEVER receive an opt-in template, even if it is the only native-age option and
+even if it seems age-appropriate. In that case skip it and continue with the
+remaining candidates (STEP 4 if none are left).
+These ids are normally filtered out of allowedTemplateIds upstream; if one
+still appears there without an explicit request, do not select it.
+
 STEP 3 — MATCH INTENT TO A POOL A TEMPLATE
-For each POOL A candidate, judge in this order:
-1. Structural capability — do its componentSummary / layoutType slots
-   physically support the STEP 2 intent (two sides for comparison, multiple
-   cells for sorting, question + answer for a quiz, repeated images for
-   counting)? A template that cannot host the intent is NOT a candidate,
-   however popular or generic it is.
-2. Stated purpose — description, templateType, learningObjectives, tags.
-   Prefer the template whose description literally describes the intent's
-   core skill over one that merely tolerates it.
-3. Topic fit — subject/difficulty alignment and how naturally the topic sits
-   in those slots.
+A template is a LAYOUT, not a syllabus. Its subjectsSupported, templateType,
+learningObjectives and tags describe what it was originally built for — they
+do NOT restrict which topic may be poured into it. Judge each POOL A candidate
+by what its slots can hold:
+
+1. Structural capability — can its componentSummary / layoutType slots
+   physically host the STEP 2 intent and content shape (two sides for
+   comparison, several cells for a closed set, question + answer for a quiz,
+   repeated images for counting, a sentence slot for reading)? A template that
+   cannot host the content is NOT a candidate, however popular or generic.
+2. Content shape fit — a closed set fills a multi-cell grid cleanly (one
+   member per cell, all visible together). Prefer that over one-item-per-card
+   whenever the members belong together.
+3. Age and slot count — every slot the layout exposes should get meaningful
+   content. If the topic cannot supply enough members to fill the cells, the
+   layout is the wrong shape.
+4. Stated purpose — only as a tie-breaker between templates that are equally
+   capable structurally.
+
+Reusing a layout outside its original subject is CORRECT when the structure
+fits: a four-cell grid built for word patterns is the right vehicle for any
+four related members, and a two-sided comparison layout works for any pair,
+whatever subject the description names. Do not reject a capable template
+because its description mentions a different subject or skill, and do not
+prefer a structurally weaker template just because its wording echoes the
+query.
+
+Repurposing has limits — do not choose a layout whose slots would sit empty,
+be filled with filler, or demand content the topic cannot supply, and never
+override STEP 2B for opt-in templates.
+
 A "single image + single word" vocabulary card is never a valid vehicle for
-comparison, counting, matching, sorting, phonics-drill, or quiz intents.
-Only choose the generic vocabulary/recognition layout when the intent really
-is naming or recognizing one object per card.
+comparison, counting, matching, sorting, quiz, or closed-set intents. Only
+choose the generic vocabulary/recognition layout when the content really is
+one object per card.
 Break remaining ties by: tighter structural fit, then explicit
 learningObjectives match, then the more specific description.
 

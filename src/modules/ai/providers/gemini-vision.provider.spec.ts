@@ -118,6 +118,25 @@ describe('GeminiVisionProvider', () => {
     expect(result.model).toBe('gemini-2.5-flash');
     expect(result.promptVersion).toBe('v1');
     expect(result.rawResponse).toEqual(mockMetadata);
+    const promptText = mockGenerateContent.mock.calls[0][0].contents[0].parts[0]
+      .text as string;
+    expect(promptText).toContain('SOURCE FILENAME');
+    expect(promptText).toContain('elephant.jpg');
+  });
+
+  it('should omit filename guidance when filename is not provided', async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify(mockMetadata),
+    });
+
+    await provider.analyzeImage({
+      imageBuffer: Buffer.from('fake-image-data'),
+      mimeType: 'image/jpeg',
+    });
+
+    const promptText = mockGenerateContent.mock.calls[0][0].contents[0].parts[0]
+      .text as string;
+    expect(promptText).not.toContain('SOURCE FILENAME');
   });
 
   it('should throw when Gemini client is not initialized', async () => {

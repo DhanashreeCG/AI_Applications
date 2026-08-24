@@ -56,6 +56,7 @@ export class TemplateCatalogCacheService {
         difficultyLevels: true,
         supportedAgeGroups: true,
         layoutDefinition: true,
+        requiresExplicitRequest: true,
       },
     });
 
@@ -71,6 +72,7 @@ export class TemplateCatalogCacheService {
       difficultyLevels: [...template.difficultyLevels].sort(),
       supportedAgeGroups: [...template.supportedAgeGroups].sort(),
       componentSummary: deriveComponentSummary(template.layoutDefinition),
+      requiresExplicitRequest: template.requiresExplicitRequest,
     }));
 
     // Stable serialization: fixed key order, sorted entries (already by id).
@@ -87,6 +89,7 @@ export class TemplateCatalogCacheService {
         difficultyLevels: entry.difficultyLevels,
         supportedAgeGroups: entry.supportedAgeGroups,
         componentSummary: entry.componentSummary,
+        requiresExplicitRequest: entry.requiresExplicitRequest,
       })),
     };
 

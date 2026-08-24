@@ -170,6 +170,7 @@ describe('VisionMetadataService', () => {
       mimeType: 'image/jpeg',
       promptVersion: undefined,
     });
+    expect(mockVisionProvider.analyzeImage.mock.calls[0][0].filename).toBeUndefined();
     expect(mockAiUsage.record).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'success' }),
     );
@@ -232,6 +233,38 @@ describe('VisionMetadataService', () => {
       }),
     );
     expect(result.metadataVersion).toBe(3);
+  });
+
+  it('should pass filename to vision when readFileNames is true', async () => {
+    mockPrisma.asset.findUnique.mockResolvedValue({
+      ...mockAsset,
+      sources: [{ filename: 'letter-O.png' }],
+      ingestionFiles: [],
+    });
+    mockStorage.downloadBuffer.mockResolvedValue(Buffer.from('original-image'));
+    mockImageProcessor.generateAiOptimizedRepresentation.mockResolvedValue({
+      buffer: Buffer.from('optimized-image'),
+      mimeType: 'image/jpeg',
+    });
+    mockVisionProvider.analyzeImage.mockResolvedValue(mockAnalysis);
+    mockImageProcessor.calculateSha256.mockResolvedValue('search-hash-123');
+    mockPrisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        assetMetadata: {
+          upsert: jest.fn().mockResolvedValue(mockSavedMetadata),
+        },
+        asset: { update: jest.fn() },
+      }),
+    );
+
+    await service.generateAndSaveForAsset('asset-001', {
+      readFileNames: true,
+      filename: 'number-0.png',
+    });
+
+    expect(mockVisionProvider.analyzeImage).toHaveBeenCalledWith(
+      expect.objectContaining({ filename: 'number-0.png' }),
+    );
   });
 
   it('should throw when asset is not found', async () => {

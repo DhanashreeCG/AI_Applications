@@ -69,6 +69,22 @@ export class UploadFlashcardTemplateDto {
   @ApiPropertyOptional({ example: null })
   thumbnail?: string | null;
 
+  @ApiPropertyOptional({
+    example: false,
+    default: false,
+    description:
+      'Opt-in template (e.g. letter/digit tracing). Never auto-selected unless the request explicitly asks for it.',
+  })
+  requiresExplicitRequest?: boolean;
+
+  @ApiPropertyOptional({
+    example: ['tracing', 'letters', 'numbers'],
+    type: [String],
+    description:
+      'Query terms that count as explicitly asking for this template. Defaults to tags + templateType.',
+  })
+  explicitRequestKeywords?: string[];
+
   @ApiPropertyOptional({ example: '1.0', default: '1.0' })
   templateVersion?: string;
 

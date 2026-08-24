@@ -7,7 +7,10 @@ import {
   TemplateSelectionAiResult,
 } from '../interfaces/template-selection-ai.interfaces';
 import { SelectedTemplatePayload } from '../interfaces/flashcard.interfaces';
-import { ObjectiveConfidence } from '../utils/user-request.resolver';
+import {
+  DimensionConfidence,
+  ObjectiveConfidence,
+} from '../utils/user-request.resolver';
 import {
   RankedTemplateCandidate,
   selectBestTemplate,
@@ -26,6 +29,8 @@ export interface SelectTemplateInput {
   grade?: string | null;
   subject?: string | null;
   difficulty?: string | null;
+  subjectConfidence?: DimensionConfidence;
+  difficultyConfidence?: DimensionConfidence;
   query?: string;
   telemetry?: PipelineTelemetryContext;
 }
@@ -85,6 +90,7 @@ export class TemplateSelectionService {
 
     // Topic is intentionally omitted from hard-filter criteria — content only.
     // Topic is passed to the AI selector for semantic ranking among survivors.
+    // query/topic reach the engine solely to unlock opt-in templates.
     const criteria = {
       ageMin: input.ageMin,
       ageMax: input.ageMax,
@@ -94,6 +100,10 @@ export class TemplateSelectionService {
       grade: input.grade ?? undefined,
       subject: input.subject ?? undefined,
       difficulty: input.difficulty ?? undefined,
+      subjectConfidence: input.subjectConfidence,
+      difficultyConfidence: input.difficultyConfidence,
+      query: input.query ?? undefined,
+      topic: input.topic ?? undefined,
     };
 
     const ranked = rankTemplateCandidates(rules, criteria);

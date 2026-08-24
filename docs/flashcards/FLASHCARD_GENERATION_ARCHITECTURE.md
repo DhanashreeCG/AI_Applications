@@ -61,7 +61,7 @@ External dependencies (unchanged by this module): Asset Library, Semantic Search
 | `TemplateSelectionAiService` + `TemplateCatalogCacheService` | LLM semantic pick among hard-filtered candidates (cached catalog prefix) |
 | `TemplateRepository` / `FlashcardTemplateService` | Persist & load templates and selection rules |
 | `FlashcardContentService` | Prompt build → LLM → content validation |
-| `FlashcardImageRetrievalService` | Per-slot search cascade → top-1 asset |
+| `FlashcardImageRetrievalService` | One search per image slot → top unused asset |
 | `FlashcardRendererService` (optional) | HTML/WebP/PDF from assembled response |
 
 ---
@@ -163,9 +163,12 @@ Selected template = LLM contract.
 
 For each card × each image component independently:
 
-1. Build cascade queries from that slot’s search description
-2. Call existing Search Service (`limit: 1`, top similarity)
-3. Attach asset reference / signed URL; miss → `IMAGE_NOT_FOUND` without failing the whole set
+1. Take that slot’s LLM-written `searchQuery` verbatim — never rewritten or expanded
+2. Call the existing Search Service **once** (`limit` = `FLASHCARD_IMAGE_SEARCH_LIMIT`, default 8 ranked hits)
+3. Claim the top-similarity asset not already used elsewhere in the set, so no image repeats across cards
+4. Attach asset reference / signed URL; miss → `IMAGE_NOT_FOUND`, search failure after retries → `error`, neither fails the set
+
+See [`FLASHCARD_IMAGE_RETRIEVAL.md`](./FLASHCARD_IMAGE_RETRIEVAL.md) for the full stage design.
 
 ### 5. Response assembly
 

@@ -176,9 +176,58 @@ describe('flashcard template-aware prompt', () => {
     expect(prompt).toContain('STANDARD image searchQuery fields');
     expect(prompt).toContain('"skillLabel"');
     expect(prompt).toContain('"title"');
-    expect(prompt).toContain('6 to 14 words');
-    expect(prompt).toContain('Do NOT emit a one-word object name');
-    expect(prompt).not.toContain('naming ONLY the bare object');
+    expect(prompt).toContain('Typically 2 to 6 words');
+    expect(prompt).toContain('cartoon ant insect');
+    expect(prompt).toContain('teaching-purpose, curriculum, and audience words');
+    expect(prompt).toContain('invented scenery, props, settings, or narrative');
+    expect(prompt).not.toContain('6 to 14 words');
+  });
+
+  it('forbids line-art terms unless the request is about tracing or colouring', () => {
+    const components = {
+      textComponents: [
+        {
+          componentId: 'title',
+          componentType: 'title' as const,
+          editable: true,
+          required: true,
+        },
+      ],
+      imageComponents: [
+        {
+          componentId: 'hero',
+          componentType: 'image' as const,
+          editable: true,
+          required: true,
+        },
+      ],
+    };
+
+    const coloured = buildFlashcardContentPrompt({
+      query: 'Animals flashcards',
+      topic: 'animals',
+      ageMin: 5,
+      ageMax: 6,
+      learningObjective: 'vocabulary',
+      count: 2,
+      selectedTemplate,
+      ...components,
+    });
+    expect(coloured).toContain('this request is NOT about tracing or colouring');
+    expect(coloured).toContain('MUST NOT contain "line art"');
+
+    const lineArt = buildFlashcardContentPrompt({
+      query: 'letter tracing cards for A to E',
+      topic: 'alphabet',
+      ageMin: 4,
+      ageMax: 5,
+      learningObjective: 'phonics',
+      count: 2,
+      selectedTemplate,
+      ...components,
+    });
+    expect(lineArt).toContain('this request IS about tracing / colouring');
+    expect(lineArt).toContain('ONLY for slots that must show the uncoloured drawing');
   });
 });
 
