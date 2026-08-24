@@ -1004,18 +1004,12 @@ BARE_EXACT_QUERY image fields (e.g. ${bareExactQueryImages
     standardImages.length > 0
       ? `
 STANDARD image searchQuery fields (e.g. ${standardImageIds.join(', ')}):
-- Images are NOT generated. They are retrieved from a fixed library by comparing your searchQuery against each stored picture's own description. That stored description is built from the picture's visual facts: caption, object nouns, category nouns, actions, style words, colours, background, composition — plus generic teaching-purpose lines.
-- Write searchQuery the way that description names the picture VISUALLY: art style, then the bare object noun, then its category noun. Typically 2 to 6 words. Nothing else.
-- Correct: "cartoon ant insect", "cartoon lion wild animal", "cartoon strawberry fruit", "cartoon school bus land vehicle".
-- FORBIDDEN — teaching-purpose, curriculum, and audience words: "flashcard", "educational", "learning", "learn", "teaching", "lesson", "vocabulary", "recognition", "identification", "practice", "activity", "worksheet", "curriculum", "study", "for kids", "for children", "preschool", "nursery", "kindergarten", "LKG", "UKG", "toddler". EVERY stored picture already carries words like these, so they match the entire library equally and push retrieval onto an unrelated worksheet instead of the object you named.
-- FORBIDDEN — invented scenery, props, settings, or narrative the card never asked for: "on a green leaf", "in a classroom", "on a wooden table", "in the jungle", "holding a book", "standing in grassland". Every extra scene noun moves the query away from the plain picture of the subject.
-- This is the exact failure to avoid: "ant insect on green leaf for letter tracing vocabulary learning" retrieves a wrong, unrelated picture. "cartoon ant insect" retrieves the correct ant. Shorter and purely visual wins.
+- Write a short description of what the image should show.
+- Identify the exact visual subject intended for this card.
+- Example: "cartoon ant insect", "cartoon lion wild animal", "cartoon strawberry fruit", "number 10 tracing".
 - ${titleIds.length > 0 ? `The subject MUST be the object named in ${titleIds.join(', ')} on this card (the PER_CARD_OBJECT_TITLE).` : `The subject MUST be the specific object this card teaches (the per-card title/label), not a generic category.`}
 - ${skillLabelIds.length > 0 ? `The subject MUST stay inside the domain named by ${skillLabelIds.join(', ')} (the GENERIC SKILL LABEL) and the requested topic "${input.topic}". Never name an object from a different skill.` : `The subject MUST stay inside the requested topic "${input.topic}"${input.subject ? ` and subject "${input.subject}"` : ''}.`}
-- Add the category noun (insect, wild animal, fruit, vegetable, land vehicle, farm animal, ...) so a sibling topic cannot match instead (fruit vs vegetable, letter glyph vs an object starting with that letter). The category noun is the ONLY extra noun allowed.
-- expectedObjects[0] remains the bare singular noun that matches the title (e.g. "strawberry").
-- Still follow NO ADJECTIVES RULE for the object's own name (no "friendly", "juicy", "cute"). Art-style and colour words are not adjectives on the name and are allowed.
-- Keep preferredStyle/preferredBackground populated as well; they are metadata, but searchQuery is what retrieval actually compares, so the style word must appear in searchQuery too.
+- Keep preferredStyle/preferredBackground populated as well.
 ${imageMediumRules}`
       : '';
 

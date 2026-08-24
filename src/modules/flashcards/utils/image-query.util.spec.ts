@@ -1,3 +1,8 @@
+/**
+ * @deprecated The word-list based sanitization tested here is now kept only as
+ * a fallback mechanism. The primary refinement path uses the dedicated
+ * ImageQueryRefinementService.
+ */
 import {
   requestWantsLineArt,
   sanitizeCardImageQueries,

@@ -39,6 +39,8 @@ import { FlashcardRenderResult } from '../flashcard-renderer/interfaces/render-r
 import { TemplateSelectionService } from './template-selection.service';
 import type { SelectTemplateResult } from './template-selection.service';
 import { TemplateRepository } from './template.repository';
+import { ImageQueryRefinementService } from './image-query-refinement.service';
+import { requestWantsLineArt } from '../utils/image-query.util';
 
 /**
  * Emitted once the template is known and again per assembled card, so a
@@ -77,6 +79,7 @@ export class FlashcardOrchestratorService {
     private readonly contentService: FlashcardContentService,
     private readonly imageRetrievalService: FlashcardImageRetrievalService,
     private readonly rendererService: FlashcardRendererService,
+    private readonly imageQueryRefinementService: ImageQueryRefinementService,
     private readonly configService: ConfigService,
     eventEmitter: EventEmitter2,
   ) {
@@ -312,6 +315,26 @@ export class FlashcardOrchestratorService {
         subject: resolved.subject,
         difficulty: resolved.difficulty,
         language: resolved.language,
+        countryCode,
+      },
+      telemetry,
+    );
+
+    // --- Image Query Refinement (lightweight LLM intent extraction) ---
+    // Runs after content generation (which already applied the regex sanitizer)
+    // and before image retrieval. Refines each image slot's searchQuery to a
+    // concise 2-5 word search key optimised for asset embedding search.
+    await this.imageQueryRefinementService.refineQueries(
+      {
+        cards: llmPayload.cards,
+        topic: resolved.topic,
+        learningObjective: selected.learningObjective,
+        allowLineArt: requestWantsLineArt({
+          query: resolved.query,
+          topic: resolved.topic,
+          learningObjective: selected.learningObjective,
+          subject: resolved.subject,
+        }),
         countryCode,
       },
       telemetry,

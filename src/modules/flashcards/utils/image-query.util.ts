@@ -10,6 +10,10 @@ import { ImageSearchQuery, LlmCardContent } from '../interfaces/flashcard.interf
  * drifts to an unrelated worksheet. Only the visual part of the description
  * discriminates between assets, so a flashcard query must stay visual.
  */
+/**
+ * @deprecated Prefer ImageQueryRefinementService. This hardcoded list is kept
+ * only as a fallback safety net for when the intent extraction LLM fails or is disabled.
+ */
 const PEDAGOGY_NOISE_PHRASES = [
   'for letter tracing',
   'for number tracing',
@@ -71,6 +75,9 @@ const PEDAGOGY_NOISE_PHRASES = [
 ];
 
 /**
+ * @deprecated Prefer ImageQueryRefinementService. This hardcoded list is kept
+ * only as a fallback safety net for when the intent extraction LLM fails or is disabled.
+ *
  * Line-art / outline assets exist alongside finished coloured pictures. These
  * terms are stripped unless the user's request is actually about tracing,
  * colouring, or outline work.

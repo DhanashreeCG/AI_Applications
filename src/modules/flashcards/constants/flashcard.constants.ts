@@ -125,3 +125,11 @@ export const DEFAULT_IMAGE_SEARCH_LIMIT = 8;
 export const DEFAULT_IMAGE_EMBEDDING_MAX_ATTEMPTS = 3;
 export const DEFAULT_IMAGE_EMBEDDING_RETRY_DELAY_MS = 200;
 export const DEFAULT_LANGUAGE = 'English';
+
+// Image query refinement (lightweight LLM intent extraction)
+export const FLASHCARD_IMAGE_QUERY_REFINEMENT_STAGE =
+  'flashcard_image_query_refinement';
+export const DEFAULT_IMAGE_QUERY_REFINEMENT_TIMEOUT_MS = 5000;
+export const DEFAULT_IMAGE_QUERY_REFINEMENT_MAX_ATTEMPTS = 2;
+export const DEFAULT_IMAGE_QUERY_REFINEMENT_RETRY_DELAY_MS = 300;
+export const DEFAULT_IMAGE_QUERY_VOCABULARY_LIMIT = 200;
