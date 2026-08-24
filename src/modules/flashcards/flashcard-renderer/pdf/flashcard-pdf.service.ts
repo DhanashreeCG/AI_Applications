@@ -128,6 +128,7 @@ export class FlashcardPdfService {
         () =>
           (window as unknown as { __FLASHCARD_CAPTURE_DONE__?: boolean })
             .__FLASHCARD_CAPTURE_DONE__ === true,
+        undefined,
         { timeout: 90000 },
       );
       const captureError = await page.evaluate(
