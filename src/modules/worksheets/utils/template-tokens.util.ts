@@ -102,11 +102,17 @@ export function matchingPairLayout(
   const layout = isRecord(structure.layout) ? structure.layout : {};
   const count = Math.max(pairCount, 1);
   const isNumberNames = structure.worksheet_type === 'number_names';
+  // number_names constants below are calibrated against the actual background
+  // artwork's circle/pill centers (measured in px on the 1016x1316 canvas),
+  // not guessed. startTop/nameLeft assume a 70px-tall / 230px-wide item box
+  // that is vertically+horizontally centered via CSS flex (see .number-item /
+  // .name-item in the template). If the background artwork changes, re-measure
+  // pill/circle centers and update these four numbers together.
   return {
-    startTop: Number(layout.start_top) || (isNumberNames ? 285 : 280),
+    startTop: Number(layout.start_top) || (isNumberNames ? 335 : 280),
     numberLeft: Number(layout.number_left) || (isNumberNames ? 140 : 95),
-    nameLeft: Number(layout.name_left) || (isNumberNames ? 540 : 620),
-    rowHeight: Number(layout.row_height) || (isNumberNames ? 145 : Math.min(88, Math.max(64, 900 / count))),
+    nameLeft: Number(layout.name_left) || (isNumberNames ? 607 : 620),
+    rowHeight: Number(layout.row_height) || (isNumberNames ? 143 : Math.min(88, Math.max(64, 900 / count))),
   };
 }
 
@@ -204,12 +210,19 @@ export function buildMatchingPairMarkup(
     return `<button type="button" class="ai-pencil" data-pencil-for="${escapeAttr(path)}" style="top:${top + 10}px;left:${left}px" aria-label="Edit field"><img src="${escapeAttr(icon)}" alt="" /></button>`;
   };
 
+  // Starting font sizes are set explicitly (not left to the browser default)
+  // so shrinkToFit's per-element "max size" is intentional. Longer number
+  // names ("seventy-eight") will auto-shrink toward MIN_FONT if needed; short
+  // ones stay at this size.
+  const NUMBER_FONT_SIZE = 38;
+  const NAME_FONT_SIZE = 28;
+
   const numbers = pairs
     .map((item, index) => {
       const top = startTop + index * rowHeight;
       const path = `pairs[${index}].number`;
       const value = escapeHtml(pairField(item, 'number'));
-      return `<div class="number-item" style="top:${top}px;left:${numberLeft}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, numberLeft + 76)}`;
+      return `<div class="number-item" style="top:${top}px;left:${numberLeft}px;font-size:${NUMBER_FONT_SIZE}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, numberLeft + 76)}`;
     })
     .join('');
 
@@ -221,7 +234,7 @@ export function buildMatchingPairMarkup(
       const top = startTop + renderIndex * rowHeight;
       const path = `pairs[${originalIndex}].name`;
       const value = escapeHtml(pairField(item, 'name'));
-      return `<div class="name-item" style="top:${top}px;left:${nameLeft}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
+      return `<div class="name-item" style="top:${top}px;left:${nameLeft}px;font-size:${NAME_FONT_SIZE}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
     })
     .join('');
 
