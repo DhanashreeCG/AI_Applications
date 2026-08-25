@@ -171,6 +171,12 @@ Render uses `GET /worksheets/assets/:assetId/image` (same-origin, reuses flashca
 
 The teacher UI is `/worksheets.html` (Toondemy LMS shell). Generate uses topic + age group, then a card grid with favourite / preview / download. Preview loads template HTML in an iframe (`GET /preview`) with Edit, AI Edit, and Playwright PNG/PDF download.
 
+## Matching Templates & Shuffling
+
+For matching templates like `number_names`, the generation process relies on `pairs[]` within the structure definition.
+- **Positions**: The absolute positions of the left and right items are generated dynamically by `positionMatchingPairItems` based on `layout` properties (e.g. `start_top`, `number_left`, `name_left`, `row_height`). If absent, template-specific defaults are applied.
+- **Shuffling**: To ensure the generated output is a genuine matching puzzle, the values on the right side (names) are subjected to a deterministic shuffle (`Math.sin`-based stable sort on indices). This scrambles their visual order in the DOM without destroying the underlying logical mapping of pairs required for grading.
+
 ## APIs
 
 | Method | Path | Purpose |

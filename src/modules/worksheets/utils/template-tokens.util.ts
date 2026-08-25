@@ -101,20 +101,22 @@ export function matchingPairLayout(
 ): { startTop: number; numberLeft: number; nameLeft: number; rowHeight: number } {
   const layout = isRecord(structure.layout) ? structure.layout : {};
   const count = Math.max(pairCount, 1);
+  const isNumberNames = structure.worksheet_type === 'number_names';
   return {
-    startTop: Number(layout.start_top) || 280,
-    numberLeft: Number(layout.number_left) || 95,
-    nameLeft: Number(layout.name_left) || 620,
-    rowHeight: Number(layout.row_height) || Math.min(88, Math.max(64, 900 / count)),
+    startTop: Number(layout.start_top) || (isNumberNames ? 285 : 280),
+    numberLeft: Number(layout.number_left) || (isNumberNames ? 140 : 95),
+    nameLeft: Number(layout.name_left) || (isNumberNames ? 540 : 620),
+    rowHeight: Number(layout.row_height) || (isNumberNames ? 145 : Math.min(88, Math.max(64, 900 / count))),
   };
 }
 
-function upsertStylePosition(
-  attrs: string,
-  top: number,
-  left: number,
-  color?: string,
-): string {
+/**
+ * Sets absolute top/left positioning on a style attribute without touching
+ * any other declarations (color, font-weight, etc. are left to the
+ * template's own CSS class — e.g. .name-item / .number-item — and must
+ * never be overridden here).
+ */
+function upsertStylePosition(attrs: string, top: number, left: number): string {
   const apply = (style: string) => {
     let next = style
       .replace(/top\s*:\s*[\d.]*\s*px/gi, `top:${top}px`)
@@ -127,13 +129,6 @@ function upsertStylePosition(
     if (!/left\s*:/i.test(next)) {
       next = `${next};left:${left}px`;
     }
-    if (color) {
-      if (/color\s*:/i.test(next)) {
-        next = next.replace(/color\s*:\s*[^;]*/i, `color:${color}`);
-      } else {
-        next = `${next};color:${color}`;
-      }
-    }
     return next.replace(/^;+|;+$/g, '');
   };
   if (/\bstyle\s*=/i.test(attrs)) {
@@ -142,12 +137,15 @@ function upsertStylePosition(
       (_match, quote: string, style: string) => `style=${quote}${apply(style)}${quote}`,
     );
   }
-  const extra = color ? `;color:${color}` : '';
-  return `${attrs} style="top:${top}px;left:${left}px${extra}"`;
+  return `${attrs} style="top:${top}px;left:${left}px"`;
 }
 
 /**
  * Absolute .number-item / .name-item with missing or empty top/left all land at 0,0.
+ * NOTE: only top/left are set here. Text color and weight come from the
+ * template's own .name-item / .number-item CSS class — the `pairs[].color`
+ * field is the pill/swatch background color, not text color, and must not
+ * be applied inline here.
  */
 export function positionMatchingPairItems(
   html: string,
@@ -163,15 +161,17 @@ export function positionMatchingPairItems(
   );
   let numberIndex = 0;
   let nameIndex = 0;
+  const nameIndices = pairs.map((_, i) => i).sort((a, b) => Math.sin(a + 1) - Math.sin(b + 1));
+
   return html.replace(
     /<(div|span)(\s[^>]*class=["'][^"']*(?:number-item|name-item)[^"']*["'][^>]*)>/gi,
     (full, tag: string, attrs: string) => {
       const isNumber = /number-item/.test(attrs);
       const index = isNumber ? numberIndex++ : nameIndex++;
-      const top = startTop + index * rowHeight;
+      const renderIndex = isNumber ? index : nameIndices.indexOf(index);
+      const top = startTop + renderIndex * rowHeight;
       const left = isNumber ? numberLeft : nameLeft;
-      const color = !isNumber ? pairField(pairs[index], 'color') : '';
-      return `<${tag}${upsertStylePosition(attrs, top, left, color || undefined)}>`;
+      return `<${tag}${upsertStylePosition(attrs, top, left)}>`;
     },
   );
 }
@@ -180,6 +180,8 @@ export function positionMatchingPairItems(
  * Number-names matching templates expect either {{NUMBERS}}/{{NAMES}}
  * or {{#each pairs}} rows. Prototype CSS uses absolute .number-item / .name-item
  * without top/left, so positions are computed here.
+ * Text styling (color, font-weight, centering) is intentionally left to the
+ * template's own .name-item / .number-item CSS class and is never set inline.
  */
 export function buildMatchingPairMarkup(
   structure: Record<string, unknown>,
@@ -211,14 +213,15 @@ export function buildMatchingPairMarkup(
     })
     .join('');
 
+  const nameIndices = pairs.map((_, i) => i).sort((a, b) => Math.sin(a + 1) - Math.sin(b + 1));
+
   const names = pairs
-    .map((item, index) => {
-      const top = startTop + index * rowHeight;
-      const path = `pairs[${index}].name`;
-      const color = pairField(item, 'color');
+    .map((item, originalIndex) => {
+      const renderIndex = nameIndices.indexOf(originalIndex);
+      const top = startTop + renderIndex * rowHeight;
+      const path = `pairs[${originalIndex}].name`;
       const value = escapeHtml(pairField(item, 'name'));
-      const colorStyle = color ? `;color:${escapeAttr(color)}` : '';
-      return `<div class="name-item" style="top:${top}px;left:${nameLeft}px${colorStyle}" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
+      return `<div class="name-item" style="top:${top}px;left:${nameLeft}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
     })
     .join('');
 
