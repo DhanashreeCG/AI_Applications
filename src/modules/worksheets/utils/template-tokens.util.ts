@@ -110,7 +110,7 @@ export function matchingPairLayout(
   // pill/circle centers and update these four numbers together.
   return {
     startTop: Number(layout.start_top) || (isNumberNames ? 335 : 280),
-    numberLeft: Number(layout.number_left) || (isNumberNames ? 140 : 95),
+    numberLeft: Number(layout.number_left) || (isNumberNames ? 208 : 95),
     nameLeft: Number(layout.name_left) || (isNumberNames ? 607 : 620),
     rowHeight: Number(layout.row_height) || (isNumberNames ? 143 : Math.min(88, Math.max(64, 900 / count))),
   };
