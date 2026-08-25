@@ -207,7 +207,7 @@ export function buildMatchingPairMarkup(
     if (!icon) {
       return '';
     }
-    return `<button type="button" class="ai-pencil" data-pencil-for="${escapeAttr(path)}" style="top:${top + 10}px;left:${left}px" aria-label="Edit field"><img src="${escapeAttr(icon)}" alt="" /></button>`;
+    return `<button type="button" class="ai-pencil" data-pencil-for="${escapeAttr(path)}" style="top:${top + 10}px;left:${left}px;width:20px;height:20px" aria-label="Edit field"><img src="${escapeAttr(icon)}" alt="" style="width:100%;height:100%"/></button>`;
   };
 
   // Starting font sizes are set explicitly (not left to the browser default)
