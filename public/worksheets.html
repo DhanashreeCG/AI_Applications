@@ -345,6 +345,12 @@
             <label for="countSelect">How many worksheets</label>
             <select id="countSelect"></select>
           </div>
+          <div class="count-field">
+            <label for="templateSelect">Template (optional)</label>
+            <select id="templateSelect">
+              <option value="">Auto-select template</option>
+            </select>
+          </div>
         </div>
         <div class="actions">
           <button class="btn btn-ghost" id="cancelBtn" type="button">Cancel</button>
@@ -485,6 +491,7 @@
         generateBtn: document.getElementById('generateBtn'),
         cancelBtn: document.getElementById('cancelBtn'),
         countSelect: document.getElementById('countSelect'),
+        templateSelect: document.getElementById('templateSelect'),
         status: document.getElementById('status'),
         worksheetGrid: document.getElementById('worksheetGrid'),
         pager: document.getElementById('pager'),
@@ -721,6 +728,7 @@
             ageGroup: age.id,
             grade: age.grade,
             count: Number(els.countSelect.value) || state.defaultCount,
+            templateId: els.templateSelect.value || undefined,
           }),
         });
         const body = await res.json().catch(() => ({}));
@@ -1568,12 +1576,29 @@
         applySettings(settings);
       }
 
+      async function loadTemplates() {
+        try {
+          const res = await apiFetch('/templates');
+          const templates = await res.json();
+          if (res.ok && Array.isArray(templates)) {
+            const options = ['<option value="">Auto-select template</option>'];
+            templates.forEach((t) => {
+              options.push(`<option value="${t.id}">${t.name}</option>`);
+            });
+            els.templateSelect.innerHTML = options.join('');
+          }
+        } catch (error) {
+          console.error('Could not load templates', error);
+        }
+      }
+
       renderAges();
       fillCountOptions(state.defaultCount, state.maxCount);
       state.apiBaseUrl = queryApiBase();
       loadSettings()
         .then(() => {
           renderAges();
+          loadTemplates();
           const params = new URLSearchParams(location.search);
           if (params.get('id')) return openPreview(params.get('id'));
           return loadGrid();

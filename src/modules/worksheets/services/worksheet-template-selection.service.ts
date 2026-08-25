@@ -44,6 +44,11 @@ export class WorksheetTemplateSelectionService {
     request: GenerateWorksheetRequest,
     limit = 10,
   ): Promise<WorksheetTemplateRecord[]> {
+    const explicit = request.templateId?.trim();
+    if (explicit) {
+      return [await this.templateService.getActiveByIdOrSlug(explicit)];
+    }
+
     const templates = await this.templateService.listActive();
     const eligible = templates.filter((template) =>
       this.isEligibleForSet(template, request),
