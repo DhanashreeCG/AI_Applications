@@ -1,4 +1,5 @@
 import { WorksheetTemplateSelectionService } from './worksheet-template-selection.service';
+import { WorksheetTemplateSelectionAiService } from './worksheet-template-selection-ai.service';
 import { WorksheetTemplateService } from './worksheet-template.service';
 import { WorksheetTemplateRecord } from './worksheet-template.service';
 
@@ -45,10 +46,15 @@ describe('WorksheetTemplateSelectionService', () => {
 
   let service: WorksheetTemplateSelectionService;
 
+  const aiService = {
+    select: jest.fn().mockResolvedValue({ result: null, usedFallback: true }),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     service = new WorksheetTemplateSelectionService(
       templateService as unknown as WorksheetTemplateService,
+      aiService as unknown as WorksheetTemplateSelectionAiService,
     );
   });
 

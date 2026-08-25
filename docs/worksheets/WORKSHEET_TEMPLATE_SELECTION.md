@@ -7,9 +7,9 @@ How generate-worksheet chooses a template. Source of truth:
 - `src/modules/worksheets/services/worksheet-generation.service.ts`
 - `src/modules/worksheets/services/worksheet-validation.service.ts`
 
-Worksheets do **not** use selection rules, synthetic rules, or an LLM picker. Selection is: optional explicit id/slug, else filter active templates by `meta`, then highest score.
+Worksheets do **not** use selection rules or synthetic rules like flashcards. Instead, selection is: optional explicit id/slug, else filter active templates by \`meta\`, then rank by highest deterministic score, and finally use an **AI (LLM) picker** to select the most semantically appropriate template from the top candidates.
 
-There is **no hardcoded default template**. If several templates score the same, JavaScript’s stable sort keeps `listActive` order: `updatedAt` descending, then `id` ascending — so the most recently updated eligible template wins ties.
+There is **no hardcoded default template**. If several templates are eligible, the AI selects the best one based on the educational intent inferred from the query and topic. If the AI is disabled, times out, or returns low confidence, the deterministic ranking winner is used as a fallback.
 
 ---
 
@@ -50,7 +50,8 @@ When `templateId` is omitted:
 2. Keep those that pass `isEligible`.
 3. If none → `404 NO_TEMPLATE_FOUND` (payload includes grade/subject/topic).
 4. Sort by `score` descending.
-5. Return `eligible[0]`.
+5. If there are multiple eligible templates, invoke the `WorksheetTemplateSelectionAiService` to select the most semantically appropriate template based on the query and topic.
+6. If the AI succeeds with high confidence, return the AI-selected template. Otherwise, return `eligible[0]` (fallback to deterministic #1).
 
 ### Eligibility (`isEligible`)
 
@@ -152,7 +153,8 @@ drop if age outside meta.ageMin–ageMax (when both sides present)
         ├── none → 404 NO_TEMPLATE_FOUND
         └── score: grade 10, subject 8, topic 8, age 6, difficulty 4
                 sort desc; ties → updatedAt desc
-                take first
+                pass top candidates to AI
+                return AI winner (or deterministic #1 on fallback)
 ```
 
 ## Contrast with flashcards (short)
@@ -163,6 +165,6 @@ drop if age outside meta.ageMin–ageMax (when both sides present)
 | Rules table | `TemplateSelectionRule` + synthetic rules | Template `meta` JSON only |
 | Age | Required (or grade defaults); overlap with `supportedAgeGroups` | Optional; first number vs `ageMin`/`ageMax` |
 | Topic | Not a hard filter; AI semantic pick | Hard filter if `meta.topics` set |
-| LLM | Optional re-rank among survivors | None |
-| Objective | Primary rank signal | Not used |
+| LLM | Optional re-rank among survivors | Optional re-rank among survivors |
+| Objective | Primary rank signal | Not used directly (intent inferred by LLM) |
 | Default template | None | None |

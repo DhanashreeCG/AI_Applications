@@ -5,13 +5,19 @@ import {
   WorksheetTemplateRecord,
   WorksheetTemplateService,
 } from './worksheet-template.service';
+import { WorksheetTemplateSelectionAiService } from './worksheet-template-selection-ai.service';
+import { PipelineTelemetryContext } from '../../../common/events/pipeline-tracker.events';
 
 @Injectable()
 export class WorksheetTemplateSelectionService {
-  constructor(private readonly templateService: WorksheetTemplateService) {}
+  constructor(
+    private readonly templateService: WorksheetTemplateService,
+    private readonly aiService: WorksheetTemplateSelectionAiService,
+  ) {}
 
   public async select(
     request: GenerateWorksheetRequest,
+    telemetry?: PipelineTelemetryContext,
   ): Promise<WorksheetTemplateRecord> {
     const explicit = request.templateId?.trim();
     if (explicit) {
@@ -37,12 +43,34 @@ export class WorksheetTemplateSelectionService {
     }
 
     eligible.sort((a, b) => this.score(b, request) - this.score(a, request));
+
+    if (eligible.length > 1) {
+      const outcome = await this.aiService.select({
+        topic: request.topic ?? null,
+        query: request.query ?? null,
+        ageGroup: request.ageGroup ?? null,
+        grade: request.grade ?? null,
+        subject: request.subject ?? null,
+        difficulty: request.difficulty ?? null,
+        allowedTemplateIds: eligible.map((t) => t.id),
+        telemetry,
+      });
+
+      if (!outcome.usedFallback && outcome.result) {
+        const aiSelected = eligible.find((t) => t.id === outcome.result!.selectedTemplateId);
+        if (aiSelected) {
+          return aiSelected;
+        }
+      }
+    }
+
     return eligible[0];
   }
 
   public async listMatching(
     request: GenerateWorksheetRequest,
     limit = 10,
+    telemetry?: PipelineTelemetryContext,
   ): Promise<WorksheetTemplateRecord[]> {
     const explicit = request.templateId?.trim();
     if (explicit) {
@@ -54,6 +82,42 @@ export class WorksheetTemplateSelectionService {
       this.isEligibleForSet(template, request),
     );
     eligible.sort((a, b) => this.score(b, request) - this.score(a, request));
+
+    if (eligible.length > 1) {
+      const outcome = await this.aiService.select({
+        topic: request.topic ?? null,
+        query: request.query ?? null,
+        ageGroup: request.ageGroup ?? null,
+        grade: request.grade ?? null,
+        subject: request.subject ?? null,
+        difficulty: request.difficulty ?? null,
+        allowedTemplateIds: eligible.map((t) => t.id),
+        telemetry,
+      });
+
+      if (!outcome.usedFallback && outcome.result) {
+        const selectedId = outcome.result.selectedTemplateId;
+        const alternativeId = outcome.result.alternativeTemplateId;
+        
+        const sortedPool = [...eligible];
+        if (alternativeId) {
+          const altIdx = sortedPool.findIndex((t) => t.id === alternativeId);
+          if (altIdx !== -1) {
+            const [altTemp] = sortedPool.splice(altIdx, 1);
+            sortedPool.unshift(altTemp);
+          }
+        }
+        if (selectedId) {
+          const selIdx = sortedPool.findIndex((t) => t.id === selectedId);
+          if (selIdx !== -1) {
+            const [selTemp] = sortedPool.splice(selIdx, 1);
+            sortedPool.unshift(selTemp);
+          }
+        }
+        return sortedPool.slice(0, Math.max(1, limit));
+      }
+    }
+
     return eligible.slice(0, Math.max(1, limit));
   }
 

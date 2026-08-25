@@ -9,7 +9,7 @@ POST /worksheets/generate
         ↓
 validate request
         ↓
-deterministic template selection (DB)
+template selection (explicit ID bypasses AI, else deterministic filter + AI picker)
         ↓
 Gemini JSON content (existing GEMINI_API_KEY + rate limiter / circuit breaker / AiUsageService)
         ↓

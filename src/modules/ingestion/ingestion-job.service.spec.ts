@@ -128,7 +128,6 @@ describe('IngestionJobService', () => {
       id: 'job-002',
       status: JobState.CREATED,
       mode: 'FULL',
-      readFileNames: true,
       ...dto,
     });
 

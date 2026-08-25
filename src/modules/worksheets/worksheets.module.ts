@@ -13,6 +13,7 @@ import { WorksheetEditService } from './services/worksheet-edit.service';
 import { WorksheetGenerationService } from './services/worksheet-generation.service';
 import { WorksheetRenderService } from './services/worksheet-render.service';
 import { WorksheetTemplateSelectionService } from './services/worksheet-template-selection.service';
+import { WorksheetTemplateSelectionAiService } from './services/worksheet-template-selection-ai.service';
 import { WorksheetTemplateService } from './services/worksheet-template.service';
 import { WorksheetValidationService } from './services/worksheet-validation.service';
 import { WorksheetsController } from './worksheets.controller';
@@ -23,6 +24,7 @@ import { WorksheetsController } from './worksheets.controller';
   providers: [
     WorksheetTemplateService,
     WorksheetTemplateSelectionService,
+    WorksheetTemplateSelectionAiService,
     WorksheetValidationService,
     WorksheetContentService,
     WorksheetAssetService,

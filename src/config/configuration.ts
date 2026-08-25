@@ -114,6 +114,17 @@ export interface AppConfig {
       defaultWidth: number;
       defaultHeight: number;
     };
+    templateSelectionAi: {
+      enabled: boolean;
+      provider: string;
+      openaiModel: string;
+      geminiModel: string;
+      minConfidence: number;
+      timeoutMs: number;
+      costPerMInputUsd: number;
+      costPerMCachedInputUsd: number;
+      costPerMOutputUsd: number;
+    };
   };
   pipelineTracking: {
     enabled: boolean;
@@ -417,6 +428,17 @@ export default (): AppConfig => ({
         process.env.WORKSHEET_RENDER_HEIGHT || '1316',
         10,
       ),
+    },
+    templateSelectionAi: {
+      enabled: process.env.WORKSHEET_TEMPLATE_SELECTION_AI_ENABLED !== 'false',
+      provider: process.env.WORKSHEET_TEMPLATE_SELECTION_PROVIDER || 'openai',
+      openaiModel: process.env.WORKSHEET_TEMPLATE_SELECTION_OPENAI_MODEL || 'gpt-4.1-mini',
+      geminiModel: process.env.WORKSHEET_TEMPLATE_SELECTION_GEMINI_MODEL || 'gemini-2.5-flash',
+      minConfidence: parseFloat(process.env.WORKSHEET_TEMPLATE_SELECTION_MIN_CONFIDENCE || '0.5'),
+      timeoutMs: parseInt(process.env.WORKSHEET_TEMPLATE_SELECTION_TIMEOUT_MS || '6000', 10),
+      costPerMInputUsd: parseFloat(process.env.WORKSHEET_TEMPLATE_SELECTION_COST_PER_M_INPUT_USD || '0.4'),
+      costPerMCachedInputUsd: parseFloat(process.env.WORKSHEET_TEMPLATE_SELECTION_COST_PER_M_CACHED_INPUT_USD || '0.1'),
+      costPerMOutputUsd: parseFloat(process.env.WORKSHEET_TEMPLATE_SELECTION_COST_PER_M_OUTPUT_USD || '1.6'),
     },
   },
   pipelineTracking: {

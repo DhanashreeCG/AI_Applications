@@ -247,7 +247,7 @@ export class WorksheetGenerationService {
       this.emitter,
       telemetry,
       PIPELINE_STAGES.TEMPLATE_SELECTION,
-      () => this.templateSelectionService.select(dto),
+      () => this.templateSelectionService.select(dto, telemetry),
       {
         startMetadata: {
           explicitTemplateId: analyzed.explicitTemplateId,
@@ -438,10 +438,27 @@ export class WorksheetGenerationService {
   ): Promise<{ items: GenerateWorksheetResponse[]; failed: number }> {
     this.validationService.validateRequest(dto);
     const count = this.normalizeCount(dto.count);
-    const matching = await this.templateSelectionService.listMatching(dto, count);
+
+    const telemetry = createTelemetryContext({
+      correlationId: options.correlationId,
+      workflowType: this.workflowType,
+    });
+
+    const matching = await runTrackedStage(
+      this.emitter,
+      telemetry,
+      PIPELINE_STAGES.TEMPLATE_SELECTION,
+      () => this.templateSelectionService.listMatching(dto, count, telemetry),
+      {
+        startMetadata: {
+          explicitTemplateId: dto.templateId,
+        },
+      }
+    );
+
     const pool = matching.length
       ? matching
-      : [await this.templateSelectionService.select(dto)];
+      : [await this.templateSelectionService.select(dto, telemetry)];
     const targets = Array.from({ length: count }, (_, index) => pool[index % pool.length]);
 
     const results: GenerateWorksheetResponse[] = [];
