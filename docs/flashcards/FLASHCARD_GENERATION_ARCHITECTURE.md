@@ -35,8 +35,8 @@ The LLM never invents components. The selected template’s `layoutDefinition` i
                     │  ├─ Request resolve │
                     │  ├─ Template select │
                     │  ├─ Content (LLM)   │
-                    │  ├─ Image retrieve  │
-                    │  └─ Assemble JSON   │
+                    │  ├─ Image retrieve  │  ← cards in parallel
+                    │  └─ Assemble JSON   │  ← streamed per card
                     └─┬───────┬───────┬───┘
                       │       │       │
            ┌──────────▼─┐ ┌───▼────┐ ┌▼────────────────┐
@@ -54,8 +54,8 @@ External dependencies (unchanged by this module): Asset Library, Semantic Search
 
 | Component | Role |
 |---|---|
-| `FlashcardsController` | HTTP: generate, list/upload templates, render, asset proxy |
-| `FlashcardOrchestratorService` | End-to-end stage orchestration + telemetry |
+| `FlashcardsController` | HTTP: generate, generate/stream (NDJSON), list/upload templates, render, asset proxy |
+| `FlashcardOrchestratorService` | End-to-end stage orchestration + telemetry + per-card progress callbacks |
 | `user-request.resolver` | Deterministic topic / age / grade / subject / difficulty / objective |
 | `TemplateSelectionService` + `template-selection.engine` | Hard filter + rank → one template (deterministic fallback) |
 | `TemplateSelectionAiService` + `TemplateCatalogCacheService` | LLM semantic pick among hard-filtered candidates (cached catalog prefix) |
@@ -194,6 +194,7 @@ Assets         → Existing search + library (referenced, not generated)
 | Concern | Path |
 |---|---|
 | Orchestration | `src/modules/flashcards/services/flashcard-orchestrator.service.ts` |
+| Progressive stream | [`PROGRESSIVE_CARD_DELIVERY.md`](./PROGRESSIVE_CARD_DELIVERY.md), `POST /flashcards/generate/stream` |
 | Request analysis | `src/modules/flashcards/utils/user-request.resolver.ts` |
 | Template selection | `src/modules/flashcards/utils/template-selection.engine.ts` |
 | AI template selection | `src/modules/flashcards/services/template-selection-ai.service.ts` |

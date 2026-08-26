@@ -39,6 +39,7 @@ export const PIPELINE_STAGES = {
   LLM_RESPONSE_VALIDATION: 'llm_response_validation',
   CONTENT_VALIDATION: 'content_validation',
   IMAGE_QUERY_GENERATION: 'image_query_generation',
+  IMAGE_QUERY_REFINEMENT: 'image_query_refinement',
   /** @deprecated Prefer IMAGE_RETRIEVAL */
   IMAGE_SEARCH: 'image_search',
   IMAGE_RETRIEVAL: 'image_retrieval',

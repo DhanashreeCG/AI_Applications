@@ -113,6 +113,11 @@ export const FLASHCARD_USER_UPLOAD_MIME_TYPES = new Set([
   'image/gif',
 ]);
 export const DEFAULT_IMAGE_CONCURRENCY = 3;
+/**
+ * Cards assembled in parallel. Multiplies with DEFAULT_IMAGE_CONCURRENCY, so the
+ * worst-case in-flight embedding/vector searches is card × image concurrency.
+ */
+export const DEFAULT_CARD_CONCURRENCY = 3;
 export const DEFAULT_SIGNED_URL_TTL_SECONDS = 3600;
 /** Ranked hits from one query so later cards can take 2nd/3rd if top is already used. */
 export const DEFAULT_IMAGE_SEARCH_LIMIT = 8;
@@ -120,3 +125,11 @@ export const DEFAULT_IMAGE_SEARCH_LIMIT = 8;
 export const DEFAULT_IMAGE_EMBEDDING_MAX_ATTEMPTS = 3;
 export const DEFAULT_IMAGE_EMBEDDING_RETRY_DELAY_MS = 200;
 export const DEFAULT_LANGUAGE = 'English';
+
+// Image query refinement (lightweight LLM intent extraction)
+export const FLASHCARD_IMAGE_QUERY_REFINEMENT_STAGE =
+  'flashcard_image_query_refinement';
+export const DEFAULT_IMAGE_QUERY_REFINEMENT_TIMEOUT_MS = 5000;
+export const DEFAULT_IMAGE_QUERY_REFINEMENT_MAX_ATTEMPTS = 2;
+export const DEFAULT_IMAGE_QUERY_REFINEMENT_RETRY_DELAY_MS = 300;
+export const DEFAULT_IMAGE_QUERY_VOCABULARY_LIMIT = 200;
