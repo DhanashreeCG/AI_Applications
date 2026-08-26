@@ -2179,14 +2179,14 @@
           </select>
         </div> -->
 
-        <div class="extra-row">
+        <div class="extra-row" style="display: none;">
           <label for="templateSelect">Template</label>
           <select id="templateSelect">
             <option value="">Auto — no template selected</option>
           </select>
         </div>
 
-        <div class="extra-row">
+        <div class="extra-row" style="display: none;">
           <label for="count">Number of cards</label>
           <select id="count">
             <option selected>1</option>
@@ -2210,7 +2210,7 @@
           </button>
         </div>
 
-        <div class="chips">
+        <div class="chips" style="display: none;">
           <span>Try:</span>
           <button class="chip" data-q="Generate flashcards on vegetables" data-a="3-4">Vegetables</button>
           <button class="chip" data-q="Teach animal names to toddlers" data-a="2-3">Animals</button>
@@ -2225,7 +2225,7 @@
 
       <section class="results">
         <div class="summary" id="summary">
-          <div class="pills" id="metaPills"></div>
+          <div class="pills" id="metaPills" style="display: none;"></div>
           <div class="bulk">
             <button class="btn-soft" id="saveAllCards">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" /><path d="M17 21v-8H7v8M7 3v5h8" /></svg>
@@ -2249,7 +2249,7 @@
           <p>Add a learning topic, pick an age group, then generate.</p>
         </div>
 
-        <div class="table-foot">
+        <div class="table-foot" style="display: none;">
           <div class="rows-per-page" id="rowsPerPage">
             <span>Row per page:</span>
             <button aria-current="true" data-size="0">default</button>
@@ -2759,7 +2759,7 @@
       async function generate() {
         const query = el('query').value.trim();
         const ageGroup = state.ageGroup;
-        const count = Number(el('count').value) || 5;
+        const count = 5; // Hardcoded default
         const templateId = el('templateSelect').value;
 
         if (!query || !ageGroup) {
