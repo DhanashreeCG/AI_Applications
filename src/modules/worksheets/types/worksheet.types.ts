@@ -90,6 +90,7 @@ export interface GenerateWorksheetRequest {
   difficulty?: string;
   language?: string;
   templateId?: string;
+  countryCode?: string;
 }
 
 export interface GenerateWorksheetResponse {

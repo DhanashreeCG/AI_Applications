@@ -1,3 +1,4 @@
+import { buildCountryForbiddenPromptClause } from '../../flashcards/utils/content-restriction.registry';
 import { GenerateWorksheetRequest } from '../types/worksheet.types';
 
 export function buildWorksheetContentPrompt(input: {
@@ -21,6 +22,8 @@ export function buildWorksheetContentPrompt(input: {
       .filter(Boolean)
       .join('\n');
 
+  const countrySafetyClause = buildCountryForbiddenPromptClause(request.countryCode);
+
   return [
     'You generate educational worksheet CONTENT only.',
     'Return a single JSON object that matches the template structure definition.',
@@ -29,6 +32,9 @@ export function buildWorksheetContentPrompt(input: {
     'Every imageQuery must be a short visual search phrase (e.g. "three red apples").',
     'All text fields must be plain text suitable for young learners.',
     `Language: ${request.language?.trim() || 'English'}`,
+    '',
+    'CONTENT SAFETY & RESTRICTIONS:',
+    countrySafetyClause,
     '',
     `Template: ${input.templateName} (${input.templateSlug})`,
     input.templateDescription ? `Description: ${input.templateDescription}` : '',
@@ -54,13 +60,19 @@ export function buildWorksheetEditPrompt(input: {
   currentValue: unknown;
   worksheetStructure: unknown;
   linkedValues: Record<string, unknown>;
+  countryCode?: string | null;
 }): string {
   const system =
     input.systemPrompt?.trim() ||
     'You edit a single worksheet field. Return JSON only. Do not generate HTML or CSS.';
 
+  const countrySafetyClause = buildCountryForbiddenPromptClause(input.countryCode);
+
   return [
     system,
+    '',
+    'CONTENT SAFETY & RESTRICTIONS:',
+    countrySafetyClause,
     '',
     `Edit field: ${input.fieldPath}`,
     input.fieldPrompt ? `Field guidance: ${input.fieldPrompt}` : '',

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Generate AI Worksheets</title>
+    <title>AI Worksheets</title>
     <link
       rel="stylesheet"
       href="fonts/toondemy.css"
@@ -13,249 +13,892 @@
     <script src="public-assets.js"></script>
     <style>
       :root {
-        --sidebar: #5b2d91;
-        --sidebar-deep: #4a2278;
-        --purple: #6b2fa0;
-        --purple-soft: #efe6f8;
-        --orange: #f08a3a;
-        --text: #2b2140;
-        --muted: #7a7190;
-        --line: #eadff4;
-        --white: #ffffff;
-        --danger: #e24b4b;
+        --bg: #f3f1fd;
+        --surface: #ffffff;
+        --ink: #2a1b4a;
+        --ink-soft: #4b3b73;
+        --muted: #8b84ab;
+        --line: #e8e4f7;
+        --primary: #6d28d9;
+        --primary-deep: #4c1d95;
+        --magenta: #b4189b;
+        --danger: #e0245e;
+        --ok: #22a06b;
+        --warn: #d98600;
+        --shadow-sm: 0 2px 10px rgba(76, 29, 149, 0.06);
+        --shadow-md: 0 14px 40px rgba(76, 29, 149, 0.1);
       }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
       body {
-        font-family: 'Toondemy', Segoe UI, sans-serif;
-        color: var(--text);
-        background: #f7f4fb;
-      }
-      button, input, select, textarea { font-family: inherit; }
-      .main { overflow: auto; min-width: 0; }
-      .topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 22px 32px 8px;
-      }
-      h1 {
         margin: 0;
-        color: var(--purple);
-        font-size: 32px;
-        font-weight: 800;
+        padding: 0;
+        background: var(--bg);
       }
-      .userbox { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
-      .avatar {
-        width: 40px; height: 40px; border-radius: 50%;
-        background: var(--purple); color: #fff; display: grid; place-items: center; font-weight: 800;
+
+      body {
+        min-height: 100vh;
+        font-family: 'Toondemy', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: var(--ink);
+        -webkit-font-smoothing: antialiased;
       }
-      .form-card, .preview-wrap {
-        background: var(--white);
-        margin: 12px 32px 20px;
-        padding: 22px 24px;
-        border-radius: 18px;
+
+      button, input, select, textarea {
+        font-family: inherit;
+      }
+
+      button {
+        font: inherit;
+        cursor: pointer;
+        border: none;
+        background: none;
+        color: inherit;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+      }
+
+      .main {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 26px 26px 40px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        min-height: 100vh;
+      }
+
+      /* ---------- page head ---------- */
+
+      .page-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+
+      .page-head h1 {
+        margin: 0;
+        font-family: 'Toondemy', sans-serif;
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--primary);
+        letter-spacing: 0.2px;
+      }
+
+      .api-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--surface);
         border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 8px 16px;
+        font-size: 13px;
+        color: var(--muted);
+        box-shadow: var(--shadow-sm);
       }
-      label { display: block; font-weight: 800; margin-bottom: 8px; }
-      .topic-row {
+
+      .api-field input {
+        border: none;
+        outline: none;
+        background: transparent;
+        font: inherit;
+        color: var(--ink);
+        width: 200px;
+      }
+
+      /* ---------- console panel ---------- */
+
+      .panel {
+        background: var(--surface);
+        border-radius: 20px;
+        padding: 28px;
+        box-shadow: var(--shadow-md);
+      }
+
+      .field-label {
+        display: block;
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--ink);
+        margin-bottom: 10px;
+      }
+
+      .field-label .req {
+        color: var(--danger);
+      }
+
+      .topic-input {
         display: flex;
         align-items: center;
         gap: 10px;
-        border: 1.5px solid var(--line);
+        max-width: 450px;
+        border: 1px solid var(--line);
         border-radius: 12px;
-        padding: 10px 14px;
-        margin-bottom: 18px;
+        padding: 12px 16px;
+        transition: border-color 0.16s, box-shadow 0.16s;
       }
-      .topic-row input {
-        border: 0; outline: none; width: 100%; font: inherit; font-size: 15px;
+
+      .topic-input:focus-within {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px rgba(109, 40, 217, 0.1);
       }
-      .ages { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-      .form-row {
+
+      .topic-input svg {
+        flex: 0 0 auto;
+        color: var(--muted);
+      }
+
+      .topic-input input {
+        border: none;
+        outline: none;
+        font: inherit;
+        font-size: 15px;
+        width: 100%;
+        color: var(--ink);
+        background: transparent;
+      }
+
+      .topic-input input::placeholder {
+        color: #a9a2c4;
+      }
+
+      .age-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(196px, 216px));
+        gap: 14px;
+        margin: 22px 0 0;
+        max-width: 460px;
+      }
+
+      .age-pill {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        gap: 10px;
+        padding: 13px 18px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--muted);
+        text-align: left;
+        transition: border-color 0.16s, color 0.16s, background 0.16s;
+      }
+
+      .age-pill .radio {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 1.5px solid #d9d3ee;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        color: transparent;
+      }
+
+      .age-pill[aria-checked='true'] {
+        border-color: var(--primary);
+        color: var(--primary);
+        background: #faf7ff;
+      }
+
+      .age-pill[aria-checked='true'] .radio {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+      }
+
+      .extra-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 22px;
+        font-size: 14px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .extra-row select {
+        font: inherit;
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 12px;
+        background: #fff;
+        outline: none;
+      }
+
+      .extra-row select#templateSelect {
+        min-width: 260px;
+        max-width: 420px;
+      }
+
+      .actions {
+        display: flex;
         gap: 16px;
         flex-wrap: wrap;
-        margin-bottom: 18px;
+        margin-top: 24px;
       }
-      .count-field { min-width: 180px; }
-      .count-field select {
-        width: 100%;
-        border: 1.5px solid var(--line);
-        border-radius: 10px;
-        padding: 10px 12px;
-        font: inherit;
+
+      .btn-outline {
+        min-width: 218px;
+        padding: 14px 26px;
+        border-radius: 12px;
+        border: 1.5px solid var(--primary);
+        color: var(--primary);
         font-weight: 700;
+        font-size: 16px;
         background: #fff;
+        transition: background 0.16s;
       }
-      .age {
-        border: 1.5px solid #d8cce8;
-        background: #fff;
-        border-radius: 999px;
-        padding: 10px 16px;
-        font-weight: 800;
-        cursor: pointer;
+
+      .btn-outline:hover:not(:disabled) {
+        background: #f7f2ff;
       }
-      .age input { display: none; }
-      .age.selected {
-        border-color: var(--purple);
-        background: var(--purple-soft);
-        color: var(--purple);
-      }
-      .actions { display: flex; justify-content: flex-end; gap: 12px; }
-      .btn {
-        border: 0; border-radius: 10px; padding: 11px 18px; font-weight: 800; cursor: pointer;
-      }
-      .btn-ghost { background: #fff; color: var(--purple); border: 1.5px solid var(--purple); }
-      .btn-gen {
+
+      .btn-primary {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 28px;
+        border-radius: 12px;
+        font-weight: 700;
+        font-size: 16px;
         color: #fff;
-        background: linear-gradient(90deg, var(--purple), var(--orange));
+        background: linear-gradient(100deg, var(--magenta), var(--primary) 60%, var(--primary-deep));
+        box-shadow: 0 10px 26px rgba(109, 40, 217, 0.28);
+        transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
       }
-      .btn:disabled { opacity: 0.55; cursor: wait; }
-      .grid-wrap { padding: 0 32px 40px; }
-      .worksheet-grid {
+
+      .btn-primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 30px rgba(109, 40, 217, 0.36);
+      }
+
+      .btn-primary:disabled {
+        opacity: 0.4;
+        box-shadow: none;
+      }
+
+      .btn-soft {
+        padding: 9px 16px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--ink-soft);
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .btn-soft:hover:not(:disabled) {
+        border-color: #cfc7ea;
+        background: #faf8ff;
+      }
+
+      .btn-soft:disabled {
+        opacity: 0.5;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-top: 20px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .chip {
+        padding: 7px 14px;
+        border-radius: 999px;
+        background: #f5f2ff;
+        border: 1px solid #eae4fb;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ink-soft);
+      }
+
+      .chip:hover {
+        background: #ede6ff;
+      }
+
+      /* ---------- banners ---------- */
+
+      .banner {
+        display: none;
+        gap: 10px;
+        margin-top: 18px;
+        padding: 13px 16px;
+        border-radius: 12px;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .banner.show {
+        display: flex;
+      }
+
+      .banner.error {
+        background: #fff1f4;
+        border: 1px solid #f8ccd8;
+        color: #a01340;
+        align-items: flex-start;
+      }
+
+      .banner.warn {
+        background: #fff8ec;
+        border: 1px solid #f6e0bb;
+        color: #8a5a06;
+        align-items: flex-start;
+      }
+
+      .banner .banner-title {
+        font-weight: 800;
+        margin-bottom: 2px;
+      }
+
+      .banner .banner-body {
+        font-weight: 600;
+      }
+
+      /* ---------- results ---------- */
+
+      .results {
+        background: var(--surface);
+        border-radius: 20px;
+        padding: 22px 22px 8px;
+        box-shadow: var(--shadow-md);
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+      }
+
+      .summary {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+        padding-bottom: 18px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 20px;
+      }
+
+      .summary.show {
+        display: flex;
+      }
+
+      .pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .pill {
+        padding: 6px 13px;
+        border-radius: 999px;
+        background: #f5f2ff;
+        font-size: 12.5px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .pill b {
+        color: var(--ink);
+      }
+
+      .grid {
         display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 18px;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 26px 22px;
+        align-items: start;
       }
-      @media (max-width: 1200px) { .worksheet-grid { grid-template-columns: repeat(3, 1fr); } }
-      @media (max-width: 800px) {
-        .worksheet-grid { grid-template-columns: repeat(2, 1fr); }
+
+      .tile {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+        position: relative;
+        z-index: 0;
       }
-      .card {
+
+      .tile-card {
         background: #fff;
         border: 1px solid var(--line);
         border-radius: 14px;
         overflow: hidden;
-        box-shadow: 0 6px 18px rgba(91,45,145,0.06);
+        box-shadow: var(--shadow-sm);
         cursor: pointer;
+        transition: transform 0.16s, box-shadow 0.16s;
       }
-      .card:hover { box-shadow: 0 10px 24px rgba(91,45,145,0.14); }
+
+      .tile-card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow-md);
+      }
+
       .thumb-frame {
         width: 100%;
-        height: 170px;
+        height: 190px;
         overflow: hidden;
-        background: #f3eef9;
+        background: #f8f6fc;
         pointer-events: none;
       }
+
       .thumb-frame iframe {
         border: 0;
         transform-origin: top left;
         pointer-events: none;
       }
-      .card-bar {
+
+      .tile-actions {
         display: flex;
-        justify-content: space-around;
-        padding: 8px;
-        border-top: 1px solid var(--line);
+        flex-wrap: wrap;
+        gap: 8px 10px;
+        align-items: center;
+        padding-left: 2px;
+        width: 100%;
+        box-sizing: border-box;
       }
+
       .icon-btn {
-        width: 34px; height: 34px; border: 0; background: transparent; cursor: pointer; font-size: 16px;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: var(--muted);
+        transition: color 0.16s, background 0.16s;
+        border: none;
+        background: none;
       }
-      .icon-btn.loved { color: var(--danger); }
+
+      .icon-btn:hover:not(:disabled) {
+        background: #f5f2ff;
+        color: var(--primary);
+      }
+
+      .icon-btn.fav {
+        color: #f0aec2;
+      }
+
+      .icon-btn.fav[aria-pressed='true'],
+      .icon-btn.fav.loved {
+        color: var(--danger);
+      }
+
+      /* ---------- skeleton ---------- */
+
+      .skeleton {
+        aspect-ratio: 1016 / 1316;
+        border-radius: 14px;
+        background: linear-gradient(100deg, #f1eefb 30%, #e6e0f7 50%, #f1eefb 70%);
+        background-size: 220% 100%;
+        animation: shimmer 1.2s infinite linear;
+      }
+
+      @keyframes shimmer {
+        from {
+          background-position: 160% 0;
+        }
+        to {
+          background-position: -60% 0;
+        }
+      }
+
+      .empty {
+        text-align: center;
+        padding: 70px 20px;
+        color: var(--muted);
+      }
+
+      .empty h2 {
+        font-family: 'Toondemy', sans-serif;
+        margin: 0 0 6px;
+        font-size: 22px;
+        color: var(--ink);
+      }
+
+      .empty p {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      /* ---------- footer / pagination ---------- */
+
+      .table-foot {
+        margin-top: auto;
+        padding: 16px 2px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .rows-per-page {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .rows-per-page button {
+        font-weight: 700;
+        color: var(--muted);
+      }
+
+      .rows-per-page button[aria-current='true'] {
+        color: var(--primary);
+      }
+
       .pager {
-        display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 18px; color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
-      .page {
-        min-width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; cursor: pointer; font-weight: 800;
+
+      .pager .page-num {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 13px;
+        color: var(--ink-soft);
       }
-      .page.active { background: var(--purple); color: #fff; }
-      .hidden { display: none !important; }
-      .status { margin: 0 32px 8px; color: var(--muted); font-weight: 700; }
-      .preview-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 16px; }
+
+      .pager .page-num[aria-current='true'] {
+        background: var(--primary);
+        color: #fff;
+      }
+
+      .pager .arrow {
+        color: var(--ink-soft);
+        display: grid;
+        place-items: center;
+      }
+
+      .pager button:disabled {
+        opacity: 0.35;
+      }
+
+      /* ---------- preview pane & frame ---------- */
+
+      .preview-wrap {
+        background: var(--surface);
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: var(--shadow-md);
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .preview-toolbar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
       .frame-shell {
         overflow: auto;
         background: #efeaf6;
-        border-radius: 12px;
-        padding: 16px;
+        border-radius: 14px;
+        padding: 20px;
         min-height: 480px;
+        display: flex;
+        justify-content: center;
       }
+
       iframe.worksheet-frame {
         border: 1.5px solid var(--line);
         background: #fff;
         display: block;
-        transform-origin: top left;
+        transform-origin: top center;
         width: 1016px;
         height: 1316px;
+        border-radius: 8px;
+        box-shadow: var(--shadow-sm);
       }
+
+      /* ---------- modals ---------- */
+
       .modal {
-        position: fixed; inset: 0; background: rgba(30,16,50,0.45);
-        display: grid; place-items: center; z-index: 40;
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: none;
+        padding: 30px;
+        overflow: auto;
+        background: rgba(42, 27, 74, 0.55);
+        backdrop-filter: blur(6px);
       }
+
+      .modal.show {
+        display: grid;
+        place-items: center;
+      }
+
       .modal-card {
-        width: min(720px, 92vw); max-height: 86vh; overflow: auto;
-        background: #fff; border-radius: 16px; padding: 18px;
+        background: #fff;
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: var(--shadow-md);
+        width: min(720px, 92vw);
+        max-height: 86vh;
+        overflow: auto;
       }
-      .image-picker {
-        width: min(980px, 94vw);
+
+      .modal-card.ai-panel {
+        width: min(760px, 94vw);
         max-height: 90vh;
         display: flex;
         flex-direction: column;
-        padding: 22px 24px 18px;
       }
+
+      .modal-x {
+        width: 36px;
+        height: 36px;
+        font-size: 22px;
+        color: var(--muted);
+      }
+
+      .ai-panel-body {
+        overflow: auto;
+        padding-right: 4px;
+      }
+
+      .ai-field-card {
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 12px;
+        background: #fbf8ff;
+      }
+
+      .ai-field-card h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        color: var(--primary);
+      }
+
+      .ai-field-card .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+
+      .ai-thumb {
+        width: 72px;
+        height: 72px;
+        object-fit: cover;
+        border-radius: 8px;
+        background: #efe6f8;
+      }
+
+      .regen-box {
+        border: 1.5px dashed #d8cce8;
+        border-radius: 12px;
+        padding: 16px;
+        margin-top: 10px;
+        background: #faf7ff;
+      }
+
+      textarea, .modal input {
+        width: 100%;
+        border: 1.5px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+        outline: none;
+      }
+
+      textarea:focus, .modal input:focus {
+        border-color: var(--primary);
+      }
+
+      /* ---------- image picker (Select Image) ---------- */
+
+      .picker-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: none;
+        place-items: center;
+        padding: 24px;
+        background: rgba(42, 27, 74, 0.48);
+        backdrop-filter: blur(5px);
+      }
+
+      .picker-modal.show {
+        display: grid;
+      }
+
+      .image-picker {
+        width: min(980px, 94vw);
+        max-height: 90vh;
+        overflow: auto;
+        background: #fff;
+        border-radius: 20px;
+        padding: 22px 24px 18px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: var(--shadow-md);
+      }
+
       .image-picker-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
       }
+
       .image-picker-head h2 {
         margin: 0;
         font-family: 'Toondemy', sans-serif;
         font-size: 28px;
-        color: #2b2140;
+        color: var(--ink);
       }
-      .modal-x {
-        width: 36px; height: 36px; border: 0; background: transparent;
-        font-size: 22px; cursor: pointer; color: #6b6280;
-      }
+
       .image-picker-tabs {
-        display: flex; gap: 28px; margin: 10px 0 16px;
+        display: flex;
+        gap: 28px;
+        margin: 10px 0 16px;
         border-bottom: 1px solid var(--line);
       }
+
       .image-tab {
-        border: 0; background: transparent; padding: 10px 0 12px;
-        font: inherit; font-weight: 800; color: var(--muted); cursor: pointer;
+        padding: 10px 0 12px;
+        font-weight: 800;
+        color: var(--muted);
       }
+
       .image-tab.active {
-        color: var(--text);
-        box-shadow: inset 0 -3px 0 var(--orange);
+        color: var(--ink);
+        box-shadow: inset 0 -3px 0 var(--magenta);
       }
+
       .image-search-row {
-        display: flex; gap: 10px; align-items: stretch;
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
       }
+
       .image-search-row input {
-        flex: 1; margin: 0;
+        flex: 1;
+        margin: 0;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px 12px 40px;
+        font: inherit;
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' stroke='%238b84ab' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3-3'/%3E%3C/svg%3E") 12px center no-repeat;
       }
+
       .btn-search {
-        display: inline-flex; align-items: center; gap: 8px;
-        background: var(--orange); color: #fff; white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--primary);
+        color: #fff;
+        white-space: nowrap;
+        border-radius: 10px;
+        padding: 11px 18px;
+        font-weight: 800;
       }
+
       .image-results-meta {
-        display: flex; justify-content: space-between; align-items: baseline;
-        margin: 16px 0 10px; font-weight: 800;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin: 16px 0 10px;
+        font-weight: 800;
       }
-      .image-results-meta span { color: var(--muted); font-weight: 700; font-size: 13px; }
+
+      .image-results-meta span {
+        color: var(--muted);
+        font-weight: 700;
+        font-size: 13px;
+      }
+
       .image-grid {
         display: grid;
         grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 12px;
         min-height: 220px;
       }
+
       @media (max-width: 900px) {
-        .image-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .image-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
       }
+
       .image-tile {
         position: relative;
         border: 2px solid transparent;
         border-radius: 12px;
         overflow: hidden;
         cursor: pointer;
-        background: #f3eef9;
+        background: #f5f2ff;
         aspect-ratio: 1;
+        padding: 0;
       }
-      .image-tile img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+
+      .image-tile img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        pointer-events: none;
+      }
+
+      .image-tile .pick {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid #fff;
+        background: rgba(255, 255, 255, 0.35);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+      }
+
+      .image-tile.selected {
+        border-color: var(--magenta);
+      }
+
+      .image-tile.selected .pick {
+        background: var(--magenta);
+        border-color: #fff;
+      }
+
+      .upload-pane {
+        border: 1.5px dashed #d9d3ee;
+        border-radius: 14px;
+        padding: 36px 20px;
+        text-align: center;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
       .upload-preview {
         display: block;
         width: min(280px, 100%);
@@ -263,122 +906,166 @@
         object-fit: contain;
         margin: 16px auto 0;
         border-radius: 12px;
-        background: #f3eef9;
+        background: #f5f2ff;
       }
-      .image-tile .pick {
-        position: absolute; top: 8px; right: 8px;
-        width: 18px; height: 18px; border-radius: 50%;
-        border: 2px solid #fff; background: rgba(255,255,255,0.35);
-        box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
-      }
-      .image-tile.selected { border-color: var(--orange); }
-      .image-tile.selected .pick { background: var(--orange); border-color: #fff; }
+
       .image-picker-foot {
-        display: flex; justify-content: space-between; align-items: center;
-        gap: 16px; margin-top: 18px; flex-wrap: wrap;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-top: 18px;
+        flex-wrap: wrap;
       }
-      .image-tip { color: var(--muted); font-size: 13px; font-weight: 700; }
-      .image-picker-actions { display: flex; gap: 10px; }
-      .upload-pane {
-        border: 1.5px dashed #d8cce8;
-        border-radius: 14px;
-        padding: 36px 20px;
-        text-align: center;
+
+      .image-tip {
         color: var(--muted);
+        font-size: 13px;
         font-weight: 700;
       }
-      textarea, .modal input {
-        width: 100%; border: 1.5px solid var(--line); border-radius: 10px; padding: 10px; font: inherit;
-      }
-      .empty { text-align: center; color: var(--muted); padding: 40px 0; grid-column: 1 / -1; }
-      .ai-panel {
-        width: min(760px, 94vw);
-        max-height: 90vh;
+
+      .image-picker-actions {
         display: flex;
-        flex-direction: column;
+        gap: 10px;
       }
-      .ai-panel-body { overflow: auto; padding-right: 4px; }
-      .ai-field-card {
-        border: 1.5px solid var(--line);
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 12px;
-        background: #fbf8ff;
+
+      .toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translate(-50%, 14px);
+        padding: 10px 18px;
+        border-radius: 999px;
+        background: #2a1b4a;
+        color: #fff;
+        font-size: 13.5px;
+        font-weight: 700;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s, transform 0.2s;
+        z-index: 90;
+        display: flex;
+        align-items: center;
+        gap: 9px;
       }
-      .ai-field-card h3 {
-        margin: 0 0 8px;
-        font-size: 14px;
-        color: var(--purple);
+
+      .toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
       }
-      .ai-field-card .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-      .ai-thumb {
-        width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: #efe6f8;
-      }
-      .regen-box {
-        border: 1.5px dashed #d8cce8;
-        border-radius: 12px;
-        padding: 14px;
-        margin-top: 8px;
+
+      .hidden {
+        display: none !important;
       }
     </style>
   </head>
   <body>
-    <div class="main">
-      <div class="topbar">
-        <h1>Generate AI Worksheets</h1>
-        <div class="userbox">
-          <div>Teacher workspace</div>
-          <div class="avatar">AI</div>
+    <main class="main">
+      <header class="page-head">
+        <h1>AI Worksheets</h1>
+        <div class="api-field">
+          <label for="apiBase">API</label>
+          <input id="apiBase" placeholder="http://localhost:3000" />
         </div>
-      </div>
+      </header>
 
-      <section id="formSection" class="form-card">
-        <label>Today's learning topic</label>
-        <div class="topic-row">
-          <span>✦</span>
-          <input id="topicInput" placeholder="e.g My body Parts, Healthy Food, Animals" />
+      <section class="panel" id="formSection">
+        <label class="field-label" for="topicInput">Today&rsquo;s learning topic</label>
+        <div class="topic-input">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+          <input id="topicInput" placeholder="e.g My body Parts, Healthy Food, Animals" value="Vegetables" />
         </div>
-        <label>Select age group*</label>
-        <div class="ages" id="ageGroup"></div>
-        <div class="form-row">
-          <div class="count-field">
-            <label for="countSelect">How many worksheets</label>
-            <select id="countSelect"></select>
-          </div>
-          <div class="count-field">
-            <label for="templateSelect">Template (optional)</label>
-            <select id="templateSelect">
-              <option value="">Auto-select template</option>
-            </select>
-          </div>
+
+        <label class="field-label" style="margin-top: 24px" id="ageLabel">
+          Select age group<span class="req">*</span>
+        </label>
+        <div class="age-grid" role="radiogroup" aria-labelledby="ageLabel" id="ageGroup"></div>
+
+        <div class="extra-row">
+          <label for="templateSelect">Template</label>
+          <select id="templateSelect">
+            <option value="">Auto — no template selected</option>
+          </select>
         </div>
+
+        <div class="extra-row">
+          <label for="countSelect">Number of worksheets</label>
+          <select id="countSelect">
+            <option value="1" selected>1</option>
+            <option value="3">3</option>
+            <option value="5">5</option>
+            <option value="8">8</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+
         <div class="actions">
-          <button class="btn btn-ghost" id="cancelBtn" type="button">Cancel</button>
-          <button class="btn btn-gen" id="generateBtn" type="button">✦ Generate Worksheets</button>
+          <button class="btn-outline" id="cancelBtn" type="button">Cancel</button>
+          <button class="btn-primary" id="generateBtn" type="button">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 4V2m0 20v-2M8 9l-6 6 3 3 6-6M13.5 6.5 17 3l4 4-3.5 3.5M19 15h2M4 5h2" />
+            </svg>
+            Generate Worksheets
+          </button>
         </div>
+
+        <div class="chips">
+          <span>Try:</span>
+          <button class="chip" data-q="Vegetables" data-a="3-4" type="button">Vegetables</button>
+          <button class="chip" data-q="Animals" data-a="2-3" type="button">Animals</button>
+          <button class="chip" data-q="Letters and phonics" data-a="3-4" type="button">Letters</button>
+          <button class="chip" data-q="Numbers and counting" data-a="4-5" type="button">Numbers</button>
+          <button class="chip" data-q="Shapes and colors" data-a="4-5" type="button">Shapes</button>
+        </div>
+
+        <div class="banner error" id="errorBanner"></div>
+        <div class="banner warn" id="warnBanner"></div>
       </section>
 
-      <p class="status" id="status"></p>
-      <div class="grid-wrap" id="gridSection">
-        <div class="worksheet-grid" id="worksheetGrid"></div>
-        <div class="pager" id="pager"></div>
-      </div>
+      <section class="results" id="gridSection">
+        <div class="summary" id="summary">
+          <div class="pills" id="metaPills"></div>
+        </div>
+
+        <div class="grid" id="worksheetGrid"></div>
+
+        <div class="empty" id="empty">
+          <h2>No worksheets yet</h2>
+          <p>Add a learning topic, pick an age group, then generate.</p>
+        </div>
+
+        <div class="table-foot">
+          <div class="rows-per-page" id="rowsPerPage">
+            <span>Row per page:</span>
+            <button aria-current="true" data-size="10" type="button">10</button>
+            <button data-size="20" type="button">20</button>
+            <button data-size="50" type="button">50</button>
+          </div>
+          <div class="pager" id="pager"></div>
+        </div>
+      </section>
 
       <section id="previewSection" class="preview-wrap hidden">
-        <button class="btn btn-ghost" id="backBtn" type="button">← Back</button>
-        <h2 id="worksheetTitle"></h2>
-        <div class="preview-toolbar">
-          <button class="btn btn-ghost" id="editBtn" type="button">Edit</button>
-          <button class="btn btn-gen" id="aiEditBtn" type="button">✦ AI Edit</button>
-          <button class="btn btn-ghost" id="downloadBtn" type="button">⬇ Download</button>
-          <button class="btn btn-ghost" id="downloadPdfBtn" type="button">⬇ Download PDF</button>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <button class="btn-soft" id="backBtn" type="button">← Back to worksheets</button>
+          <h2 id="worksheetTitle" style="margin:0; font-family:'Toondemy',sans-serif; color:var(--primary);"></h2>
         </div>
-        <div class="frame-shell"><iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe></div>
+        <div class="preview-toolbar">
+          <button class="btn-soft" id="editBtn" type="button">Edit</button>
+          <button class="btn-primary" id="aiEditBtn" type="button" style="padding:9px 18px; font-size:14px;">✦ AI Edit</button>
+          <button class="btn-soft" id="downloadBtn" type="button">⬇ WebP</button>
+          <button class="btn-soft" id="downloadPdfBtn" type="button">⬇ PDF</button>
+        </div>
+        <div class="frame-shell">
+          <iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe>
+        </div>
       </section>
-    </div>
+    </main>
 
-    <div id="imagePickerModal" class="modal hidden" style="z-index: 50;">
-      <div class="modal-card image-picker">
+    <div id="imagePickerModal" class="picker-modal" role="dialog" aria-modal="true" aria-label="Select Image">
+      <div class="image-picker">
         <div class="image-picker-head">
           <h2>Select Image</h2>
           <button class="modal-x" id="imagePickerCloseBtn" type="button" aria-label="Close">×</button>
@@ -390,7 +1077,7 @@
         <div id="searchPane">
           <div class="image-search-row">
             <input id="imageQuery" placeholder='Search for images (e.g., "airplane", "happy child", "red apple")' />
-            <button class="btn btn-search" id="searchImagesBtn" type="button">🔍 Search</button>
+            <button class="btn-search" id="searchImagesBtn" type="button">🔍 Search</button>
           </div>
           <div class="image-results-meta">
             <strong>Search Results</strong>
@@ -400,7 +1087,7 @@
         </div>
         <div id="uploadPane" class="hidden">
           <div class="upload-pane">
-            <p>Choose a JPEG, PNG, WebP, or GIF. It is stored on S3 and used for this image slot instead of a library asset.</p>
+            <p>Choose a JPEG, PNG, WebP, or GIF. It is stored and used for this image slot.</p>
             <input id="imageUploadInput" type="file" accept="image/*" />
             <img id="uploadPreview" class="upload-preview hidden" alt="Selected upload preview" />
           </div>
@@ -408,33 +1095,33 @@
         <div class="image-picker-foot">
           <div class="image-tip">Can't find what you're looking for? Try different keywords or upload your own image.</div>
           <div class="image-picker-actions">
-            <button class="btn btn-ghost" id="imagePickerCancelBtn" type="button">Cancel</button>
-            <button class="btn btn-search" id="selectImageBtn" type="button">Select Image</button>
+            <button class="btn-soft" id="imagePickerCancelBtn" type="button">Cancel</button>
+            <button class="btn-search" id="selectImageBtn" type="button">Select Image</button>
           </div>
         </div>
       </div>
     </div>
 
-    <div id="singleFieldModal" class="modal hidden">
+    <div id="singleFieldModal" class="modal">
       <div class="modal-card">
         <div class="image-picker-head">
           <h2 id="singleFieldTitle">Edit text</h2>
           <button class="modal-x" id="singleFieldCloseBtn" type="button" aria-label="Close">×</button>
         </div>
-        <label>Current text</label>
+        <label class="field-label" style="margin-top:14px;">Current text</label>
         <textarea id="singleFieldCurrent" rows="4"></textarea>
-        <label>AI prompt (optional)</label>
+        <label class="field-label" style="margin-top:14px;">AI prompt (optional)</label>
         <textarea id="singleFieldPrompt" rows="2" placeholder="Rewrite this for the same age group…"></textarea>
-        <p id="singleFieldError" class="status"></p>
-        <div class="actions">
-          <button class="btn btn-ghost" id="singleFieldCancelBtn" type="button">Cancel</button>
-          <button class="btn btn-gen" id="singleFieldRewriteBtn" type="button">✦ AI rewrite</button>
-          <button class="btn btn-search" id="singleFieldSaveBtn" type="button">Apply</button>
+        <p id="singleFieldError" class="banner error" style="display:none;"></p>
+        <div class="actions" style="margin-top:16px;">
+          <button class="btn-soft" id="singleFieldCancelBtn" type="button">Cancel</button>
+          <button class="btn-primary" id="singleFieldRewriteBtn" type="button" style="padding:10px 18px; font-size:14px;">✦ AI rewrite</button>
+          <button class="btn-search" id="singleFieldSaveBtn" type="button">Apply</button>
         </div>
       </div>
     </div>
 
-    <div id="fieldEditModal" class="modal hidden">
+    <div id="fieldEditModal" class="modal">
       <div class="modal-card ai-panel">
         <div class="image-picker-head">
           <h2>AI Edit</h2>
@@ -443,23 +1130,33 @@
         <div class="ai-panel-body">
           <div id="aiFieldsList"></div>
           <div class="regen-box">
-            <h3 style="margin:0 0 8px;color:var(--purple);">Regenerate whole worksheet</h3>
-            <p class="image-tip">Keep this template and generate new text and images from your requirements.</p>
+            <h3 style="margin:0 0 8px; color:var(--primary);">Regenerate whole worksheet</h3>
+            <p class="image-tip" style="margin-bottom:10px;">Keep this template and generate new text and images from your requirements.</p>
             <textarea id="regenQuery" rows="3" placeholder="e.g. Make this about ocean animals, easier questions, same age group"></textarea>
-            <p id="fieldEditError" class="status"></p>
-            <div class="actions" style="margin-top:10px">
-              <button class="btn btn-gen" id="regenWorksheetBtn" type="button">✦ Regenerate worksheet</button>
+            <p id="fieldEditError" class="banner error" style="display:none;"></p>
+            <div class="actions" style="margin-top:12px">
+              <button class="btn-primary" id="regenWorksheetBtn" type="button" style="padding:11px 20px;">✦ Regenerate worksheet</button>
             </div>
           </div>
         </div>
       </div>
     </div>
 
+    <div class="toast" id="toast"></div>
+
     <script>
       const FAVORITES_KEY = 'worksheet-favorites';
+      const _elCache = Object.create(null);
+      const el = (id) => _elCache[id] || (_elCache[id] = document.getElementById(id));
+
       const state = {
-        ages: [],
-        ageGroup: '',
+        ages: [
+          { id: '2-3', label: '2-3 years (FS 0)', age: 3, grade: 'FS 0' },
+          { id: '3-4', label: '3-4 years (FS 1)', age: 4, grade: 'FS 1' },
+          { id: '4-5', label: '4-5 years (FS 2)', age: 5, grade: 'FS 2' },
+        ],
+        ageGroup: '3-4',
+        countryCode: '',
         page: 1,
         pageSize: 10,
         pagerMaxButtons: 8,
@@ -483,126 +1180,246 @@
         imagePickerTab: 'search',
         imagePickerLimit: 10,
         imagePickFromAi: false,
+        busy: false,
       };
 
       const els = {
-        topicInput: document.getElementById('topicInput'),
-        ageGroup: document.getElementById('ageGroup'),
-        generateBtn: document.getElementById('generateBtn'),
-        cancelBtn: document.getElementById('cancelBtn'),
-        countSelect: document.getElementById('countSelect'),
-        templateSelect: document.getElementById('templateSelect'),
-        status: document.getElementById('status'),
-        worksheetGrid: document.getElementById('worksheetGrid'),
-        pager: document.getElementById('pager'),
-        formSection: document.getElementById('formSection'),
-        gridSection: document.getElementById('gridSection'),
-        previewSection: document.getElementById('previewSection'),
-        worksheetTitle: document.getElementById('worksheetTitle'),
-        worksheetFrame: document.getElementById('worksheetFrame'),
-        backBtn: document.getElementById('backBtn'),
-        editBtn: document.getElementById('editBtn'),
-        aiEditBtn: document.getElementById('aiEditBtn'),
-        downloadBtn: document.getElementById('downloadBtn'),
-        downloadPdfBtn: document.getElementById('downloadPdfBtn'),
-        imagePickerModal: document.getElementById('imagePickerModal'),
-        imageQuery: document.getElementById('imageQuery'),
-        searchImagesBtn: document.getElementById('searchImagesBtn'),
-        imageBank: document.getElementById('imageBank'),
-        imageResultsCount: document.getElementById('imageResultsCount'),
-        imagePickerCloseBtn: document.getElementById('imagePickerCloseBtn'),
-        imagePickerCancelBtn: document.getElementById('imagePickerCancelBtn'),
-        selectImageBtn: document.getElementById('selectImageBtn'),
-        searchTabBtn: document.getElementById('searchTabBtn'),
-        uploadTabBtn: document.getElementById('uploadTabBtn'),
-        searchPane: document.getElementById('searchPane'),
-        uploadPane: document.getElementById('uploadPane'),
-        imageUploadInput: document.getElementById('imageUploadInput'),
-        uploadPreview: document.getElementById('uploadPreview'),
-        fieldEditModal: document.getElementById('fieldEditModal'),
-        fieldEditError: document.getElementById('fieldEditError'),
-        fieldEditCancelBtn: document.getElementById('fieldEditCancelBtn'),
-        aiFieldsList: document.getElementById('aiFieldsList'),
-        regenQuery: document.getElementById('regenQuery'),
-        regenWorksheetBtn: document.getElementById('regenWorksheetBtn'),
-        singleFieldModal: document.getElementById('singleFieldModal'),
-        singleFieldTitle: document.getElementById('singleFieldTitle'),
-        singleFieldCurrent: document.getElementById('singleFieldCurrent'),
-        singleFieldPrompt: document.getElementById('singleFieldPrompt'),
-        singleFieldError: document.getElementById('singleFieldError'),
-        singleFieldCloseBtn: document.getElementById('singleFieldCloseBtn'),
-        singleFieldCancelBtn: document.getElementById('singleFieldCancelBtn'),
-        singleFieldRewriteBtn: document.getElementById('singleFieldRewriteBtn'),
-        singleFieldSaveBtn: document.getElementById('singleFieldSaveBtn'),
+        topicInput: el('topicInput'),
+        ageGroup: el('ageGroup'),
+        generateBtn: el('generateBtn'),
+        cancelBtn: el('cancelBtn'),
+        countSelect: el('countSelect'),
+        templateSelect: el('templateSelect'),
+        errorBanner: el('errorBanner'),
+        warnBanner: el('warnBanner'),
+        summary: el('summary'),
+        metaPills: el('metaPills'),
+        empty: el('empty'),
+        worksheetGrid: el('worksheetGrid'),
+        pager: el('pager'),
+        rowsPerPage: el('rowsPerPage'),
+        formSection: el('formSection'),
+        gridSection: el('gridSection'),
+        previewSection: el('previewSection'),
+        worksheetTitle: el('worksheetTitle'),
+        worksheetFrame: el('worksheetFrame'),
+        backBtn: el('backBtn'),
+        editBtn: el('editBtn'),
+        aiEditBtn: el('aiEditBtn'),
+        downloadBtn: el('downloadBtn'),
+        downloadPdfBtn: el('downloadPdfBtn'),
+        imagePickerModal: el('imagePickerModal'),
+        imageQuery: el('imageQuery'),
+        searchImagesBtn: el('searchImagesBtn'),
+        imageBank: el('imageBank'),
+        imageResultsCount: el('imageResultsCount'),
+        imagePickerCloseBtn: el('imagePickerCloseBtn'),
+        imagePickerCancelBtn: el('imagePickerCancelBtn'),
+        selectImageBtn: el('selectImageBtn'),
+        searchTabBtn: el('searchTabBtn'),
+        uploadTabBtn: el('uploadTabBtn'),
+        searchPane: el('searchPane'),
+        uploadPane: el('uploadPane'),
+        imageUploadInput: el('imageUploadInput'),
+        uploadPreview: el('uploadPreview'),
+        fieldEditModal: el('fieldEditModal'),
+        fieldEditError: el('fieldEditError'),
+        fieldEditCancelBtn: el('fieldEditCancelBtn'),
+        aiFieldsList: el('aiFieldsList'),
+        regenQuery: el('regenQuery'),
+        regenWorksheetBtn: el('regenWorksheetBtn'),
+        singleFieldModal: el('singleFieldModal'),
+        singleFieldTitle: el('singleFieldTitle'),
+        singleFieldCurrent: el('singleFieldCurrent'),
+        singleFieldPrompt: el('singleFieldPrompt'),
+        singleFieldError: el('singleFieldError'),
+        singleFieldCloseBtn: el('singleFieldCloseBtn'),
+        singleFieldCancelBtn: el('singleFieldCancelBtn'),
+        singleFieldRewriteBtn: el('singleFieldRewriteBtn'),
+        singleFieldSaveBtn: el('singleFieldSaveBtn'),
       };
 
       function favorites() {
         try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch { return []; }
       }
+
       function setFavorites(ids) {
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
       }
-      function frontendWorksheetsApi() {
+
+      function defaultApiBase() {
+        return location.protocol.startsWith('http') ? location.origin : 'http://localhost:3000';
+      }
+
+      function configuredApiBase() {
         const env = window.__ENV__ || {};
-        return String(env.WORKSHEETS_API_URL || env.API_URL || '').trim().replace(/\/+$/, '');
+        const url = env.WORKSHEETS_API_URL || env.API_URL || '';
+        return String(url).trim().replace(/\/+$/, '');
       }
-      function queryApiBase() {
-        return (
-          new URLSearchParams(location.search).get('api') ||
-          frontendWorksheetsApi() ||
-          ''
-        ).replace(/\/$/, '');
-      }
+
       function publicAsset(path) {
         if (typeof window.publicAssetUrl === 'function') return window.publicAssetUrl(path);
         if (!path) return path;
         if (/^(https?:|data:|blob:)/i.test(path)) return path;
         return path.charAt(0) === '/' ? path.slice(1) : path;
       }
+
+      function apiBase() {
+        return (el('apiBase').value || configuredApiBase() || defaultApiBase()).replace(/\/+$/, '');
+      }
+
       function apiUrl(path) {
-        const base = (state.apiBaseUrl || queryApiBase()).replace(/\/$/, '');
+        const base = apiBase();
         const prefix = (state.apiPrefix || '/worksheets').replace(/\/$/, '');
         if (!path) return `${base}${prefix}`;
         if (path.startsWith('?')) return `${base}${prefix}${path}`;
         const suffix = path.startsWith('/') ? path : `/${path}`;
         return `${base}${prefix}${suffix}`;
       }
+
       function resolveUrl(path) {
         if (!path || /^(https?:|data:|blob:)/i.test(path)) return path;
         if (/^\/(fonts|logos)\//.test(path) || /\.(png|css|ttf|woff2?)$/i.test(path)) {
           return publicAsset(path);
         }
-        const base = (state.apiBaseUrl || queryApiBase()).replace(/\/$/, '');
+        const base = apiBase();
         return `${base}${path.startsWith('/') ? path : `/${path}`}`;
       }
-      function apiFetch(path, options) {
-        return fetch(apiUrl(path), options);
+
+      function uuid() {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
       }
-      function selectedAge() {
-        return state.ages.find((item) => item.id === state.ageGroup) || state.ages[0];
+
+      function withRestrictionHeaders(headers) {
+        const next = Object.assign(
+          {
+            'x-trace-id': uuid(),
+            'x-correlation-id': uuid(),
+          },
+          headers || {},
+        );
+        if (state.countryCode) next['x-country-code'] = state.countryCode;
+        return next;
       }
-      function setStatus(text) { els.status.textContent = text || ''; }
-      async function readError(res) {
-        try {
-          const body = await res.json();
-          return body?.error?.message || body?.message || res.statusText;
-        } catch {
-          return res.statusText;
+
+      function apiFetch(path, options = {}) {
+        const opts = {
+          ...options,
+          headers: withRestrictionHeaders(options.headers),
+        };
+        return fetch(apiUrl(path), opts);
+      }
+
+      function toast(html, ms = 2600) {
+        const node = el('toast');
+        node.innerHTML = html;
+        node.classList.add('show');
+        clearTimeout(node._t);
+        node._t = setTimeout(() => node._t && node.classList.remove('show'), ms);
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[ch]);
+      }
+
+      function extractErrorText(source) {
+        if (source == null) return '';
+        if (typeof source === 'string') return source;
+        if (source instanceof Error) return source.message || String(source);
+        const nested = source.error;
+        if (nested && typeof nested === 'object' && nested.message) return String(nested.message);
+        if (source.message) return String(source.message);
+        return '';
+      }
+
+      function friendlyError(source, fallback) {
+        const fallbackText = fallback || 'Something went wrong. Please try again.';
+        const raw = extractErrorText(source).trim();
+        const lower = raw.toLowerCase();
+        if (!raw) return fallbackText;
+        if (/failed to fetch|networkerror|load failed|err_connection|err_name_not_resolved/.test(lower)) {
+          return 'Could not reach the server. Check your connection and try again.';
         }
+        if (/timeout|etimedout|timed out/.test(lower)) {
+          return 'The request took too long. Please try again.';
+        }
+        if (/too large|file too large|payload too large|413/.test(lower)) {
+          return 'That image is too large. Please choose a smaller file.';
+        }
+        if (/cors/.test(lower)) {
+          return 'Could not reach the API from this page. Check the API URL and try again.';
+        }
+        if (/http\s*[45]\d\d/.test(lower) || /^[A-Z][A-Z0-9_]{3,}$/.test(raw)) {
+          return fallbackText;
+        }
+        if (raw.length > 220 || /\n\s*at\s+/.test(raw) || /stack_trace/i.test(raw)) {
+          return fallbackText;
+        }
+        return raw;
+      }
+
+      function errorBannerHtml(source, fallback, title) {
+        return (
+          '<div><div class="banner-title">' +
+          escapeHtml(title || 'Something went wrong') +
+          '</div><div class="banner-body">' +
+          escapeHtml(friendlyError(source, fallback)) +
+          '</div></div>'
+        );
+      }
+
+      function showBanner(which, html) {
+        const node = el(which === 'error' ? 'errorBanner' : 'warnBanner');
+        node.innerHTML = html;
+        node.classList.add('show');
+      }
+
+      function clearBanners() {
+        el('errorBanner').classList.remove('show');
+        el('warnBanner').classList.remove('show');
+      }
+
+      function setBusy(busy) {
+        state.busy = busy;
+        els.generateBtn.disabled = busy;
+        els.cancelBtn.disabled = busy;
       }
 
       function renderAges() {
         els.ageGroup.innerHTML = '';
         state.ages.forEach((age) => {
-          const label = document.createElement('label');
-          label.className = 'age' + (age.id === state.ageGroup ? ' selected' : '');
-          label.innerHTML = `<input type="radio" name="age" value="${age.id}"> ${age.label}`;
-          label.addEventListener('click', () => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'age-pill';
+          btn.setAttribute('role', 'radio');
+          const isSelected = age.id === state.ageGroup;
+          btn.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+          btn.dataset.age = age.id;
+          btn.innerHTML = `
+            <span class="radio" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+            </span>
+            ${escapeHtml(age.label || age.id)}`;
+          btn.addEventListener('click', () => {
             state.ageGroup = age.id;
             renderAges();
           });
-          els.ageGroup.appendChild(label);
+          els.ageGroup.appendChild(btn);
         });
+      }
+
+      function selectedAge() {
+        return state.ages.find((item) => item.id === state.ageGroup) || state.ages[0];
       }
 
       function showGrid() {
@@ -630,8 +1447,12 @@
 
       function appendCard(item) {
         const loved = favorites().includes(item.id);
+        const tile = document.createElement('div');
+        tile.className = 'tile';
+
         const card = document.createElement('div');
-        card.className = 'card';
+        card.className = 'tile-card';
+
         const frameWrap = document.createElement('div');
         frameWrap.className = 'thumb-frame';
         if (item.html) {
@@ -644,54 +1465,86 @@
           frameWrap.style.background = `center/cover url('${resolveUrl(item.thumbnailUrl)}')`;
         }
         card.appendChild(frameWrap);
-        const bar = document.createElement('div');
-        bar.className = 'card-bar';
-        bar.innerHTML = `
-            <button class="icon-btn ${loved ? 'loved' : ''}" data-act="fav" data-id="${item.id}" title="Favourite">❤</button>
-            <button class="icon-btn" data-act="preview" data-id="${item.id}" title="Preview">🖥</button>
-            <button class="icon-btn" data-act="download" data-id="${item.id}" title="Download">⬇</button>`;
-        card.appendChild(bar);
-        card.addEventListener('click', (event) => {
+
+        const actions = document.createElement('div');
+        actions.className = 'tile-actions';
+        actions.innerHTML = `
+          <button class="icon-btn fav ${loved ? 'loved' : ''}" data-act="fav" data-id="${item.id}" aria-pressed="${loved ? 'true' : 'false'}" title="Favourite">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="${loved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.9"><path d="M12 20s-7-4.4-7-9.3A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.7c0 4.9-7 9.3-7 9.3Z" /></svg>
+          </button>
+          <button class="btn-soft" data-act="preview" data-id="${item.id}" style="padding:6px 12px; font-size:12px;">Preview</button>
+          <button class="btn-soft" data-act="download" data-id="${item.id}" style="padding:6px 12px; font-size:12px;">PDF</button>
+        `;
+
+        card.addEventListener('click', () => openPreview(item.id, item.html));
+
+        actions.addEventListener('click', (event) => {
           const btn = event.target.closest('[data-act]');
-          if (btn?.dataset.act === 'fav') {
-            event.preventDefault();
+          if (!btn) return;
+          event.stopPropagation();
+          const act = btn.dataset.act;
+          if (act === 'fav') {
             toggleFav(item.id, btn);
-            return;
-          }
-          if (btn?.dataset.act === 'download') {
-            event.preventDefault();
+          } else if (act === 'preview') {
+            openPreview(item.id, item.html);
+          } else if (act === 'download') {
             download(item.id, 'pdf');
-            return;
           }
-          openPreview(item.id, item.html);
         });
-        els.worksheetGrid.appendChild(card);
+
+        tile.appendChild(card);
+        tile.appendChild(actions);
+        els.worksheetGrid.appendChild(tile);
+      }
+
+      function renderSkeletons(count) {
+        els.empty.style.display = 'none';
+        els.worksheetGrid.innerHTML = '';
+        for (let i = 0; i < count; i += 1) {
+          const sk = document.createElement('div');
+          sk.className = 'skeleton';
+          els.worksheetGrid.appendChild(sk);
+        }
       }
 
       async function loadGrid() {
-        const skip = (state.page - 1) * state.pageSize;
-        const res = await apiFetch(`?skip=${skip}&take=${state.pageSize}`);
-        const body = await res.json();
-        if (!res.ok) {
-          setStatus(body?.error?.message || 'Could not load worksheets');
-          return;
+        const take = Math.max(state.pageSize, Number(els.countSelect.value) || 10);
+        const skip = (state.page - 1) * take;
+        try {
+          const res = await apiFetch(`?skip=${skip}&take=${take}`);
+          const body = await res.json();
+          if (!res.ok) {
+            showBanner('error', errorBannerHtml(body, 'Could not load worksheets', 'Could not load worksheets'));
+            return;
+          }
+          state.total = body.total || 0;
+          els.worksheetGrid.innerHTML = '';
+          if (!body.items?.length) {
+            els.empty.style.display = 'block';
+            els.summary.classList.remove('show');
+          } else {
+            els.empty.style.display = 'none';
+            els.summary.classList.add('show');
+            els.metaPills.innerHTML = `
+              <span class="pill">Total: <b>${state.total}</b></span>
+              <span class="pill">Showing: <b>${body.items.length}</b></span>
+            `;
+            body.items.forEach(appendCard);
+          }
+          renderPager();
+        } catch (error) {
+          showBanner('error', errorBannerHtml(error, 'Could not load worksheets', 'Could not load worksheets'));
         }
-        state.total = body.total || 0;
-        els.worksheetGrid.innerHTML = '';
-        if (!body.items?.length) {
-          els.worksheetGrid.innerHTML = '<div class="empty">No worksheets yet. Enter a topic and generate.</div>';
-        } else {
-          body.items.forEach(appendCard);
-        }
-        renderPager();
       }
 
       function renderPager() {
-        const pages = Math.max(1, Math.ceil(state.total / state.pageSize));
+        const effectiveSize = Math.max(state.pageSize, Number(els.countSelect.value) || 10);
+        const pages = Math.max(1, Math.ceil(state.total / effectiveSize));
         els.pager.innerHTML = '';
         for (let i = 1; i <= Math.min(pages, state.pagerMaxButtons); i += 1) {
           const btn = document.createElement('button');
-          btn.className = 'page' + (i === state.page ? ' active' : '');
+          btn.className = 'page-num';
+          if (i === state.page) btn.setAttribute('aria-current', 'true');
           btn.textContent = String(i);
           btn.addEventListener('click', () => { state.page = i; loadGrid(); });
           els.pager.appendChild(btn);
@@ -700,46 +1553,71 @@
 
       function toggleFav(id, btn) {
         const ids = favorites();
-        const next = ids.includes(id) ? ids.filter((item) => item !== id) : ids.concat(id);
+        const isFav = ids.includes(id);
+        const next = isFav ? ids.filter((item) => item !== id) : ids.concat(id);
         setFavorites(next);
-        btn.classList.toggle('loved', next.includes(id));
+        btn.classList.toggle('loved', !isFav);
+        btn.setAttribute('aria-pressed', !isFav ? 'true' : 'false');
+        const svg = btn.querySelector('svg');
+        if (svg) svg.setAttribute('fill', !isFav ? 'currentColor' : 'none');
       }
 
       async function generateSet() {
         const topic = els.topicInput.value.trim();
         if (!topic) {
-          setStatus('Enter a learning topic');
+          showBanner('error', '<div>A learning topic is required.</div>');
           return;
         }
         const age = selectedAge();
         if (!age) {
-          setStatus('No age groups configured');
+          showBanner('error', '<div>No age group selected.</div>');
           return;
         }
-        els.generateBtn.disabled = true;
-        setStatus('Generating worksheets…');
-        const res = await apiFetch('/generate-set', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: topic,
-            topic,
-            age: age.age,
-            ageGroup: age.id,
-            grade: age.grade,
-            count: Number(els.countSelect.value) || state.defaultCount,
-            templateId: els.templateSelect.value || undefined,
-          }),
-        });
-        const body = await res.json().catch(() => ({}));
-        els.generateBtn.disabled = false;
-        if (!res.ok) {
-          setStatus(body?.error?.message || 'Generation failed');
-          return;
+
+        const count = Number(els.countSelect.value) || state.defaultCount;
+        clearBanners();
+        setBusy(true);
+        renderSkeletons(count);
+
+        try {
+          const res = await apiFetch('/generate-set', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: topic,
+              topic,
+              age: age.age,
+              ageGroup: age.id,
+              grade: age.grade,
+              count,
+              templateId: els.templateSelect.value || undefined,
+            }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            showBanner(
+              'error',
+              errorBannerHtml(body, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
+            );
+            els.worksheetGrid.innerHTML = '';
+            els.empty.style.display = 'block';
+            return;
+          }
+
+          toast(`Created ${(body.items || []).length} worksheet(s)`);
+          state.page = 1;
+          state.pageSize = Math.max(state.pageSize, count);
+          await loadGrid();
+        } catch (error) {
+          els.worksheetGrid.innerHTML = '';
+          els.empty.style.display = 'block';
+          showBanner(
+            'error',
+            errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
+          );
+        } finally {
+          setBusy(false);
         }
-        setStatus(`Created ${(body.items || []).length} worksheet(s)`);
-        state.page = 1;
-        await loadGrid();
       }
 
       function scaleFrame() {
@@ -750,21 +1628,21 @@
         const maxW = iframe.parentElement.clientWidth - 32;
         const scale = Math.min(1, maxW / canvas.width);
         iframe.style.transform = `scale(${scale})`;
-        iframe.parentElement.style.height = canvas.height * scale + 8 + 'px';
+        iframe.parentElement.style.height = Math.round(canvas.height * scale + 16) + 'px';
       }
 
       async function openPreview(id, html) {
         if (!id || id === 'null' || id === 'undefined') {
-          setStatus('Worksheet id is missing');
+          toast('Worksheet ID is missing');
           return;
         }
         state.worksheetId = id;
         state.editMode = false;
         els.editBtn.textContent = 'Edit';
-        setStatus('Loading preview…');
         els.formSection.classList.add('hidden');
         els.gridSection.classList.add('hidden');
         els.previewSection.classList.remove('hidden');
+
         const apply = (preview) => {
           state.preview = preview;
           els.worksheetTitle.textContent = preview.template?.name || 'Worksheet';
@@ -777,17 +1655,17 @@
           iframe.srcdoc = preview.html || html || '';
           requestAnimationFrame(onReady);
         };
+
         if (html) {
           apply({ html, template: { name: 'Worksheet' }, canvas: state.canvas, structure: {}, editableFields: [], fieldPrompts: {} });
         }
-        const res = await apiFetch(`/${encodeURIComponent(id)}/preview?mode=editor`);
-        const preview = await res.json();
-        if (!res.ok) {
-          if (!html) setStatus(preview?.error?.message || 'Preview failed');
-          return;
+        try {
+          const res = await apiFetch(`/${encodeURIComponent(id)}/preview?mode=editor`);
+          const preview = await res.json();
+          if (res.ok) apply(preview);
+        } catch (error) {
+          console.warn('Preview fetch error:', error);
         }
-        apply(preview);
-        setStatus('');
       }
 
       function wireFrame() {
@@ -818,7 +1696,7 @@
         state.selectedImagePath = resolveImagePath(path, slotId);
         state.selectedSearchItem = null;
         setImagePickerTab('search');
-        els.imagePickerModal.classList.remove('hidden');
+        els.imagePickerModal.classList.add('show');
         const cached = state.lastImageSearch;
         if (cached.results?.length) {
           els.imageQuery.value = cached.query || '';
@@ -864,24 +1742,8 @@
         return `[${name}="${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`;
       }
 
-      function findImageSlot(doc, path, slotId) {
-        if (!doc) return null;
-        const selectors = [];
-        if (path) selectors.push('img' + cssAttr('data-field-path', path), cssAttr('data-field-path', path));
-        if (slotId) selectors.push('img' + cssAttr('data-image-slot', slotId), cssAttr('data-image-slot', slotId));
-        for (const selector of selectors) {
-          const el = doc.querySelector(selector);
-          if (!el) continue;
-          if (el.tagName === 'IMG') return el;
-          const nested = el.querySelector('img');
-          if (nested) return nested;
-        }
-        const imgs = doc.querySelectorAll('img[data-image-slot], img.worksheet-image');
-        return imgs.length === 1 ? imgs[0] : null;
-      }
-
       function closeImagePicker() {
-        els.imagePickerModal.classList.add('hidden');
+        els.imagePickerModal.classList.remove('show');
         state.selectedSearchItem = null;
       }
 
@@ -950,7 +1812,7 @@
             state.selectedSearchItem = { ...item, imageUrl: resolveUrl(item.imageUrl) };
             if (applySelectedImageToPreview()) {
               closeImagePicker();
-              setStatus('Image updated. Click Save to keep the change.');
+              toast('Image updated');
             }
           });
           els.imageBank.appendChild(tile);
@@ -1034,7 +1896,7 @@
         const item = selectedLibraryItem();
         const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId) || 'image';
         if (!item || (!item.assetId && !item.file && !item.imageUrl)) {
-          setStatus('Select an image first');
+          toast('Select an image first');
           return false;
         }
         state.selectedSearchItem = item;
@@ -1118,28 +1980,22 @@
               <h3>${escapeHtml(field.label)} · image</h3>
               ${src ? `<img class="ai-thumb" src="${escapeHtml(src)}" alt="">` : '<div class="ai-thumb"></div>'}
               <div class="row">
-                <button class="btn btn-search" type="button" data-ai-replace="${escapeHtml(field.path)}" data-slot="${escapeHtml(field.slotId || '')}">Replace image</button>
+                <button class="btn-search" type="button" data-ai-replace="${escapeHtml(field.path)}" data-slot="${escapeHtml(field.slotId || '')}">Replace image</button>
               </div>
             </div>`;
           }
           return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
             <h3>${escapeHtml(field.label)}</h3>
-            <label>Current text</label>
+            <label class="field-label" style="font-size:13px; margin-bottom:4px;">Current text</label>
             <textarea data-ai-current="${escapeHtml(field.path)}" rows="3">${escapeHtml(field.value || '')}</textarea>
-            <label>AI prompt</label>
+            <label class="field-label" style="font-size:13px; margin:8px 0 4px;">AI prompt</label>
             <textarea data-ai-prompt="${escapeHtml(field.path)}" rows="2" placeholder="Rewrite this for the same age group…"></textarea>
             <div class="row">
-              <button class="btn btn-ghost" type="button" data-ai-apply="${escapeHtml(field.path)}">Apply text</button>
-              <button class="btn btn-gen" type="button" data-ai-rewrite="${escapeHtml(field.path)}">✦ AI rewrite</button>
+              <button class="btn-soft" type="button" data-ai-apply="${escapeHtml(field.path)}">Apply text</button>
+              <button class="btn-primary" type="button" data-ai-rewrite="${escapeHtml(field.path)}" style="padding:8px 16px; font-size:13px;">✦ AI rewrite</button>
             </div>
           </div>`;
         }).join('') || '<p class="image-tip">No editable fields found on this worksheet.</p>';
-      }
-
-      function escapeHtml(value) {
-        return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
-          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-        })[ch]);
       }
 
       function applyTextInFrame(path, value) {
@@ -1153,19 +2009,20 @@
 
       function openAiPanel() {
         if (!state.worksheetId) {
-          setStatus('Open a worksheet first');
+          toast('Open a worksheet first');
           return;
         }
+        els.fieldEditError.style.display = 'none';
         els.fieldEditError.textContent = '';
         els.regenQuery.value = '';
         renderAiPanel();
-        els.fieldEditModal.classList.remove('hidden');
+        els.fieldEditModal.classList.add('show');
       }
 
       function openFieldEditor(path) {
         if (!state.editMode) return;
         if (!path) {
-          setStatus('That text field could not be identified');
+          toast('That text field could not be identified');
           return;
         }
         state.selectedFieldPath = path;
@@ -1174,8 +2031,9 @@
         els.singleFieldTitle.textContent = humanFieldLabel(path, live);
         els.singleFieldCurrent.value = live?.innerText?.trim() || fieldValueAt(path);
         els.singleFieldPrompt.value = '';
+        els.singleFieldError.style.display = 'none';
         els.singleFieldError.textContent = '';
-        els.singleFieldModal.classList.remove('hidden');
+        els.singleFieldModal.classList.add('show');
       }
 
       window.addEventListener('message', (event) => {
@@ -1224,7 +2082,7 @@
             });
             const body = await uploaded.json().catch(() => ({}));
             if (!uploaded.ok) {
-              throw new Error(body?.error?.message || 'Image upload failed');
+              throw new Error(friendlyError(body, 'Image upload failed'));
             }
             images.push({
               path,
@@ -1248,14 +2106,14 @@
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(body?.error?.message || 'Could not save worksheet edits');
+          throw new Error(friendlyError(body, 'Could not save worksheet edits'));
         }
         state.pendingImageReplacements = {};
         await openPreview(state.worksheetId);
       }
 
       async function download(id, format) {
-        setStatus('Preparing download…');
+        toast('Preparing download…');
         const res = await apiFetch(`/${encodeURIComponent(id)}/download`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1264,7 +2122,7 @@
         const contentType = res.headers.get('content-type') || '';
         if (!res.ok || contentType.includes('application/json')) {
           const body = await res.json().catch(() => ({}));
-          setStatus(body?.error?.message || 'Download failed');
+          toast(friendlyError(body, 'Download failed'));
           return;
         }
         const blob = await res.blob();
@@ -1280,7 +2138,6 @@
         link.click();
         link.remove();
         URL.revokeObjectURL(href);
-        setStatus('');
       }
 
       async function searchImages() {
@@ -1304,7 +2161,7 @@
         const body = await res.json().catch(() => ({}));
         els.searchImagesBtn.disabled = false;
         if (!res.ok) {
-          setStatus(body?.error?.message || 'Image search failed');
+          toast(friendlyError(body, 'Image search failed'));
           els.imageResultsCount.textContent = 'Search failed';
           return;
         }
@@ -1323,24 +2180,25 @@
       }
 
       els.generateBtn.addEventListener('click', generateSet);
-      els.cancelBtn.addEventListener('click', () => { els.topicInput.value = ''; setStatus(''); });
+      els.cancelBtn.addEventListener('click', () => { els.topicInput.value = ''; clearBanners(); });
       els.backBtn.addEventListener('click', () => { showGrid(); loadGrid(); });
       els.editBtn.addEventListener('click', async () => {
         if (!state.editMode) {
           state.editMode = true;
           enableInlineEditing(true);
           els.editBtn.textContent = 'Save';
+          toast('Click on text elements or pencil icons to edit');
           return;
         }
         els.editBtn.disabled = true;
-        setStatus('Saving worksheet…');
+        toast('Saving worksheet…');
         try {
           await saveInlineEdits();
           state.editMode = false;
           els.editBtn.textContent = 'Edit';
-          setStatus('Worksheet saved');
+          toast('Worksheet saved');
         } catch (error) {
-          setStatus(error.message || 'Could not save worksheet edits');
+          toast(error.message || 'Could not save worksheet edits');
         } finally {
           els.editBtn.disabled = false;
         }
@@ -1381,7 +2239,7 @@
         if (state.imagePickerTab === 'upload') {
           const file = els.imageUploadInput.files?.[0];
           if (!file) {
-            setStatus('Choose an image to upload');
+            toast('Choose an image to upload');
             return;
           }
           const previewUrl = els.uploadPreview.src || URL.createObjectURL(file);
@@ -1394,22 +2252,19 @@
         }
         if (!applySelectedImageToPreview()) return;
         closeImagePicker();
-        setStatus('Image updated. Click Save to keep the change.');
-        if (!els.fieldEditModal.classList.contains('hidden')) renderAiPanel();
+        toast('Image updated. Click Save to keep the change.');
+        if (els.fieldEditModal.classList.contains('show')) renderAiPanel();
       });
-      els.fieldEditCancelBtn.addEventListener('click', () => {
-        state.imagePickFromAi = false;
-        els.fieldEditModal.classList.add('hidden');
-      });
+
       function closeSingleField() {
-        els.singleFieldModal.classList.add('hidden');
+        els.singleFieldModal.classList.remove('show');
       }
       els.singleFieldCloseBtn.addEventListener('click', closeSingleField);
       els.singleFieldCancelBtn.addEventListener('click', closeSingleField);
       els.singleFieldSaveBtn.addEventListener('click', async () => {
         const path = state.selectedFieldPath;
         const value = els.singleFieldCurrent.value;
-        els.singleFieldError.textContent = '';
+        els.singleFieldError.style.display = 'none';
         const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1417,17 +2272,19 @@
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-          els.singleFieldError.textContent = body?.error?.message || 'Could not save field';
+          els.singleFieldError.textContent = friendlyError(body, 'Could not save field');
+          els.singleFieldError.style.display = 'block';
           return;
         }
         applyTextInFrame(path, value);
         closeSingleField();
-        setStatus('Text updated');
+        toast('Text updated');
       });
+
       els.singleFieldRewriteBtn.addEventListener('click', async () => {
         const path = state.selectedFieldPath;
         const instruction = els.singleFieldPrompt.value.trim() || 'Rewrite this field for the same age group.';
-        els.singleFieldError.textContent = '';
+        els.singleFieldError.style.display = 'none';
         els.singleFieldRewriteBtn.disabled = true;
         const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
           method: 'POST',
@@ -1437,15 +2294,22 @@
         const body = await res.json().catch(() => ({}));
         els.singleFieldRewriteBtn.disabled = false;
         if (!res.ok) {
-          els.singleFieldError.textContent = body?.error?.message || 'AI edit failed';
+          els.singleFieldError.textContent = friendlyError(body, 'AI edit failed');
+          els.singleFieldError.style.display = 'block';
           return;
         }
         const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
         const text = typeof next === 'string' || typeof next === 'number' ? String(next) : els.singleFieldCurrent.value;
         els.singleFieldCurrent.value = text;
         applyTextInFrame(path, text);
-        setStatus('Text rewritten');
+        toast('Text rewritten');
       });
+
+      els.fieldEditCancelBtn.addEventListener('click', () => {
+        state.imagePickFromAi = false;
+        els.fieldEditModal.classList.remove('show');
+      });
+
       els.aiFieldsList.addEventListener('click', async (event) => {
         const replaceBtn = event.target.closest('[data-ai-replace]');
         if (replaceBtn) {
@@ -1457,7 +2321,7 @@
         if (applyBtn) {
           const path = applyBtn.getAttribute('data-ai-apply');
           const value = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`)?.value ?? '';
-          els.fieldEditError.textContent = '';
+          els.fieldEditError.style.display = 'none';
           const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1465,12 +2329,13 @@
           });
           const body = await res.json().catch(() => ({}));
           if (!res.ok) {
-            els.fieldEditError.textContent = body?.error?.message || 'Could not save field';
+            els.fieldEditError.textContent = friendlyError(body, 'Could not save field');
+            els.fieldEditError.style.display = 'block';
             return;
           }
           applyTextInFrame(path, value);
           if (body.structure) state.preview = { ...state.preview, structure: body.structure, html: body.html || state.preview.html };
-          setStatus('Field updated');
+          toast('Field updated');
           return;
         }
         const rewriteBtn = event.target.closest('[data-ai-rewrite]');
@@ -1478,7 +2343,7 @@
           const path = rewriteBtn.getAttribute('data-ai-rewrite');
           const instruction = els.aiFieldsList.querySelector(`[data-ai-prompt="${path}"]`)?.value
             || 'Rewrite this field for the same age group.';
-          els.fieldEditError.textContent = '';
+          els.fieldEditError.style.display = 'none';
           rewriteBtn.disabled = true;
           const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
             method: 'POST',
@@ -1488,7 +2353,8 @@
           const body = await res.json().catch(() => ({}));
           rewriteBtn.disabled = false;
           if (!res.ok) {
-            els.fieldEditError.textContent = body?.error?.message || 'AI edit failed';
+            els.fieldEditError.textContent = friendlyError(body, 'AI edit failed');
+            els.fieldEditError.style.display = 'block';
             return;
           }
           const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
@@ -1503,16 +2369,18 @@
             enableInlineEditing(keepEdit);
             renderAiPanel();
           }
-          setStatus('Field rewritten');
+          toast('Field rewritten');
         }
       });
+
       els.regenWorksheetBtn.addEventListener('click', async () => {
         const query = els.regenQuery.value.trim();
         if (!query) {
           els.fieldEditError.textContent = 'Enter requirements to regenerate this worksheet';
+          els.fieldEditError.style.display = 'block';
           return;
         }
-        els.fieldEditError.textContent = '';
+        els.fieldEditError.style.display = 'none';
         els.regenWorksheetBtn.disabled = true;
         els.regenWorksheetBtn.textContent = 'Generating…';
         const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/regenerate`, {
@@ -1524,7 +2392,8 @@
         els.regenWorksheetBtn.disabled = false;
         els.regenWorksheetBtn.textContent = '✦ Regenerate worksheet';
         if (!res.ok) {
-          els.fieldEditError.textContent = body?.error?.message || 'Regenerate failed';
+          els.fieldEditError.textContent = friendlyError(body, 'Regenerate failed');
+          els.fieldEditError.style.display = 'block';
           return;
         }
         const keepEdit = state.editMode;
@@ -1532,30 +2401,21 @@
         state.editMode = keepEdit;
         enableInlineEditing(keepEdit);
         renderAiPanel();
-        setStatus('Worksheet regenerated');
+        toast('Worksheet regenerated');
       });
+
       window.addEventListener('resize', scaleFrame);
 
       function fillCountOptions(defaultCount, maxCount) {
         state.defaultCount = defaultCount;
         state.maxCount = maxCount;
-        const options = [];
-        for (let n = 1; n <= maxCount; n += 1) options.push(n);
+        const options = [1, 3, 5, 8, 10];
         els.countSelect.innerHTML = options.map((n) => `<option value="${n}">${n}</option>`).join('');
-        els.countSelect.value = String(defaultCount);
+        els.countSelect.value = String(defaultCount || 1);
       }
 
       function applySettings(settings) {
         if (!settings || typeof settings !== 'object') return;
-        const frontendApi = frontendWorksheetsApi() || new URLSearchParams(location.search).get('api') || '';
-        if (frontendApi) {
-          state.apiBaseUrl = String(frontendApi).replace(/\/$/, '');
-        } else if (settings.apiBaseUrl) {
-          state.apiBaseUrl = String(settings.apiBaseUrl).replace(/\/$/, '');
-        } else if (!state.apiBaseUrl) {
-          state.apiBaseUrl = queryApiBase();
-        }
-        if (settings.apiPrefix) state.apiPrefix = String(settings.apiPrefix).replace(/\/$/, '');
         if (settings.pageSize) state.pageSize = Number(settings.pageSize) || state.pageSize;
         if (settings.pagerMaxButtons) state.pagerMaxButtons = Number(settings.pagerMaxButtons) || state.pagerMaxButtons;
         if (settings.canvas?.width && settings.canvas?.height) state.canvas = settings.canvas;
@@ -1570,10 +2430,13 @@
       }
 
       async function loadSettings() {
-        const res = await apiFetch('/settings');
-        const settings = await res.json();
-        if (!res.ok) throw new Error(settings?.error?.message || 'Could not load settings');
-        applySettings(settings);
+        try {
+          const res = await apiFetch('/settings');
+          const settings = await res.json();
+          if (res.ok) applySettings(settings);
+        } catch (error) {
+          console.warn('Could not load settings:', error);
+        }
       }
 
       async function loadTemplates() {
@@ -1581,20 +2444,31 @@
           const res = await apiFetch('/templates');
           const templates = await res.json();
           if (res.ok && Array.isArray(templates)) {
-            const options = ['<option value="">Auto-select template</option>'];
+            const options = ['<option value="">Auto — no template selected</option>'];
             templates.forEach((t) => {
-              options.push(`<option value="${t.id}">${t.name}</option>`);
+              options.push(`<option value="${t.id}">${escapeHtml(t.name)}</option>`);
             });
             els.templateSelect.innerHTML = options.join('');
           }
         } catch (error) {
-          console.error('Could not load templates', error);
+          console.warn('Could not load templates', error);
         }
       }
 
+      document.querySelectorAll('.chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+          const q = chip.getAttribute('data-q');
+          const a = chip.getAttribute('data-a');
+          if (q) els.topicInput.value = q;
+          if (a) {
+            state.ageGroup = a;
+            renderAges();
+          }
+        });
+      });
+
       renderAges();
       fillCountOptions(state.defaultCount, state.maxCount);
-      state.apiBaseUrl = queryApiBase();
       loadSettings()
         .then(() => {
           renderAges();
@@ -1603,7 +2477,7 @@
           if (params.get('id')) return openPreview(params.get('id'));
           return loadGrid();
         })
-        .catch((error) => setStatus(error.message || 'Could not load settings'));
+        .catch((error) => showBanner('error', errorBannerHtml(error, 'Could not load initial data', 'Initialization Error')));
     </script>
   </body>
 </html>

@@ -59,11 +59,18 @@ export class WorksheetTemplateSelectionService {
       if (!outcome.usedFallback && outcome.result) {
         const aiSelected = eligible.find((t) => t.id === outcome.result!.selectedTemplateId);
         if (aiSelected) {
+          (aiSelected as any)._aiOutcome = outcome;
           return aiSelected;
         }
       }
+      (eligible[0] as any)._aiOutcome = outcome;
+      return eligible[0];
     }
 
+    (eligible[0] as any)._aiOutcome = {
+      usedFallback: true,
+      fallbackReason: 'single_candidate',
+    };
     return eligible[0];
   }
 
@@ -141,6 +148,40 @@ export class WorksheetTemplateSelectionService {
     return true;
   }
 
+  private matchesGrade(templateGrades: string[], requestGrade: string): boolean {
+    if (!requestGrade?.trim() || !templateGrades?.length) {
+      return true;
+    }
+    const clean = requestGrade.trim().toLowerCase();
+    const cleanTemplates = templateGrades.map((g) => g.trim().toLowerCase());
+
+    if (cleanTemplates.includes(clean)) {
+      return true;
+    }
+
+    const aliases: Record<string, string[]> = {
+      fs0: ['fs0', 'nursery', 'pre-k', '2-3'],
+      nursery: ['fs0', 'nursery', 'pre-k', '2-3'],
+      fs1: ['fs1', 'lkg', 'kg1', 'preschool', '3-4'],
+      lkg: ['fs1', 'lkg', 'kg1', 'preschool', '3-4'],
+      fs2: ['fs2', 'ukg', 'kg2', 'kindergarten', '4-5'],
+      ukg: ['fs2', 'ukg', 'kg2', 'kindergarten', '4-5'],
+      grade1: ['grade 1', 'grade1', '1st grade', 'class 1', '5-6'],
+      'grade 1': ['grade 1', 'grade1', '1st grade', 'class 1', '5-6'],
+      grade2: ['grade 2', 'grade2', '2nd grade', 'class 2', '6-7'],
+      'grade 2': ['grade 2', 'grade2', '2nd grade', 'class 2', '6-7'],
+      grade3: ['grade 3', 'grade3', '3rd grade', 'class 3', '7-8'],
+      'grade 3': ['grade 3', 'grade3', '3rd grade', 'class 3', '7-8'],
+    };
+
+    const targetAliases = aliases[clean];
+    if (targetAliases) {
+      return cleanTemplates.some((tg) => targetAliases.includes(tg));
+    }
+
+    return false;
+  }
+
   public isEligible(
     template: WorksheetTemplateRecord,
     request: GenerateWorksheetRequest,
@@ -153,7 +194,7 @@ export class WorksheetTemplateSelectionService {
     if (
       request.grade?.trim() &&
       meta.grades?.length &&
-      !this.includesInsensitive(meta.grades, request.grade)
+      !this.matchesGrade(meta.grades, request.grade)
     ) {
       return false;
     }

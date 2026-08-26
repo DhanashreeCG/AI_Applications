@@ -143,6 +143,7 @@ export class WorksheetContentService {
     currentValue: unknown;
     worksheetStructure: unknown;
     linkedValues: Record<string, unknown>;
+    countryCode?: string | null;
     telemetry?: PipelineTelemetryContext;
   }): Promise<unknown> {
     const telemetry = input.telemetry;
@@ -160,6 +161,7 @@ export class WorksheetContentService {
             currentValue: input.currentValue,
             worksheetStructure: input.worksheetStructure,
             linkedValues: input.linkedValues,
+            countryCode: input.countryCode,
           }),
         {
           completeMetadata: { fieldPath: input.fieldPath },

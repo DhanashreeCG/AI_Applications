@@ -220,6 +220,7 @@ export class WorksheetEditService {
       currentValue: resolved.currentValue,
       worksheetStructure: resolved.structure,
       linkedValues: resolved.linkedValues,
+      countryCode: dto.countryCode,
       telemetry,
     });
 

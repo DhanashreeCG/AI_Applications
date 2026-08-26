@@ -57,17 +57,20 @@ export class WorksheetTemplateSelectionAiService {
     eventEmitter: EventEmitter2,
   ) {
     this.enabled = this.configService.get<boolean>('worksheets.templateSelectionAi.enabled') !== false;
-    this.provider = this.configService.get<string>('worksheets.templateSelectionAi.provider') || 'openai';
+    const configuredProvider = (
+      this.configService.get<string>('worksheets.templateSelectionAi.provider') || 'google-gemini'
+    ).toLowerCase();
+    this.provider = configuredProvider.includes('openai') ? 'openai' : 'gemini';
     this.modelName =
       this.provider === 'openai'
-        ? (this.configService.get<string>('worksheets.templateSelectionAi.openaiModel') || 'gpt-4.1-mini')
+        ? (this.configService.get<string>('worksheets.templateSelectionAi.openaiModel') || 'gpt-4o-mini')
         : (this.configService.get<string>('worksheets.templateSelectionAi.geminiModel') || 'gemini-2.5-flash');
     this.minConfidence = this.configService.get<number>('worksheets.templateSelectionAi.minConfidence') ?? 0.5;
     this.timeoutMs = this.configService.get<number>('worksheets.templateSelectionAi.timeoutMs') ?? 6000;
-    this.costPerMInputUsd = this.configService.get<number>('worksheets.templateSelectionAi.costPerMInputUsd') ?? 0.4;
+    this.costPerMInputUsd = this.configService.get<number>('worksheets.templateSelectionAi.costPerMInputUsd') ?? 0.075;
     this.costPerMCachedInputUsd =
-      this.configService.get<number>('worksheets.templateSelectionAi.costPerMCachedInputUsd') ?? 0.1;
-    this.costPerMOutputUsd = this.configService.get<number>('worksheets.templateSelectionAi.costPerMOutputUsd') ?? 1.6;
+      this.configService.get<number>('worksheets.templateSelectionAi.costPerMCachedInputUsd') ?? 0.0375;
+    this.costPerMOutputUsd = this.configService.get<number>('worksheets.templateSelectionAi.costPerMOutputUsd') ?? 0.30;
 
     const maxRps =
       this.provider === 'openai'

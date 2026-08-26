@@ -252,13 +252,26 @@ export class WorksheetGenerationService {
         startMetadata: {
           explicitTemplateId: analyzed.explicitTemplateId,
         },
-        completeMetadata: (selected) => ({
-          templateId: selected.id,
-          templateSlug: selected.slug,
-          rendererType: selected.rendererType,
-          category: selected.category,
-          explicitTemplateId: analyzed.explicitTemplateId,
-        }),
+        completeMetadata: (selected) => {
+          const outcome = (selected as any)._aiOutcome;
+          return {
+            templateId: selected.id,
+            templateSlug: selected.slug,
+            rendererType: selected.rendererType,
+            category: selected.category,
+            explicitTemplateId: analyzed.explicitTemplateId,
+            selectionMode: analyzed.explicitTemplateId
+              ? 'explicit'
+              : outcome?.usedFallback
+                ? 'deterministic'
+                : outcome?.result
+                  ? 'ai'
+                  : 'deterministic',
+            aiConfidence: outcome?.result?.confidenceScore,
+            aiReasoning: outcome?.result?.reasoning,
+            aiFallbackReason: outcome?.fallbackReason,
+          };
+        },
       },
     );
     this.logger.log(`template selected slug=${template.slug} id=${template.id}`);
@@ -437,43 +450,33 @@ export class WorksheetGenerationService {
     options: GenerateWorksheetOptions = {},
   ): Promise<{ items: GenerateWorksheetResponse[]; failed: number }> {
     this.validationService.validateRequest(dto);
-    const count = this.normalizeCount(dto.count);
-
-    const telemetry = createTelemetryContext({
-      correlationId: options.correlationId,
-      workflowType: this.workflowType,
-    });
-
-    const matching = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.TEMPLATE_SELECTION,
-      () => this.templateSelectionService.listMatching(dto, count, telemetry),
-      {
-        startMetadata: {
-          explicitTemplateId: dto.templateId,
-        },
-      }
+    const countryCode = resolveRequestCountryCode(
+      dto.countryCode,
+      this.configService.get<string>('flashcards.defaultCountryCode'),
     );
-
-    const pool = matching.length
-      ? matching
-      : [await this.templateSelectionService.select(dto, telemetry)];
-    const targets = Array.from({ length: count }, (_, index) => pool[index % pool.length]);
+    assertGenerationRequestAllowed({
+      query: dto.query,
+      topic: dto.topic,
+      countryCode,
+    });
+    const count = this.normalizeCount(dto.count);
+    const explicitTemplateId = dto.templateId?.trim() || undefined;
+    const targets = Array.from({ length: count }, () => ({
+      ...dto,
+      templateId: explicitTemplateId,
+      count: undefined,
+    }));
 
     const results: GenerateWorksheetResponse[] = [];
     let failed = 0;
-    await mapWithConcurrency(targets, 2, async (template) => {
+    await mapWithConcurrency(targets, 2, async (targetDto) => {
       try {
-        const item = await this.generate(
-          { ...dto, templateId: template.id, count: undefined },
-          options,
-        );
+        const item = await this.generate(targetDto, options);
         results.push(item);
       } catch (error) {
         failed += 1;
         this.logger.warn(
-          `generate-set skipped template ${template.slug}: ${getErrorMessage(error)}`,
+          `generate-set skipped item: ${getErrorMessage(error)}`,
         );
       }
     });

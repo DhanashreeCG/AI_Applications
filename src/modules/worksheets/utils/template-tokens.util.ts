@@ -122,13 +122,16 @@ export function matchingPairLayout(
  * template's own CSS class — e.g. .name-item / .number-item — and must
  * never be overridden here).
  */
-function upsertStylePosition(attrs: string, top: number, left: number): string {
+function upsertStylePosition(attrs: string, top: number, left: number, color?: string): string {
   const apply = (style: string) => {
     let next = style
       .replace(/top\s*:\s*[\d.]*\s*px/gi, `top:${top}px`)
       .replace(/left\s*:\s*[\d.]*\s*px/gi, `left:${left}px`)
       .replace(/top\s*:\s*px/gi, `top:${top}px`)
       .replace(/left\s*:\s*px/gi, `left:${left}px`);
+    if (color && /color\s*:\s*(?:;|$)/i.test(next)) {
+      next = next.replace(/color\s*:\s*(?:;|$)/gi, `color:${color}`);
+    }
     if (!/top\s*:/i.test(next)) {
       next = `${next};top:${top}px`;
     }
@@ -148,10 +151,6 @@ function upsertStylePosition(attrs: string, top: number, left: number): string {
 
 /**
  * Absolute .number-item / .name-item with missing or empty top/left all land at 0,0.
- * NOTE: only top/left are set here. Text color and weight come from the
- * template's own .name-item / .number-item CSS class — the `pairs[].color`
- * field is the pill/swatch background color, not text color, and must not
- * be applied inline here.
  */
 export function positionMatchingPairItems(
   html: string,
@@ -177,7 +176,8 @@ export function positionMatchingPairItems(
       const renderIndex = isNumber ? index : nameIndices.indexOf(index);
       const top = startTop + renderIndex * rowHeight;
       const left = isNumber ? numberLeft : nameLeft;
-      return `<${tag}${upsertStylePosition(attrs, top, left)}>`;
+      const color = !isNumber ? (pairs[index] as any)?.color : undefined;
+      return `<${tag}${upsertStylePosition(attrs, top, left, color)}>`;
     },
   );
 }
@@ -186,8 +186,6 @@ export function positionMatchingPairItems(
  * Number-names matching templates expect either {{NUMBERS}}/{{NAMES}}
  * or {{#each pairs}} rows. Prototype CSS uses absolute .number-item / .name-item
  * without top/left, so positions are computed here.
- * Text styling (color, font-weight, centering) is intentionally left to the
- * template's own .name-item / .number-item CSS class and is never set inline.
  */
 export function buildMatchingPairMarkup(
   structure: Record<string, unknown>,
@@ -210,19 +208,12 @@ export function buildMatchingPairMarkup(
     return `<button type="button" class="ai-pencil" data-pencil-for="${escapeAttr(path)}" style="top:${top + 10}px;left:${left}px;width:20px;height:20px" aria-label="Edit field"><img src="${escapeAttr(icon)}" alt="" style="width:100%;height:100%"/></button>`;
   };
 
-  // Starting font sizes are set explicitly (not left to the browser default)
-  // so shrinkToFit's per-element "max size" is intentional. Longer number
-  // names ("seventy-eight") will auto-shrink toward MIN_FONT if needed; short
-  // ones stay at this size.
-  const NUMBER_FONT_SIZE = 38;
-  const NAME_FONT_SIZE = 28;
-
   const numbers = pairs
     .map((item, index) => {
       const top = startTop + index * rowHeight;
       const path = `pairs[${index}].number`;
       const value = escapeHtml(pairField(item, 'number'));
-      return `<div class="number-item" style="top:${top}px;left:${numberLeft}px;font-size:${NUMBER_FONT_SIZE}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, numberLeft + 76)}`;
+      return `<div class="number-item" style="top:${top}px;left:${numberLeft}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, numberLeft + 76)}`;
     })
     .join('');
 
@@ -234,7 +225,7 @@ export function buildMatchingPairMarkup(
       const top = startTop + renderIndex * rowHeight;
       const path = `pairs[${originalIndex}].name`;
       const value = escapeHtml(pairField(item, 'name'));
-      return `<div class="name-item" style="top:${top}px;left:${nameLeft}px;font-size:${NAME_FONT_SIZE}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
+      return `<div class="name-item" style="top:${top}px;left:${nameLeft}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
     })
     .join('');
 
