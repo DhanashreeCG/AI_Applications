@@ -236,7 +236,7 @@ export class WorksheetAssetService {
     );
 
     try {
-      let response = await this.searchWithEmbeddingRetry(
+      const response = await this.searchWithEmbeddingRetry(
         query,
         hasFilters ? filters : undefined,
       );
@@ -244,19 +244,6 @@ export class WorksheetAssetService {
       this.logger.log(
         `image search embedding+vector path=${path || '(root)'} query="${query}" hits=${response.results.length} cache=${response.fromCache === true} topAssetId=${response.results[0]?.assetId ?? 'none'}`,
       );
-
-      // Strictly at most ONE fallback attempt without filters if filtered search had 0 results
-      if (!response.results.length && hasFilters) {
-        this.logger.warn(
-          `No filtered asset for "${query}" at ${path}; retrying once without grade/age filters`,
-        );
-        try {
-          response = await this.searchWithEmbeddingRetry(query, undefined);
-          this.emitEmbeddingUsage(telemetry, query, response);
-        } catch (retryError) {
-          this.logger.warn(`Fallback image search failed for "${query}": ${getErrorMessage(retryError)}`);
-        }
-      }
 
       const hit = response.results && response.results.length > 0 ? response.results[0] : null;
       const slot: ResolvedAssetSlot = hit

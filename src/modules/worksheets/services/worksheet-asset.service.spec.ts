@@ -180,24 +180,18 @@ describe('WorksheetAssetService', () => {
     });
   });
 
-  it('retries without filters when the filtered search is empty', async () => {
-    searchService.search
-      .mockResolvedValueOnce({ query: 'red apples', total: 0, results: [] })
-      .mockResolvedValueOnce({
-        query: 'red apples',
-        total: 1,
-        results: [{ assetId: 'asset-123', s3ObjectKey: 'assets/a.png' }],
-      });
+  it('returns empty slot when search returns 0 results', async () => {
+    searchService.search.mockResolvedValueOnce({ query: 'red apples', total: 0, results: [] });
 
     const { slots, structure } = await service.attachAssets(
       { items: [{ imageQuery: 'red apples' }] },
       { grades: ['LKG'] },
     );
 
-    expect(searchService.search).toHaveBeenCalledTimes(2);
-    expect(slots[0].assetId).toBe('asset-123');
+    expect(searchService.search).toHaveBeenCalledTimes(1);
+    expect(slots[0].assetId).toBeUndefined();
     expect(structure).toEqual({
-      items: [{ imageQuery: 'red apples', assetId: 'asset-123' }],
+      items: [{ imageQuery: 'red apples' }],
     });
   });
 

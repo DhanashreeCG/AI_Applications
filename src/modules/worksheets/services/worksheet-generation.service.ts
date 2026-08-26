@@ -298,10 +298,7 @@ export class WorksheetGenerationService {
       () =>
         this.assetService.attachAssetsBatch(
           generatedList,
-          {
-            grades: dto.grade ? [dto.grade] : meta.grades,
-            ageGroups,
-          },
+          undefined,
           telemetry,
         ),
       {
@@ -397,7 +394,12 @@ export class WorksheetGenerationService {
     );
 
     // Stash full batch responses on the first response for generateSet consumption
-    (responses[0] as any)._batchResponses = responses;
+    // Use defineProperty to make it non-enumerable and avoid circular JSON serialization issues
+    Object.defineProperty(responses[0], '_batchResponses', {
+      value: responses,
+      enumerable: false,
+      configurable: true,
+    });
 
     return responses[0];
   }
@@ -406,12 +408,17 @@ export class WorksheetGenerationService {
     dto: GenerateWorksheetDto,
     options: GenerateWorksheetOptions = {},
   ): Promise<{ items: GenerateWorksheetResponse[]; failed: number }> {
-    const first = await this.generate(dto, options);
-    const items: GenerateWorksheetResponse[] =
-      (first as any)._batchResponses || [first];
-    const requestedCount = this.normalizeCount(dto.count);
-    const failed = Math.max(0, requestedCount - items.length);
-    return { items, failed };
+    try {
+      const first = await this.generate(dto, options);
+      const items: GenerateWorksheetResponse[] =
+        (first as any)._batchResponses || [first];
+      const requestedCount = this.normalizeCount(dto.count);
+      const failed = Math.max(0, requestedCount - items.length);
+      return { items, failed };
+    } catch (error) {
+      this.logger.error(`generateSet failed: ${getErrorMessage(error)}`);
+      throw error;
+    }
   }
 
   public async list(options: { skip?: number; take?: number } = {}) {
