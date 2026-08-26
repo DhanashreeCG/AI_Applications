@@ -55,6 +55,7 @@ export interface AppConfig {
   };
   flashcards: {
     imageConcurrency: number;
+    cardConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
     imageEmbeddingMaxAttempts: number;
@@ -74,6 +75,17 @@ export interface AppConfig {
       costPerMInputUsd: number;
       costPerMCachedInputUsd: number;
       costPerMOutputUsd: number;
+    };
+    imageQueryRefinement: {
+      enabled: boolean;
+      provider: string;
+      geminiModel: string;
+      openaiModel: string;
+      timeoutMs: number;
+      maxAttempts: number;
+      retryDelayMs: number;
+      assetVocabularyEnabled: boolean;
+      assetVocabularyLimit: number;
     };
     renderer: {
       enabled: boolean;
@@ -277,6 +289,10 @@ export default (): AppConfig => ({
       process.env.FLASHCARD_IMAGE_CONCURRENCY || '3',
       10,
     ),
+    cardConcurrency: parseInt(
+      process.env.FLASHCARD_CARD_CONCURRENCY || '3',
+      10,
+    ),
     signedUrlTtlSeconds: parseInt(
       process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS || '3600',
       10,
@@ -335,6 +351,36 @@ export default (): AppConfig => ({
       ),
       costPerMOutputUsd: parseFloat(
         process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_OUTPUT_USD || '1.6',
+      ),
+    },
+    imageQueryRefinement: {
+      enabled:
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_ENABLED !== 'false',
+      provider:
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_PROVIDER || 'gemini',
+      geminiModel:
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_GEMINI_MODEL ||
+        'gemini-2.0-flash-lite',
+      openaiModel:
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_OPENAI_MODEL ||
+        'gpt-4o-mini',
+      timeoutMs: parseInt(
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_TIMEOUT_MS || '5000',
+        10,
+      ),
+      maxAttempts: parseInt(
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_MAX_ATTEMPTS || '2',
+        10,
+      ),
+      retryDelayMs: parseInt(
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_RETRY_DELAY_MS || '300',
+        10,
+      ),
+      assetVocabularyEnabled:
+        process.env.FLASHCARD_IMAGE_QUERY_VOCABULARY_ENABLED === 'true',
+      assetVocabularyLimit: parseInt(
+        process.env.FLASHCARD_IMAGE_QUERY_VOCABULARY_LIMIT || '200',
+        10,
       ),
     },
     renderer: {

@@ -2770,25 +2770,36 @@
 
         clearBanners();
         setBusy(true);
+        state.imageCache.clear();
+        state.favourites.clear();
+        state.page = 1;
+        state.editingIndex = null;
+        state.pendingImageReplacements = {};
+        state.payload = null;
         renderSkeletons(count);
+        toast('<span class="spinner"></span>Generating 0/' + count + ' cards…');
+
+        const countryCode = restrictionCountryCode();
+        const requestBody = { query, ageGroup, count };
+        if (templateId) requestBody.templateId = templateId;
+        if (countryCode) requestBody.countryCode = countryCode;
+
+        let received = 0;
+        let blockedImages = 0;
+        let streamFailed = false;
 
         try {
-          const countryCode = restrictionCountryCode();
-          const requestBody = { query, ageGroup, count };
-          if (templateId) requestBody.templateId = templateId;
-          if (countryCode) requestBody.countryCode = countryCode;
-
-          const response = await fetch(apiBase() + '/flashcards/generate', {
+          const response = await fetch(apiBase() + '/flashcards/generate/stream', {
             method: 'POST',
             headers: withRestrictionHeaders({
               'Content-Type': 'application/json',
+              Accept: 'application/x-ndjson',
             }),
             body: JSON.stringify(requestBody),
           });
 
-          const body = await response.json().catch(() => null);
-
           if (!response.ok) {
+            const body = await response.json().catch(() => null);
             showBanner(
               'error',
               errorBannerHtml(body, 'Could not generate flashcards. Please try again.', 'Could not generate flashcards'),
@@ -2797,18 +2808,73 @@
             return;
           }
 
-          state.payload = body;
+          await readNdjsonStream(response, async (event) => {
+            if (!event || !event.type) return;
+            if (event.type === 'ping') return;
+
+            if (event.type === 'meta') {
+              applyGenerationMeta(event, count);
+              renderSkeletons(event.count || count);
+              renderSummary(state.payload);
+              return;
+            }
+
+            if (event.type === 'card' && event.card) {
+              received += 1;
+              const slot = applyStreamedCard(event.card, event.slotIndex, count);
+              blockedImages += await preloadImagesForCards([event.card]);
+              replaceSkeletonAt(slot, event.card);
+              toast(
+                '<span class="spinner"></span>Generating ' + received + '/' + count + ' cards…',
+              );
+              return;
+            }
+
+            if (event.type === 'done' && event.payload) {
+              mergeDonePayload(event.payload);
+              return;
+            }
+
+            if (event.type === 'error') {
+              streamFailed = true;
+              showBanner(
+                'error',
+                errorBannerHtml(
+                  event,
+                  'Could not generate flashcards. Please try again.',
+                  'Could not generate flashcards',
+                ),
+              );
+            }
+          });
+
+          if (streamFailed && !received) {
+            resetResults();
+            return;
+          }
+
+          if (!state.payload || !state.payload.cards.some(Boolean)) {
+            showBanner(
+              'error',
+              '<div>Could not generate flashcards. Please try again.</div>',
+            );
+            resetResults();
+            return;
+          }
+
+          state.payload.cards = state.payload.cards.filter(Boolean);
           if (state.payload) delete state.payload.id;
-          state.imageCache.clear();
-          state.favourites.clear();
-          state.page = 1;
-          state.editingIndex = null;
-          state.pendingImageReplacements = {};
-          await preloadImages(body);
-          renderSummary(body);
+          if (blockedImages > 0) {
+            showBanner(
+              'warn',
+              '<div><b>' + blockedImages + ' image(s) could not be inlined.</b> They still display, but may be missing from PNG/PDF exports.</div>',
+            );
+          }
+          renderSummary(state.payload);
           renderGrid();
+          toast(state.payload.cards.length + ' cards ready');
         } catch (error) {
-          resetResults();
+          if (!received) resetResults();
           showBanner(
             'error',
             errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
@@ -2816,6 +2882,92 @@
         } finally {
           setBusy(false);
         }
+      }
+
+      async function readNdjsonStream(response, onEvent) {
+        if (!response.body || !response.body.getReader) {
+          const text = await response.text();
+          for (const line of text.split(/\r?\n/)) {
+            if (!line.trim()) continue;
+            await onEvent(JSON.parse(line));
+          }
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            await onEvent(JSON.parse(line));
+          }
+        }
+        if (buffer.trim()) await onEvent(JSON.parse(buffer));
+      }
+
+      function applyGenerationMeta(event, fallbackCount) {
+        const count = event.count || fallbackCount;
+        state.payload = {
+          request: event.request || { count },
+          selection: event.selection || null,
+          template: event.template || null,
+          templateVersion: event.templateVersion,
+          layoutDefinition: event.layoutDefinition || (event.template && event.template.layoutDefinition) || null,
+          cards: Array.from({ length: count }, () => null),
+          metadata: {},
+        };
+      }
+
+      function applyStreamedCard(card, slotIndex, fallbackCount) {
+        if (!state.payload) {
+          applyGenerationMeta({ count: fallbackCount }, fallbackCount);
+        }
+        const cards = state.payload.cards;
+        const hinted = Number(slotIndex);
+        const byId = cards.findIndex((existing) => existing && existing.cardId === card.cardId);
+        let slot = byId >= 0 ? byId : Number.isInteger(hinted) && hinted >= 0 ? hinted : cards.findIndex((existing) => !existing);
+        if (slot < 0) {
+          slot = cards.length;
+          cards.push(card);
+        } else {
+          cards[slot] = card;
+        }
+        return slot;
+      }
+
+      function mergeDonePayload(payload) {
+        if (!payload) return;
+        if (!state.payload) {
+          state.payload = payload;
+          return;
+        }
+        state.payload.request = payload.request || state.payload.request;
+        state.payload.selection = payload.selection || state.payload.selection;
+        state.payload.template = payload.template || state.payload.template;
+        state.payload.templateVersion = payload.templateVersion || state.payload.templateVersion;
+        state.payload.layoutDefinition = payload.layoutDefinition || state.payload.layoutDefinition;
+        state.payload.metadata = payload.metadata || state.payload.metadata;
+        state.payload.renderingMetadata = payload.renderingMetadata;
+        if (Array.isArray(payload.cards) && payload.cards.length) {
+          state.payload.cards = payload.cards;
+        }
+      }
+
+      function replaceSkeletonAt(slot, card) {
+        const grid = el('grid');
+        const placeholders = grid.querySelectorAll('.skeleton, .tile');
+        const next = buildTile(card, slot);
+        if (placeholders[slot]) {
+          placeholders[slot].replaceWith(next);
+          return;
+        }
+        grid.appendChild(next);
       }
 
       function resetResults() {
@@ -2842,8 +2994,20 @@
        * data URLs up front wherever the response allows it.
        */
       async function preloadImages(payload) {
+        const blocked = await preloadImagesForCards(payload.cards || []);
+        if (blocked > 0) {
+          showBanner(
+            'warn',
+            '<div><b>' + blocked + ' image(s) could not be inlined.</b> They still display, but may be missing from PNG/PDF exports.</div>',
+          );
+        }
+      }
+
+      /** Returns how many sources could not be inlined, so streamed cards can defer the banner. */
+      async function preloadImagesForCards(cards) {
         const sources = new Set();
-        for (const card of payload.cards || []) {
+        for (const card of cards || []) {
+          if (!card) continue;
           for (const component of card.components || []) {
             for (const ref of collectImageRefs(component)) {
               const source = imageSourceFor(ref);
@@ -2874,12 +3038,7 @@
           }),
         );
 
-        if (blocked > 0) {
-          showBanner(
-            'warn',
-            '<div><b>' + blocked + ' image(s) could not be inlined.</b> They still display, but may be missing from PNG/PDF exports.</div>',
-          );
-        }
+        return blocked;
       }
 
 

@@ -6,7 +6,11 @@ import {
   PIPELINE_STAGES,
   PipelineTelemetryContext,
 } from '../../../common/events/pipeline-tracker.events';
-import { DEFAULT_FLASHCARD_COUNT } from '../constants/flashcard.constants';
+import {
+  DEFAULT_CARD_CONCURRENCY,
+  DEFAULT_FLASHCARD_COUNT,
+} from '../constants/flashcard.constants';
+import { mapWithConcurrency } from '../flashcard-renderer/utils/concurrency.util';
 import { GenerateFlashcardsDto } from '../dto/generate-flashcards.dto';
 import { FlashcardException } from '../errors/flashcard.exception';
 import {
@@ -35,9 +39,30 @@ import { FlashcardRenderResult } from '../flashcard-renderer/interfaces/render-r
 import { TemplateSelectionService } from './template-selection.service';
 import type { SelectTemplateResult } from './template-selection.service';
 import { TemplateRepository } from './template.repository';
+import { ImageQueryRefinementService } from './image-query-refinement.service';
+import { requestWantsLineArt } from '../utils/image-query.util';
+
+/**
+ * Emitted once the template is known and again per assembled card, so a
+ * streaming transport can deliver cards before the whole set is finished.
+ */
+export interface GenerateFlashcardsProgress {
+  onMeta?: (meta: FlashcardGenerationMeta) => void;
+  onCard?: (card: FlashcardCardPayload, slotIndex: number) => void;
+}
+
+export interface FlashcardGenerationMeta {
+  count: number;
+  request: GenerateFlashcardsResponse['request'];
+  selection: GenerateFlashcardsResponse['selection'];
+  template: GenerateFlashcardsResponse['template'];
+  templateVersion: GenerateFlashcardsResponse['templateVersion'];
+  layoutDefinition: GenerateFlashcardsResponse['layoutDefinition'];
+}
 
 export interface GenerateFlashcardsOptions {
   correlationId?: string;
+  progress?: GenerateFlashcardsProgress;
 }
 
 @Injectable()
@@ -46,6 +71,7 @@ export class FlashcardOrchestratorService {
   private readonly emitter: FlashcardPipelineEmitter;
   private readonly workflowType: string;
   private readonly renderingEnabled: boolean;
+  private readonly cardConcurrency: number;
 
   constructor(
     private readonly templateSelectionService: TemplateSelectionService,
@@ -53,6 +79,7 @@ export class FlashcardOrchestratorService {
     private readonly contentService: FlashcardContentService,
     private readonly imageRetrievalService: FlashcardImageRetrievalService,
     private readonly rendererService: FlashcardRendererService,
+    private readonly imageQueryRefinementService: ImageQueryRefinementService,
     private readonly configService: ConfigService,
     eventEmitter: EventEmitter2,
   ) {
@@ -62,6 +89,25 @@ export class FlashcardOrchestratorService {
       'flashcards';
     this.renderingEnabled =
       this.configService.get<boolean>('flashcards.renderer.enabled') !== false;
+    this.cardConcurrency = Math.max(
+      1,
+      this.configService.get<number>('flashcards.cardConcurrency') ??
+        DEFAULT_CARD_CONCURRENCY,
+    );
+  }
+
+  /**
+   * Progress callbacks belong to the transport, never to the pipeline. A
+   * client that disconnects mid-stream must not fail the generation.
+   */
+  private notifyProgress(emit: () => void): void {
+    try {
+      emit();
+    } catch (error) {
+      this.logger.warn(
+        `Flashcard progress callback failed: ${getErrorMessage(error)}`,
+      );
+    }
   }
 
   public async generate(
@@ -86,7 +132,7 @@ export class FlashcardOrchestratorService {
     });
 
     try {
-      const response = await this.runGenerate(dto, telemetry);
+      const response = await this.runGenerate(dto, telemetry, options.progress);
       this.emitter.emitCompleted({
         ...telemetry,
         status: 'completed',
@@ -115,6 +161,7 @@ export class FlashcardOrchestratorService {
   private async runGenerate(
     dto: GenerateFlashcardsDto,
     telemetry: PipelineTelemetryContext,
+    progress?: GenerateFlashcardsProgress,
   ): Promise<GenerateFlashcardsResponse> {
     this.emitter.emitStageStarted({
       ...telemetry,
@@ -208,6 +255,41 @@ export class FlashcardOrchestratorService {
         )
       : await this.runObjectiveAndTemplateSelection(resolved, telemetry);
 
+    const requestSummary: GenerateFlashcardsResponse['request'] = {
+      query: resolved.query,
+      topic: resolved.topic,
+      ageGroup: resolved.ageGroup,
+      ageMin: selected.ageMin,
+      ageMax: selected.ageMax,
+      grade: resolved.grade,
+      subject: resolved.subject,
+      difficulty: resolved.difficulty,
+      language: resolved.language,
+      learningObjective: selected.learningObjective,
+      educationalIntent: resolved.educationalIntent,
+      count,
+      countryCode: countryCode ?? null,
+    };
+    const selectionSummary: GenerateFlashcardsResponse['selection'] = {
+      ruleId: selected.selection.ruleId,
+      ruleName: selected.selection.ruleName,
+      score: selected.selection.score,
+      priority: selected.selection.priority,
+    };
+
+    // Sent before content generation so a streaming client can lay out
+    // correctly-shaped placeholders while the LLM call is still running.
+    this.notifyProgress(() =>
+      progress?.onMeta?.({
+        count,
+        request: requestSummary,
+        selection: selectionSummary,
+        template: selected.template,
+        templateVersion: selected.template.templateVersion,
+        layoutDefinition: selected.template.layoutDefinition,
+      }),
+    );
+
     const editableComponents = parseEditableComponentsFromLayout(
       selected.template.layoutDefinition,
     );
@@ -233,6 +315,26 @@ export class FlashcardOrchestratorService {
         subject: resolved.subject,
         difficulty: resolved.difficulty,
         language: resolved.language,
+        countryCode,
+      },
+      telemetry,
+    );
+
+    // --- Image Query Refinement (lightweight LLM intent extraction) ---
+    // Runs after content generation (which already applied the regex sanitizer)
+    // and before image retrieval. Refines each image slot's searchQuery to a
+    // concise 2-5 word search key optimised for asset embedding search.
+    await this.imageQueryRefinementService.refineQueries(
+      {
+        cards: llmPayload.cards,
+        topic: resolved.topic,
+        learningObjective: selected.learningObjective,
+        allowLineArt: requestWantsLineArt({
+          query: resolved.query,
+          topic: resolved.topic,
+          learningObjective: selected.learningObjective,
+          subject: resolved.subject,
+        }),
         countryCode,
       },
       telemetry,
@@ -305,10 +407,19 @@ export class FlashcardOrchestratorService {
         };
     };
 
-    const cards: FlashcardCardPayload[] = [];
-    for (const card of llmPayload.cards) {
-      cards.push(await assembleCard(card));
-    }
+    // Cards are assembled in parallel; each card's image slots are themselves
+    // fetched concurrently. Cross-card image de-duplication stays correct
+    // because `claimHit` serialises asset claims against the shared
+    // `usedAssetIds` set.
+    const cards = await mapWithConcurrency(
+      llmPayload.cards,
+      this.cardConcurrency,
+      async (card, slotIndex) => {
+        const assembled = await assembleCard(card);
+        this.notifyProgress(() => progress?.onCard?.(assembled, slotIndex));
+        return assembled;
+      },
+    );
 
     this.emitter.emitStageCompleted({
       ...telemetry,
@@ -332,27 +443,8 @@ export class FlashcardOrchestratorService {
     };
 
     const response: GenerateFlashcardsResponse = {
-      request: {
-        query: resolved.query,
-        topic: resolved.topic,
-        ageGroup: resolved.ageGroup,
-        ageMin: selected.ageMin,
-        ageMax: selected.ageMax,
-        grade: resolved.grade,
-        subject: resolved.subject,
-        difficulty: resolved.difficulty,
-        language: resolved.language,
-        learningObjective: selected.learningObjective,
-        educationalIntent: resolved.educationalIntent,
-        count,
-        countryCode: countryCode ?? null,
-      },
-      selection: {
-        ruleId: selected.selection.ruleId,
-        ruleName: selected.selection.ruleName,
-        score: selected.selection.score,
-        priority: selected.selection.priority,
-      },
+      request: requestSummary,
+      selection: selectionSummary,
       template: selected.template,
       templateVersion: selected.template.templateVersion,
       layoutDefinition: selected.template.layoutDefinition,

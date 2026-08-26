@@ -22,6 +22,8 @@ import { FlashcardRendererService } from './flashcard-renderer/renderer/flashcar
 import { BrowserPoolService } from './flashcard-renderer/browser/browser-pool.service';
 import { FlashcardPdfService } from './flashcard-renderer/pdf/flashcard-pdf.service';
 import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-storage.service';
+import { ImageQueryRefinementService } from './services/image-query-refinement.service';
+import { AssetVocabularyService } from './services/asset-vocabulary.service';
 
 @Module({
   imports: [AiModule, SearchModule, StorageModule],
@@ -45,6 +47,8 @@ import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-
     FlashcardStorageService,
     FlashcardPdfService,
     FlashcardRendererService,
+    AssetVocabularyService,
+    ImageQueryRefinementService,
   ],
   exports: [
     FlashcardOrchestratorService,
