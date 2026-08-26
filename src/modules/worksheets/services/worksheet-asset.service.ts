@@ -85,33 +85,95 @@ export class WorksheetAssetService {
     options?: { grades?: string[]; ageGroups?: string[] },
     telemetry?: PipelineTelemetryContext,
   ): Promise<{ structure: Record<string, unknown>; slots: ResolvedAssetSlot[] }> {
-    const normalized = normalizeImageQueryFields(structure);
-    const queries = collectImageQueries(normalized);
+    const [result] = await this.attachAssetsBatch([structure], options, telemetry);
+    return result;
+  }
+
+  public async attachAssetsBatch(
+    structures: Array<Record<string, unknown>>,
+    options?: { grades?: string[]; ageGroups?: string[] },
+    telemetry?: PipelineTelemetryContext,
+  ): Promise<Array<{ structure: Record<string, unknown>; slots: ResolvedAssetSlot[] }>> {
+    const normalizedList = structures.map((s) => normalizeImageQueryFields(s));
+
+    // 1. Gather all slot queries across all structures in the batch
+    const allSlotRequests: Array<{
+      structureIndex: number;
+      path: string;
+      query: string;
+    }> = [];
+
+    normalizedList.forEach((struct, structureIndex) => {
+      const queries = collectImageQueries(struct);
+      const uniqueParents = new Map<string, { path: string; query: string }>();
+      for (const item of queries) {
+        uniqueParents.set(item.parentPath, {
+          path: item.parentPath,
+          query: item.query,
+        });
+      }
+      for (const item of uniqueParents.values()) {
+        allSlotRequests.push({
+          structureIndex,
+          path: item.path,
+          query: item.query,
+        });
+      }
+    });
+
     this.logger.log(
-      `image search start slots=${queries.length} ${JSON.stringify(
-        queries.map((item) => ({ path: item.parentPath, query: item.query })),
-      )}`,
+      `batch image search start worksheets=${structures.length} totalSlots=${allSlotRequests.length}`,
     );
-    const uniqueParents = new Map<string, { path: string; query: string }>();
-    for (const item of queries) {
-      uniqueParents.set(item.parentPath, {
-        path: item.parentPath,
-        query: item.query,
-      });
-    }
 
-    const slots = await mapWithConcurrency(
-      [...uniqueParents.values()],
+    // 2. In-batch Deduplication: extract unique query strings to avoid repeating identical searches
+    const uniqueQueryStrings = Array.from(
+      new Set(allSlotRequests.map((r) => r.query.trim()).filter(Boolean)),
+    );
+
+    // 3. Concurrently search for unique queries
+    const queryToAssetIdMap = new Map<string, string | undefined>();
+    await mapWithConcurrency(
+      uniqueQueryStrings,
       this.concurrency,
-      async (item) => this.resolveSlot(item.query, item.path, options, telemetry),
+      async (queryString) => {
+        const slot = await this.resolveSlot(queryString, '', options, telemetry);
+        if (slot.assetId) {
+          queryToAssetIdMap.set(queryString, slot.assetId);
+        }
+      },
     );
 
-    let next = normalized;
-    for (const slot of slots) {
-      next = this.applySlot(next, slot);
-    }
+    // 4. Map resolved asset IDs back to each worksheet structure
+    const results: Array<{
+      structure: Record<string, unknown>;
+      slots: ResolvedAssetSlot[];
+    }> = [];
 
-    return { structure: this.persistableStructure(next), slots };
+    normalizedList.forEach((normalized, structureIndex) => {
+      const structureSlots = allSlotRequests
+        .filter((r) => r.structureIndex === structureIndex)
+        .map((r) => {
+          const trimmed = r.query.trim();
+          const assetId = queryToAssetIdMap.get(trimmed);
+          return {
+            path: r.path,
+            imageQuery: trimmed,
+            assetId,
+          } as ResolvedAssetSlot;
+        });
+
+      let next = normalized;
+      for (const slot of structureSlots) {
+        next = this.applySlot(next, slot);
+      }
+
+      results.push({
+        structure: this.persistableStructure(next),
+        slots: structureSlots,
+      });
+    });
+
+    return results;
   }
 
   public applySlot(

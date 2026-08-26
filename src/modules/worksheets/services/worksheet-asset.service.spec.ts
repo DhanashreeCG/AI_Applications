@@ -200,4 +200,38 @@ describe('WorksheetAssetService', () => {
       items: [{ imageQuery: 'red apples', assetId: 'asset-123' }],
     });
   });
+
+  it('deduplicates identical image queries across multiple worksheets in a batch', async () => {
+    searchService.search.mockImplementation(async ({ query }: { query: string }) => ({
+      query,
+      total: 1,
+      results: [
+        {
+          assetId: query.includes('apple') ? 'asset-apple' : 'asset-banana',
+          s3ObjectKey: query.includes('apple') ? 'assets/apple.png' : 'assets/banana.png',
+        },
+      ],
+    }));
+
+    const batchStructures = [
+      { items: [{ imageQuery: 'red apple' }] },
+      { items: [{ imageQuery: 'red apple' }] },
+      { items: [{ imageQuery: 'yellow banana' }] },
+    ];
+
+    const results = await service.attachAssetsBatch(batchStructures);
+
+    expect(results).toHaveLength(3);
+    // 'red apple' should only be searched once even though 2 worksheets requested it
+    expect(searchService.search).toHaveBeenCalledTimes(2);
+    expect(results[0].structure).toEqual({
+      items: [{ imageQuery: 'red apple', assetId: 'asset-apple' }],
+    });
+    expect(results[1].structure).toEqual({
+      items: [{ imageQuery: 'red apple', assetId: 'asset-apple' }],
+    });
+    expect(results[2].structure).toEqual({
+      items: [{ imageQuery: 'yellow banana', assetId: 'asset-banana' }],
+    });
+  });
 });

@@ -5,19 +5,21 @@ Worksheet generation lives in the existing NestJS backend (`src/modules/workshee
 ## Architecture
 
 ```text
-POST /worksheets/generate
+POST /worksheets/generate or POST /worksheets/generate-set
         ↓
-validate request
+validate request & safety checks (before any LLM call)
         ↓
 template selection (explicit ID bypasses AI, else deterministic filter + AI picker)
         ↓
-Gemini JSON content (existing GEMINI_API_KEY + rate limiter / circuit breaker / AiUsageService)
+1 SINGLE Gemini LLM call for content generation (generates up to requested count with diverse content & exercises)
         ↓
-structure validation (template structureDefinition)
+concurrent structure validation for all generated worksheet items
         ↓
-SearchService (pgvector) → assetId per imageQuery
+batch in-memory query deduplication & concurrent SearchService (pgvector) → assetId per imageQuery slot
         ↓
-persist Worksheet
+parallel persistence via Prisma transaction (all worksheets saved concurrently)
+        ↓
+parallel preview HTML assembly & response return
 ```
 
 ```text

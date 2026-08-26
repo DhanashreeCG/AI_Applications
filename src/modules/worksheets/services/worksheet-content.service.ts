@@ -69,11 +69,13 @@ export class WorksheetContentService {
     this.client = client;
   }
 
-  public async generateStructure(
+  public async generateStructures(
     template: WorksheetTemplateRecord,
     request: GenerateWorksheetRequest,
+    count: number = 1,
     telemetry?: PipelineTelemetryContext,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<Array<Record<string, unknown>>> {
+    const targetCount = Math.max(1, count);
     const run = async () => {
       const prompt = await maybeRunTrackedStage(
         this.emitter,
@@ -87,11 +89,13 @@ export class WorksheetContentService {
             templateDescription: template.description,
             structureDefinition: template.structureDefinition,
             meta: template.meta,
+            count: targetCount,
           }),
         {
           completeMetadata: {
             templateId: template.id,
             templateSlug: template.slug,
+            count: targetCount,
           },
         },
       );
@@ -102,17 +106,63 @@ export class WorksheetContentService {
         telemetry,
       );
 
+      let rawItems: unknown[] = [];
+      if (Array.isArray(parsed)) {
+        rawItems = parsed;
+      } else if (
+        parsed &&
+        typeof parsed === 'object' &&
+        Array.isArray((parsed as Record<string, unknown>).worksheets)
+      ) {
+        rawItems = (parsed as Record<string, unknown>).worksheets as unknown[];
+      } else if (parsed && typeof parsed === 'object') {
+        rawItems = [parsed];
+      }
+
+      if (!rawItems.length) {
+        throw new WorksheetException(
+          'INVALID_LLM_OUTPUT',
+          'LLM failed to produce worksheet structure contents',
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
+
       return maybeRunTrackedStage(
         this.emitter,
         telemetry,
         PIPELINE_STAGES.CONTENT_VALIDATION,
-        () =>
-          this.validationService.validateGeneratedStructure(parsed, template),
+        () => {
+          const validatedItems: Array<Record<string, unknown>> = [];
+          for (const rawItem of rawItems) {
+            try {
+              const validated = this.validationService.validateGeneratedStructure(
+                rawItem,
+                template,
+              );
+              validatedItems.push(validated);
+            } catch (err) {
+              this.logger.warn(
+                `validation skipped invalid worksheet item in batch: ${getErrorMessage(err)}`,
+              );
+            }
+          }
+
+          if (!validatedItems.length) {
+            throw new WorksheetException(
+              'INVALID_STRUCTURE',
+              'None of the generated worksheet structures passed validation',
+              HttpStatus.BAD_GATEWAY,
+            );
+          }
+
+          return validatedItems;
+        },
         {
-          completeMetadata: {
+          completeMetadata: (items) => ({
             templateId: template.id,
             templateSlug: template.slug,
-          },
+            count: items.length,
+          }),
         },
       );
     };
@@ -126,13 +176,24 @@ export class WorksheetContentService {
         startMetadata: {
           templateId: template.id,
           templateSlug: template.slug,
+          count: targetCount,
         },
-        completeMetadata: {
+        completeMetadata: (items) => ({
           templateId: template.id,
           templateSlug: template.slug,
-        },
+          generatedCount: items.length,
+        }),
       },
     );
+  }
+
+  public async generateStructure(
+    template: WorksheetTemplateRecord,
+    request: GenerateWorksheetRequest,
+    telemetry?: PipelineTelemetryContext,
+  ): Promise<Record<string, unknown>> {
+    const items = await this.generateStructures(template, request, 1, telemetry);
+    return items[0];
   }
 
   public async generateFieldReplacement(input: {

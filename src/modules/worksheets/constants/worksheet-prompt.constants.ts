@@ -8,8 +8,10 @@ export function buildWorksheetContentPrompt(input: {
   templateDescription?: string | null;
   structureDefinition: unknown;
   meta: unknown;
+  count?: number;
 }): string {
   const request = input.request;
+  const count = Math.max(1, input.count ?? (request.count ? Number(request.count) : 1));
   const userRequest =
     request.query?.trim() ||
     [
@@ -24,9 +26,25 @@ export function buildWorksheetContentPrompt(input: {
 
   const countrySafetyClause = buildCountryForbiddenPromptClause(request.countryCode);
 
+  const formatInstruction =
+    count > 1
+      ? [
+          `Generate exactly ${count} distinct, diverse worksheet contents.`,
+          'Return a JSON object in this exact schema:',
+          '{',
+          '  "worksheets": [',
+          '    /* array of worksheet objects, each conforming to the structure definition */',
+          '  ]',
+          '}',
+          `IMPORTANT: Each of the ${count} worksheets must be unique, non-repetitive, with different educational questions/exercises and distinct visual imageQueries.`,
+        ].join('\n')
+      : [
+          'Return a JSON object matching the template structure definition (either directly as the structure or wrapped as { "worksheets": [ ... ] }).',
+        ].join('\n');
+
   return [
     'You generate educational worksheet CONTENT only.',
-    'Return a single JSON object that matches the template structure definition.',
+    formatInstruction,
     'Do not generate HTML, CSS, JavaScript, layout, positions, or asset IDs.',
     'Do not invent image file names. Describe needed images with imageQuery strings.',
     'Every imageQuery must be a short visual search phrase (e.g. "three red apples").',
@@ -45,7 +63,7 @@ export function buildWorksheetContentPrompt(input: {
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',
-    'Structure definition (JSON Schema). Your output MUST conform:',
+    'Structure definition (JSON Schema for each worksheet item). Your output MUST conform:',
     JSON.stringify(input.structureDefinition, null, 2),
   ]
     .filter((line) => line !== '')

@@ -91,6 +91,7 @@ export interface GenerateWorksheetRequest {
   language?: string;
   templateId?: string;
   countryCode?: string;
+  count?: number;
 }
 
 export interface GenerateWorksheetResponse {
