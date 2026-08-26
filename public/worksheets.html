@@ -1350,9 +1350,11 @@
         if (source == null) return '';
         if (typeof source === 'string') return source;
         if (source instanceof Error) return source.message || String(source);
+        if (source.message && typeof source.message === 'string') return source.message;
         const nested = source.error;
         if (nested && typeof nested === 'object' && nested.message) return String(nested.message);
-        if (source.message) return String(source.message);
+        if (typeof nested === 'string') return nested;
+        if (source.errorMessage && typeof source.errorMessage === 'string') return source.errorMessage;
         return '';
       }
 
@@ -1372,12 +1374,6 @@
         }
         if (/cors/.test(lower)) {
           return 'Could not reach the API from this page. Check the API URL and try again.';
-        }
-        if (/http\s*[45]\d\d/.test(lower) || /^[A-Z][A-Z0-9_]{3,}$/.test(raw)) {
-          return fallbackText;
-        }
-        if (raw.length > 220 || /\n\s*at\s+/.test(raw) || /stack_trace/i.test(raw)) {
-          return fallbackText;
         }
         return raw;
       }

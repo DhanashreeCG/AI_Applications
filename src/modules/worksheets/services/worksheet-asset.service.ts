@@ -9,6 +9,7 @@ import {
   sanitizeUploadFilename,
 } from '../../storage/s3-storage.service';
 import { PrismaService } from '../../database/prisma.service';
+import { getErrorMessage } from '../../../common/utils/error-message';
 import {
   PIPELINE_STAGES,
   PipelineTelemetryContext,
@@ -235,18 +236,23 @@ export class WorksheetAssetService {
         `image search embedding+vector path=${path || '(root)'} query="${query}" hits=${response.results.length} cache=${response.fromCache === true} topAssetId=${response.results[0]?.assetId ?? 'none'}`,
       );
 
+      // Strictly at most ONE retry without filters if filtered search had 0 results
       if (!response.results.length && hasFilters) {
         this.logger.warn(
-          `No filtered asset for "${query}" at ${path}; retrying without grade/age filters`,
+          `No filtered asset for "${query}" at ${path}; retrying once without grade/age filters`,
         );
-        response = await this.searchService.search({
-          query,
-          limit: this.searchLimit,
-        });
-        this.emitEmbeddingUsage(telemetry, query, response);
+        try {
+          response = await this.searchService.search({
+            query,
+            limit: this.searchLimit,
+          });
+          this.emitEmbeddingUsage(telemetry, query, response);
+        } catch (retryError) {
+          this.logger.warn(`Fallback image search failed for "${query}": ${getErrorMessage(retryError)}`);
+        }
       }
 
-      const hit = response.results[0];
+      const hit = response.results && response.results.length > 0 ? response.results[0] : null;
       const slot: ResolvedAssetSlot = hit
         ? { path, imageQuery: query, assetId: hit.assetId }
         : this.emptySlot(path, query);

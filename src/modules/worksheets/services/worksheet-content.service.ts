@@ -115,6 +115,13 @@ export class WorksheetContentService {
         Array.isArray((parsed as Record<string, unknown>).worksheets)
       ) {
         rawItems = (parsed as Record<string, unknown>).worksheets as unknown[];
+      } else if (
+        parsed &&
+        typeof parsed === 'object' &&
+        Array.isArray((parsed as Record<string, unknown>).items) &&
+        !((parsed as Record<string, unknown>).instruction || (parsed as Record<string, unknown>).title)
+      ) {
+        rawItems = (parsed as Record<string, unknown>).items as unknown[];
       } else if (parsed && typeof parsed === 'object') {
         rawItems = [parsed];
       }
@@ -138,6 +145,7 @@ export class WorksheetContentService {
               const validated = this.validationService.validateGeneratedStructure(
                 rawItem,
                 template,
+                { allowEnrichmentKeys: true },
               );
               validatedItems.push(validated);
             } catch (err) {
