@@ -92,6 +92,8 @@ export interface AppConfig {
     assetImagePath: string;
     pencilIconUrl: string;
     imageConcurrency: number;
+    imageEmbeddingMaxAttempts: number;
+    imageEmbeddingRetryDelayMs: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
     imagePickerLimit: number;
@@ -371,7 +373,19 @@ export default (): AppConfig => ({
     imageConcurrency: parseInt(
       process.env.WORKSHEET_IMAGE_CONCURRENCY ||
         process.env.FLASHCARD_IMAGE_CONCURRENCY ||
-        '3',
+        '6',
+      10,
+    ),
+    imageEmbeddingMaxAttempts: parseInt(
+      process.env.WORKSHEET_IMAGE_EMBEDDING_MAX_ATTEMPTS ||
+        process.env.FLASHCARD_IMAGE_EMBEDDING_MAX_ATTEMPTS ||
+        '2',
+      10,
+    ),
+    imageEmbeddingRetryDelayMs: parseInt(
+      process.env.WORKSHEET_IMAGE_EMBEDDING_RETRY_DELAY_MS ||
+        process.env.FLASHCARD_IMAGE_EMBEDDING_RETRY_DELAY_MS ||
+        '200',
       10,
     ),
     signedUrlTtlSeconds: parseInt(

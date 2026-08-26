@@ -45,6 +45,8 @@ export class WorksheetAssetService {
   private readonly searchLimit: number;
   private readonly pickerLimit: number;
   private readonly signedUrlTtlSeconds: number;
+  private readonly embeddingMaxAttempts: number;
+  private readonly embeddingRetryDelayMs: number;
   private readonly assetImagePath: string;
   private readonly userUploadS3Prefix: string;
   private readonly emitter: WorksheetPipelineEmitter;
@@ -57,11 +59,19 @@ export class WorksheetAssetService {
     eventEmitter: EventEmitter2,
   ) {
     this.concurrency =
-      this.configService.get<number>('worksheets.imageConcurrency') ?? 3;
+      this.configService.get<number>('worksheets.imageConcurrency') ?? 6;
     this.searchLimit =
       this.configService.get<number>('worksheets.imageSearchLimit') ?? 1;
     this.pickerLimit =
       this.configService.get<number>('worksheets.imagePickerLimit') ?? 10;
+    this.embeddingMaxAttempts = Math.max(
+      1,
+      this.configService.get<number>('worksheets.imageEmbeddingMaxAttempts') ?? 2,
+    );
+    this.embeddingRetryDelayMs = Math.max(
+      0,
+      this.configService.get<number>('worksheets.imageEmbeddingRetryDelayMs') ?? 200,
+    );
     this.signedUrlTtlSeconds =
       this.configService.get<number>('worksheets.signedUrlTtlSeconds') ?? 3600;
     this.assetImagePath = (
@@ -226,26 +236,22 @@ export class WorksheetAssetService {
     );
 
     try {
-      let response = await this.searchService.search({
+      let response = await this.searchWithEmbeddingRetry(
         query,
-        limit: this.searchLimit,
-        filters: hasFilters ? filters : undefined,
-      });
+        hasFilters ? filters : undefined,
+      );
       this.emitEmbeddingUsage(telemetry, query, response);
       this.logger.log(
         `image search embedding+vector path=${path || '(root)'} query="${query}" hits=${response.results.length} cache=${response.fromCache === true} topAssetId=${response.results[0]?.assetId ?? 'none'}`,
       );
 
-      // Strictly at most ONE retry without filters if filtered search had 0 results
+      // Strictly at most ONE fallback attempt without filters if filtered search had 0 results
       if (!response.results.length && hasFilters) {
         this.logger.warn(
           `No filtered asset for "${query}" at ${path}; retrying once without grade/age filters`,
         );
         try {
-          response = await this.searchService.search({
-            query,
-            limit: this.searchLimit,
-          });
+          response = await this.searchWithEmbeddingRetry(query, undefined);
           this.emitEmbeddingUsage(telemetry, query, response);
         } catch (retryError) {
           this.logger.warn(`Fallback image search failed for "${query}": ${getErrorMessage(retryError)}`);
@@ -300,6 +306,33 @@ export class WorksheetAssetService {
       }
       return this.emptySlot(path, query);
     }
+  }
+
+  private async searchWithEmbeddingRetry(
+    query: string,
+    filters?: { grades?: string[]; ageGroups?: string[] },
+  ): Promise<SearchAssetsResponse> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.embeddingMaxAttempts; attempt += 1) {
+      try {
+        return await this.searchService.search({
+          query,
+          limit: this.searchLimit,
+          filters,
+        });
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(
+          `Worksheet image search attempt ${attempt}/${this.embeddingMaxAttempts} failed for "${query}": ${getErrorMessage(error)}`,
+        );
+        if (attempt < this.embeddingMaxAttempts && this.embeddingRetryDelayMs) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.embeddingRetryDelayMs),
+          );
+        }
+      }
+    }
+    throw lastError;
   }
 
   public assetProxyUrl(assetId: string): string {
