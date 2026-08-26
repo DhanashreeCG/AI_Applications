@@ -1,19 +1,11 @@
 import { joinPublicAssetUrl, toondemyFontUrl } from '../../../common/ui/toondemy-font';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { getErrorMessage } from '../../../common/utils/error-message';
-import {
-  PIPELINE_STAGES,
-  PipelineTelemetryContext,
-} from '../../../common/events/pipeline-tracker.events';
 import { PrismaService } from '../../database/prisma.service';
 import { S3StorageService } from '../../storage/s3-storage.service';
 import { BrowserPoolService } from '../../flashcards/flashcard-renderer/browser/browser-pool.service';
 import { AssetImageService } from '../../flashcards/services/asset-image.service';
-import {
-  WORKSHEET_WORKFLOW_RENDER,
-} from '../constants/worksheet.constants';
 import { WorksheetException } from '../errors/worksheet.exception';
 import {
   EditableField,
@@ -23,11 +15,6 @@ import {
   WorksheetRenderMode,
 } from '../types/worksheet.types';
 import { asStructureRecord, parseJsonObject } from '../utils/structure.util';
-import {
-  WorksheetPipelineEmitter,
-  createTelemetryContext,
-  runTrackedStage,
-} from '../telemetry/worksheet-pipeline.events';
 import { WorksheetRendererRegistry } from '../renderers/worksheet-renderer.registry';
 import { WorksheetAssetService } from './worksheet-asset.service';
 import { WorksheetFieldMetadataService } from './worksheet-field-metadata.service';
@@ -81,7 +68,6 @@ export class WorksheetRenderService {
   private readonly bucket?: string;
   private readonly signedUrlTtlSeconds: number;
   private readonly assetImagePath: string;
-  private readonly emitter: WorksheetPipelineEmitter;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -93,7 +79,6 @@ export class WorksheetRenderService {
     private readonly assetService: WorksheetAssetService,
     private readonly fieldMetadataService: WorksheetFieldMetadataService,
     private readonly assetImageService: AssetImageService,
-    eventEmitter: EventEmitter2,
   ) {
     this.enabled =
       this.configService.get<boolean>('worksheets.renderer.enabled') !== false;
@@ -120,7 +105,6 @@ export class WorksheetRenderService {
       this.configService.get<string>('worksheets.assetImagePath') ??
       '/worksheets/assets'
     ).replace(/\/$/, '');
-    this.emitter = new WorksheetPipelineEmitter(eventEmitter);
   }
 
   public composeHtml(input: {
@@ -158,44 +142,11 @@ export class WorksheetRenderService {
     format: string,
     options: { correlationId?: string; mode?: string } = {},
   ): Promise<RenderWorksheetResult> {
-    const telemetry = createTelemetryContext({
-      correlationId: options.correlationId,
-      workflowType: WORKSHEET_WORKFLOW_RENDER,
-    });
-    this.emitter.emitStarted({
-      ...telemetry,
-      metadata: {
-        operation: 'render',
-        worksheetId,
-        format,
-      },
-    });
-    try {
-      const result = await this.runRender(
-        worksheetId,
-        format,
-        options.mode,
-        telemetry,
-      );
-      this.emitter.emitCompleted({
-        ...telemetry,
-        status: 'completed',
-        metadata: {
-          operation: 'render',
-          worksheetId: result.worksheetId,
-          format: result.format,
-          outputId: result.outputId ?? null,
-        },
-      });
-      return result;
-    } catch (error) {
-      this.emitter.emitFailed({
-        ...telemetry,
-        status: 'failed',
-        errorMessage: getErrorMessage(error),
-      });
-      throw error;
-    }
+    return this.runRender(
+      worksheetId,
+      format,
+      options.mode,
+    );
   }
 
   public async preview(
@@ -245,64 +196,30 @@ export class WorksheetRenderService {
     worksheetId: string,
     format: string,
     rawMode: string | undefined,
-    telemetry: PipelineTelemetryContext,
   ): Promise<RenderWorksheetResult> {
-    const normalized = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.REQUEST_VALIDATION,
-      () => {
-        const value = format?.trim().toLowerCase() as WorksheetRenderFormat;
-        if (!WORKSHEET_RENDER_FORMATS.includes(value)) {
-          throw new WorksheetException(
-            'UNSUPPORTED_FORMAT',
-            `format must be one of ${WORKSHEET_RENDER_FORMATS.join(', ')}`,
-          );
-        }
-        return value;
-      },
-    );
+    const value = format?.trim().toLowerCase() as WorksheetRenderFormat;
+    if (!WORKSHEET_RENDER_FORMATS.includes(value)) {
+      throw new WorksheetException(
+        'UNSUPPORTED_FORMAT',
+        `format must be one of ${WORKSHEET_RENDER_FORMATS.join(', ')}`,
+      );
+    }
+    const normalized = value;
 
     this.logger.log(`render started worksheetId=${worksheetId} format=${normalized}`);
 
-    const worksheet = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.REQUEST_ANALYSIS,
-      async () => {
-        const row = await this.prisma.worksheet.findUnique({
-          where: { id: worksheetId },
-        });
-        if (!row) {
-          throw new WorksheetException(
-            'WORKSHEET_NOT_FOUND',
-            `Worksheet "${worksheetId}" was not found`,
-            HttpStatus.NOT_FOUND,
-          );
-        }
-        return row;
-      },
-      {
-        completeMetadata: (row) => ({
-          worksheetId: row.id,
-          templateId: row.templateId,
-        }),
-      },
-    );
+    const worksheet = await this.prisma.worksheet.findUnique({
+      where: { id: worksheetId },
+    });
+    if (!worksheet) {
+      throw new WorksheetException(
+        'WORKSHEET_NOT_FOUND',
+        `Worksheet "${worksheetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
 
-    const template = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.TEMPLATE_SELECTION,
-      () => this.templateService.getById(worksheet.templateId),
-      {
-        completeMetadata: (selected) => ({
-          templateId: selected.id,
-          templateSlug: selected.slug,
-          rendererType: selected.rendererType,
-        }),
-      },
-    );
+    const template = await this.templateService.getById(worksheet.templateId);
 
     const rendererConfig = this.templateService.parseRendererConfig(template);
     const canvas = {
@@ -310,57 +227,23 @@ export class WorksheetRenderService {
       height: rendererConfig.height ?? this.defaultHeight,
     };
     const mode = this.resolveMode(rawMode, normalized);
-    const html = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.HTML_GENERATION,
-      () => {
-        const composed = this.composeHtml({
-          template,
-          structure: asStructureRecord(worksheet.structure),
-          request: parseJsonObject(worksheet.request),
-          mode,
-        });
-        return composed.html;
-      },
-      {
-        completeMetadata: (markup) => ({
-          rendererType: template.rendererType,
-          htmlLength: markup.length,
-          mode,
-          width: canvas.width,
-          height: canvas.height,
-        }),
-      },
-    );
+    const composed = this.composeHtml({
+      template,
+      structure: asStructureRecord(worksheet.structure),
+      request: parseJsonObject(worksheet.request),
+      mode,
+    });
+    const html = composed.html;
 
     if (normalized === 'html') {
-      this.emitter.emitStageSkipped({
-        ...telemetry,
-        stageName: PIPELINE_STAGES.WORKSHEET_RENDERING,
-        metadata: { reason: 'html_format_does_not_use_playwright' },
-      });
-      this.emitter.emitStageSkipped({
-        ...telemetry,
-        stageName: PIPELINE_STAGES.PERSISTENCE,
-        metadata: { reason: 'html_returned_inline' },
-      });
       this.logger.log('render completed format=html');
-      const result = {
+      return {
         worksheetId,
         format: normalized,
         mode,
         html,
         canvas,
       };
-      await runTrackedStage(
-        this.emitter,
-        telemetry,
-        PIPELINE_STAGES.RESPONSE_RETURN,
-        () => result,
-        { completeMetadata: { format: normalized } },
-      );
-      return result;
     }
 
     if (!this.enabled) {
@@ -379,96 +262,64 @@ export class WorksheetRenderService {
     try {
       const width = canvas.width;
       const height = canvas.height;
-      const buffer = await runTrackedStage(
-        this.emitter,
-        telemetry,
-        PIPELINE_STAGES.WORKSHEET_RENDERING,
-        () => {
-          if (normalized === 'pdf') {
-            return this.renderPdf(html, width, height);
-          }
-          if (normalized === 'png') {
-            return this.renderPng(html, width, height);
-          }
-          return this.renderWebp(html, width, height);
-        },
-        {
-          startMetadata: { format: normalized, width, height },
-          completeMetadata: { format: normalized, width, height },
-        },
+      let buffer: Buffer;
+      if (normalized === 'pdf') {
+        buffer = await this.renderPdf(html, width, height);
+      } else if (normalized === 'png') {
+        buffer = await this.renderPng(html, width, height);
+      } else {
+        buffer = await this.renderWebp(html, width, height);
+      }
+
+      const contentType =
+        normalized === 'pdf'
+          ? 'application/pdf'
+          : normalized === 'png'
+            ? 'image/png'
+            : 'image/webp';
+      const fileName = `worksheet.${normalized}`;
+      const storageKey = `${this.keyPrefix}/${worksheetId}/${fileName}`;
+
+      await this.s3StorageService.uploadFile(buffer, {
+        bucket: this.bucket,
+        key: storageKey,
+        contentType,
+        metadata: { worksheetId, format: normalized },
+      });
+      const uri = await this.s3StorageService.getSignedUrl(
+        storageKey,
+        this.signedUrlTtlSeconds,
+        this.bucket,
       );
 
-      const result = await runTrackedStage(
-        this.emitter,
-        telemetry,
-        PIPELINE_STAGES.PERSISTENCE,
-        async () => {
-          const contentType =
-            normalized === 'pdf'
-              ? 'application/pdf'
-              : normalized === 'png'
-                ? 'image/png'
-                : 'image/webp';
-          const fileName = `worksheet.${normalized}`;
-          const storageKey = `${this.keyPrefix}/${worksheetId}/${fileName}`;
-
-          await this.s3StorageService.uploadFile(buffer, {
-            bucket: this.bucket,
-            key: storageKey,
-            contentType,
-            metadata: { worksheetId, format: normalized },
-          });
-          const uri = await this.s3StorageService.getSignedUrl(
-            storageKey,
-            this.signedUrlTtlSeconds,
-            this.bucket,
-          );
-
-          let outputId: string | undefined;
-          if (normalized === 'pdf' || normalized === 'webp') {
-            const output = await this.prisma.worksheetOutput.create({
-              data: {
-                worksheetId,
-                format: normalized.toUpperCase() as 'WEBP' | 'PDF',
-                storageKey,
-              },
-            });
-            outputId = output.id;
-          }
-
-          await this.prisma.worksheet.update({
-            where: { id: worksheetId },
-            data: { status: 'COMPLETED' },
-          });
-
-          return {
+      let outputId: string | undefined;
+      if (normalized === 'pdf' || normalized === 'webp') {
+        const output = await this.prisma.worksheetOutput.create({
+          data: {
             worksheetId,
-            format: normalized,
-            mode,
+            format: normalized.toUpperCase() as 'WEBP' | 'PDF',
             storageKey,
-            uri,
-            outputId,
-            canvas,
-            buffer,
-          };
-        },
-        {
-          completeMetadata: (stored) => ({
-            storageKey: stored.storageKey,
-            outputId: stored.outputId,
-          }),
-        },
-      );
+          },
+        });
+        outputId = output.id;
+      }
+
+      await this.prisma.worksheet.update({
+        where: { id: worksheetId },
+        data: { status: 'COMPLETED' },
+      });
 
       this.logger.log(`render completed format=${normalized}`);
-      await runTrackedStage(
-        this.emitter,
-        telemetry,
-        PIPELINE_STAGES.RESPONSE_RETURN,
-        () => result,
-        { completeMetadata: { format: normalized } },
-      );
-      return result;
+      return {
+        worksheetId,
+        format: normalized,
+        mode,
+        storageKey,
+        uri,
+        outputId,
+        canvas,
+        buffer,
+      };
     } catch (error) {
       await this.prisma.worksheet.update({
         where: { id: worksheetId },

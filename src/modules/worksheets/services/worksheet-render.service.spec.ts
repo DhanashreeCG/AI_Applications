@@ -74,7 +74,6 @@ describe('WorksheetRenderService', () => {
       } as never,
       { normalize: jest.fn() } as never,
       { loadImage: jest.fn() } as never,
-      { emit: jest.fn() } as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue({
       id: 'ws-1',
@@ -133,7 +132,7 @@ describe('WorksheetRenderService', () => {
   });
 
   it('rejects an unsupported format', async () => {
-    await expect(service.render('ws-1', 'png')).rejects.toMatchObject({
+    await expect(service.render('ws-1', 'gif')).rejects.toMatchObject({
       code: 'UNSUPPORTED_FORMAT',
     });
   });

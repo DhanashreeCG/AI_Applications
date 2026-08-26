@@ -8,6 +8,7 @@ import { VectorStorageService } from './vector-storage.service';
 import { SearchService } from './search.service';
 import { LetterQueryDetectorService } from './letter-query-detector.service';
 import { OPENAI_EMBEDDING_DIMENSIONS } from '../ai/constants/embedding.constants';
+import { AiUsageService } from '../ai/services/ai-usage.service';
 
 describe('SearchService', () => {
   let service: SearchService;
@@ -62,6 +63,7 @@ describe('SearchService', () => {
         { provide: RedisCacheService, useValue: mockRedisCache },
         LetterQueryDetectorService,
         { provide: ConfigService, useValue: { get: () => undefined } },
+        { provide: AiUsageService, useValue: { record: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
 

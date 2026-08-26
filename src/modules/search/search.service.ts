@@ -12,6 +12,7 @@ import {
   buildAssetMetadataCacheKey,
   buildSearchCacheKey,
 } from '../cache/utils/cache-key.util';
+import { AiUsageService } from '../ai/services/ai-usage.service';
 import { VectorStorageService } from './vector-storage.service';
 import { SearchAssetsDto } from './dto/search-assets.dto';
 import {
@@ -45,6 +46,7 @@ export class SearchService {
     private readonly redisCache: RedisCacheService,
     private readonly letterDetector: LetterQueryDetectorService,
     private readonly configService: ConfigService,
+    private readonly aiUsage: AiUsageService,
   ) {}
 
   public async search(dto: SearchAssetsDto): Promise<SearchAssetsResponse> {
@@ -135,6 +137,20 @@ export class SearchService {
       model: this.embeddingProvider.modelName,
       fromCache: false as const,
     };
+
+    if (embeddingUsage) {
+      await this.aiUsage.record({
+        stage: 'search_embedding',
+        provider: 'openai',
+        model: this.embeddingProvider.modelName,
+        startedAt: new Date(Date.now() - (embeddingUsage.latencyMs || 0)),
+        completedAt: new Date(),
+        latencyMs: embeddingUsage.latencyMs || 0,
+        inputTokens: embeddingUsage.inputTokens,
+        totalTokens: embeddingUsage.totalTokens,
+        status: 'success',
+      });
+    }
 
     const vectorResults = await this.vectorStorage.searchSimilar(
       embedding.embedding,

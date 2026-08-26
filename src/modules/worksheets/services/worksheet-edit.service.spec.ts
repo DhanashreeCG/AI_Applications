@@ -94,7 +94,6 @@ describe('WorksheetEditService', () => {
       validationService as unknown as WorksheetValidationService,
       assetService as unknown as WorksheetAssetService,
       { composeHtml: () => ({ html: '<p>ok</p>', canvas: { width: 1016, height: 1316 } }) } as unknown as WorksheetRenderService,
-      eventEmitter as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue(worksheet);
     templateService.getById.mockResolvedValue(template);
@@ -155,7 +154,6 @@ describe('WorksheetEditService', () => {
       'green grapes',
       'items[0]',
       expect.any(Object),
-      expect.objectContaining({ workflowType: 'worksheets_edit' }),
     );
     expect(
       (result.structure.items as Array<Record<string, unknown>>)[0].assetId,
