@@ -2120,6 +2120,34 @@
         grid-column: 1 / -1;
       }
 
+    
+      .selection-mode .tile-checkbox {
+        display: block;
+      }
+      .tile-checkbox {
+        display: none;
+        position: absolute;
+        top: -10px;
+        left: -10px;
+        z-index: 10;
+        background: #fff;
+        border-radius: 6px;
+        padding: 6px;
+        cursor: pointer;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      }
+      .tile-checkbox input {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: var(--primary);
+        margin: 0;
+        display: block;
+      }
+      .tile.selected .uno {
+        outline: 4px solid var(--primary);
+        box-shadow: 0 14px 30px rgba(42, 27, 74, 0.28);
+      }
     </style>
   </head>
   <body>
@@ -2227,6 +2255,10 @@
         <div class="summary" id="summary">
           <div class="pills" id="metaPills" style="display: none;"></div>
           <div class="bulk">
+            <button class="btn-soft" id="toggleSelectMode">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Select Options
+            </button>
             <button class="btn-soft" id="saveAllCards">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" /><path d="M17 21v-8H7v8M7 3v5h8" /></svg>
               Save all
@@ -2329,6 +2361,8 @@
 
       const state = {
         payload: null,
+        selectionMode: false,
+        selectedIndices: new Set(),
         imageCache: new Map(),
         favourites: new Set(),
         activeIndex: 0,
@@ -5435,335 +5469,15 @@
 
       async function saveAllCards() {
         if (!state.payload || state.busy) return;
+        if (state.selectionMode && state.selectedIndices.size === 0) {
+          toast('Please select at least one card.');
+          return;
+        }
         setBusy(true);
-        toast('<span class="spinner"></span>Saving flashcards…');
-        try {
-          await ensureSetSaved();
-          const response = await fetch(apiBase() + '/flashcards/save', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-trace-id': uuid(),
-              'x-correlation-id': uuid(),
-            },
-            body: JSON.stringify(state.payload),
-          });
-          const body = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(friendlyError(body, 'Could not save flashcards. Please try again.'));
-          }
-          state.payload.id = body.id;
-          toast('All cards saved');
-        } catch (error) {
-          toast(friendlyError(error, 'Could not save flashcards. Please try again.'), 4200);
-        } finally {
-          setBusy(false);
-        }
-      }
-
-      async function saveCardEdits(index) {
-        const card = state.payload && state.payload.cards[index];
-        if (!card) return;
-        const cardId = cardIdOf(card, index);
-        const fields = collectLiveTextFields(index).map((field) => ({
-          ...field,
-          cardId,
-        }));
-        const images = [];
-        const fileEntries = [];
-
-        for (const [componentId, item] of Object.entries(state.pendingImageReplacements)) {
-          if (item && item.file) {
-            fileEntries.push({ componentId, file: item.file });
-            continue;
-          }
-          images.push({
-            cardId,
-            path: componentId,
-            componentId,
-            assetId: item.assetId || null,
-            userUploadedKey: item.userUploadedKey || null,
-          });
-        }
-
-        setBusy(true);
-        toast('<span class="spinner"></span>Saving card…');
-        try {
-          const setId = await ensureSetSaved();
-          const headers = { 'x-trace-id': uuid(), 'x-correlation-id': uuid() };
-          for (const entry of fileEntries) {
-            const form = new FormData();
-            form.append('file', entry.file);
-            form.append('cardId', cardId);
-            form.append('componentId', entry.componentId);
-            const uploaded = await fetch(
-              apiBase() + '/flashcards/' + encodeURIComponent(setId) + '/images/upload',
-              { method: 'POST', headers, body: form },
-            );
-            const uploadBody = await uploaded.json().catch(() => ({}));
-            if (!uploaded.ok) {
-              throw new Error(friendlyError(uploadBody, 'Image upload failed. Please try again.'));
-            }
-            images.push({
-              cardId,
-              componentId: entry.componentId,
-              assetId: null,
-              userUploadedKey: uploadBody.userUploadedKey,
-            });
-            applyImageToCardData(card, entry.componentId, {
-              assetId: null,
-              userUploadedKey: uploadBody.userUploadedKey,
-              imageUrl: uploadBody.imageUrl && uploadBody.imageUrl.startsWith('http')
-                ? uploadBody.imageUrl
-                : apiBase() + uploadBody.imageUrl,
-            });
-          }
-
-          const response = await fetch(
-            apiBase() + '/flashcards/' + encodeURIComponent(setId) + '/save',
-            {
-              method: 'POST',
-              headers: { ...headers, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ fields, images }),
-            },
-          );
-          const body = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(friendlyError(body, 'Could not save your edits. Please try again.'));
-          }
-          if (body.cards) state.payload.cards = body.cards;
-          if (body.id) state.payload.id = body.id;
-          state.editingIndex = null;
-          state.pendingImageReplacements = {};
-          state.editSnapshot = null;
-          renderGrid();
-          if (el('modal').classList.contains('show') && state.activeIndex === index) {
-            openModal(index);
-          }
-          toast('Card saved');
-        } catch (error) {
-          toast(friendlyError(error, 'Could not save your edits. Please try again.'), 4200);
-        } finally {
-          setBusy(false);
-        }
-      }
-
-      /* ---------------- modal ---------------- */
-
-      function syncModalActions() {
-        const editing = state.editingIndex != null && state.editingIndex === state.activeIndex;
-        const last = state.payload ? state.payload.cards.length - 1 : 0;
-        el('prevCard').disabled = editing || state.activeIndex === 0;
-        el('nextCard').disabled = editing || state.activeIndex === last;
-        el('modalInner').classList.toggle('editing', editing);
-        el('modalCard').classList.toggle('editing', editing);
-      }
-
-      function openModal(index) {
-        const payload = state.payload;
-        if (!payload || !payload.cards[index]) return;
-        state.activeIndex = index;
-
-        const card = payload.cards[index];
-        el('modalCard').innerHTML = '';
-        el('modalCard').appendChild(buildCardElement(card, index));
-        syncModalActions();
-        el('modal').classList.add('show');
-      }
-
-      function closeModal() {
-        if (discardEdits() != null) renderGrid();
-        el('modal').classList.remove('show');
-        el('modalInner').classList.remove('editing');
-        el('modalCard').classList.remove('editing');
-      }
-
-      /* ---------------- export ---------------- */
-
-      function findVisibleCardElement(index) {
-        if (el('modal').classList.contains('show') && state.activeIndex === index) {
-          return el('modalCard').querySelector('.uno');
-        }
-        const localIndex = pagedIndexes().indexOf(index);
-        if (localIndex < 0) return null;
-        const tile = el('grid').querySelectorAll('.tile')[localIndex];
-        return tile ? tile.querySelector('.uno') : null;
-      }
-
-      function defaultExportWidth() {
-        const visible = el('grid').querySelector('.tile .uno') || el('modalCard').querySelector('.uno');
-        if (visible) return Math.round(visible.getBoundingClientRect().width);
-        return 280;
-      }
-
-      function prepareImagesForCanvas(root) {
-        root.querySelectorAll('.uno-figure img').forEach((img) => {
-          const figure = img.closest('.uno-figure');
-          if (!figure) return;
-          const maxW = figure.clientWidth;
-          const maxH = figure.clientHeight;
-          const nw = img.naturalWidth;
-          const nh = img.naturalHeight;
-          if (!maxW || !maxH || !nw || !nh) return;
-          const scale = Math.min(maxW / nw, maxH / nh);
-          const w = Math.max(1, Math.round(nw * scale));
-          const h = Math.max(1, Math.round(nh * scale));
-          img.style.width = w + 'px';
-          img.style.height = h + 'px';
-          img.style.maxWidth = maxW + 'px';
-          img.style.maxHeight = maxH + 'px';
-          img.style.objectFit = 'fill';
-        });
-      }
-
-      function mountExportCardNode(index) {
-        const stage = el('exportStage');
-        stage.innerHTML = '';
-        const source = findVisibleCardElement(index);
-
-        if (source) {
-          const rect = source.getBoundingClientRect();
-          const node = source.cloneNode(true);
-          node.style.width = rect.width + 'px';
-          node.style.height = rect.height + 'px';
-          node.style.flex = 'none';
-          node.style.boxShadow = 'none';
-          stage.style.width = rect.width + 'px';
-          stage.appendChild(node);
-          return { node, scale: 3 };
-        }
-
-        const width = defaultExportWidth();
-        const node = buildCardElement(state.payload.cards[index], index);
-        node.style.width = width + 'px';
-        node.style.flex = 'none';
-        node.style.boxShadow = 'none';
-        stage.style.width = width + 'px';
-        stage.appendChild(node);
-        return { node, scale: 3 };
-      }
-
-      async function renderCardCanvas(index) {
-        const stage = el('exportStage');
-        const { node, scale } = mountExportCardNode(index);
-
-        if (document.fonts && document.fonts.ready) await document.fonts.ready;
-        await Promise.all(
-          Array.from(node.querySelectorAll('img')).map((img) =>
-            img.complete
-              ? Promise.resolve()
-              : new Promise((resolve) => {
-                  img.onload = resolve;
-                  img.onerror = resolve;
-                }),
-          ),
-        );
-
-        prepareImagesForCanvas(node);
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-        const canvas = await html2canvas(node, {
-          scale,
-          backgroundColor: '#ffffff',
-          useCORS: true,
-          allowTaint: false,
-          logging: false,
-          width: node.offsetWidth,
-          height: node.offsetHeight,
-          windowWidth: node.offsetWidth,
-          windowHeight: node.offsetHeight,
-        });
-        stage.innerHTML = '';
-        stage.style.width = '';
-        return canvas;
-      }
-
-      function cardFileName(index, extension) {
-        const req = state.payload.request || {};
-        return slugify(req.topic || req.query) + '-' + slugify(req.ageGroup) + '-card-' + (index + 1) + '.' + extension;
-      }
-
-      function saveDataUrl(dataUrl, filename) {
-        const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      }
-
-      async function downloadBlob(blob, filename) {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-      }
-
-      async function downloadViaApi(format, cardIndex) {
-        if (!state.payload) throw new Error('Generate flashcards first');
-        const headers = {
-          'Content-Type': 'application/json',
-          'x-trace-id': uuid(),
-          'x-correlation-id': uuid(),
-        };
-        const setId = state.payload.id;
-        const url = setId
-          ? apiBase() + '/flashcards/' + encodeURIComponent(setId) + '/download'
-          : apiBase() + '/flashcards/download';
-        const body = setId
-          ? { format, cardIndex }
-          : Object.assign({}, state.payload, { format, cardIndex });
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        });
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(friendlyError(errBody, 'Download failed. Please try again.'));
-        }
-        const blob = await response.blob();
-        const disposition = response.headers.get('Content-Disposition') || '';
-        const match = disposition.match(/filename="([^"]+)"/);
-        const filename = match ? match[1] : cardFileName(cardIndex || 0, format);
-        await downloadBlob(blob, filename);
-      }
-
-      async function downloadCardPng(index) {
-        if (!state.payload || state.busy) return;
-        setBusy(true);
-        toast('<span class="spinner"></span>Rendering PNG…');
-        try {
-          await downloadViaApi('png', index);
-          toast('Card ' + (index + 1) + ' saved as PNG');
-        } catch (error) {
-          toast(friendlyError(error, 'Could not export PNG. Please try again.'), 4200);
-        } finally {
-          setBusy(false);
-        }
-      }
-
-      async function downloadCardPdf(index) {
-        if (!state.payload || state.busy) return;
-        setBusy(true);
-        toast('<span class="spinner"></span>Rendering PDF…');
-        try {
-          await downloadViaApi('pdf', index);
-          toast('Card ' + (index + 1) + ' saved as PDF');
-        } catch (error) {
-          toast(friendlyError(error, 'Could not export PDF. Please try again.'), 4200);
-        } finally {
-          setBusy(false);
-        }
-      }
-
-      async function downloadAllPng() {
-        if (!state.payload || state.busy) return;
-        const total = state.payload.cards.length;
+        const indices = state.selectionMode 
+          ? Array.from(state.selectedIndices).sort((a,b)=>a-b) 
+          : Array.from({length: state.payload.cards.length}, (_, i) => i);
+        const total = indices.length;
         setBusy(true);
         try {
           for (let index = 0; index < total; index += 1) {
@@ -5879,6 +5593,21 @@
       loadTemplates();
       el('apiBase').addEventListener('change', loadTemplates);
       el('generateBtn').addEventListener('click', generate);
+      
+      el('toggleSelectMode').addEventListener('click', () => {
+        state.selectionMode = !state.selectionMode;
+        if (!state.selectionMode) {
+          state.selectedIndices.clear();
+        }
+        el('grid').classList.toggle('selection-mode', state.selectionMode);
+        const btn = el('toggleSelectMode');
+        if (state.selectionMode) {
+          btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Cancel Selection`;
+        } else {
+          btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Select Options`;
+        }
+        renderGrid();
+      });
       el('saveAllCards').addEventListener('click', saveAllCards);
       el('cancelBtn').addEventListener('click', () => {
         el('query').value = '';
