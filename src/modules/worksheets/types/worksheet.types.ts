@@ -16,7 +16,7 @@ export const WORKSHEET_ERROR_CODES = [
 
 export type WorksheetErrorCode = (typeof WORKSHEET_ERROR_CODES)[number];
 
-export const WORKSHEET_RENDER_FORMATS = ['html', 'webp', 'pdf'] as const;
+export const WORKSHEET_RENDER_FORMATS = ['html', 'webp', 'png', 'pdf'] as const;
 export type WorksheetRenderFormat = (typeof WORKSHEET_RENDER_FORMATS)[number];
 
 export const WORKSHEET_RENDER_MODES = ['editor', 'export'] as const;

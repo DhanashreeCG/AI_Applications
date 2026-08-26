@@ -383,10 +383,15 @@ export class WorksheetRenderService {
         this.emitter,
         telemetry,
         PIPELINE_STAGES.WORKSHEET_RENDERING,
-        () =>
-          normalized === 'pdf'
-            ? this.renderPdf(html, width, height)
-            : this.renderWebp(html, width, height),
+        () => {
+          if (normalized === 'pdf') {
+            return this.renderPdf(html, width, height);
+          }
+          if (normalized === 'png') {
+            return this.renderPng(html, width, height);
+          }
+          return this.renderWebp(html, width, height);
+        },
         {
           startMetadata: { format: normalized, width, height },
           completeMetadata: { format: normalized, width, height },
@@ -399,7 +404,11 @@ export class WorksheetRenderService {
         PIPELINE_STAGES.PERSISTENCE,
         async () => {
           const contentType =
-            normalized === 'pdf' ? 'application/pdf' : 'image/webp';
+            normalized === 'pdf'
+              ? 'application/pdf'
+              : normalized === 'png'
+                ? 'image/png'
+                : 'image/webp';
           const fileName = `worksheet.${normalized}`;
           const storageKey = `${this.keyPrefix}/${worksheetId}/${fileName}`;
 
@@ -415,13 +424,17 @@ export class WorksheetRenderService {
             this.bucket,
           );
 
-          const output = await this.prisma.worksheetOutput.create({
-            data: {
-              worksheetId,
-              format: normalized.toUpperCase() as 'HTML' | 'WEBP' | 'PDF',
-              storageKey,
-            },
-          });
+          let outputId: string | undefined;
+          if (normalized === 'pdf' || normalized === 'webp') {
+            const output = await this.prisma.worksheetOutput.create({
+              data: {
+                worksheetId,
+                format: normalized.toUpperCase() as 'WEBP' | 'PDF',
+                storageKey,
+              },
+            });
+            outputId = output.id;
+          }
 
           await this.prisma.worksheet.update({
             where: { id: worksheetId },
@@ -434,7 +447,7 @@ export class WorksheetRenderService {
             mode,
             storageKey,
             uri,
-            outputId: output.id,
+            outputId,
             canvas,
             buffer,
           };
@@ -541,6 +554,29 @@ export class WorksheetRenderService {
       await this.waitForPaint(page);
       const screenshot = await page.screenshot({
         type: 'webp',
+        fullPage: false,
+        omitBackground: false,
+      });
+      return screenshot;
+    } finally {
+      await page.close();
+    }
+  }
+
+  private async renderPng(
+    html: string,
+    width: number,
+    height: number,
+  ): Promise<Buffer> {
+    const browser = await this.browserPool.getBrowser();
+    const page = await browser.newPage();
+    try {
+      await page.setViewportSize({ width, height });
+      const markup = await this.prepareHtmlForCapture(html);
+      await page.setContent(markup, { waitUntil: 'load', timeout: 30000 });
+      await this.waitForPaint(page);
+      const screenshot = await page.screenshot({
+        type: 'png',
         fullPage: false,
         omitBackground: false,
       });

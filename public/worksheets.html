@@ -620,8 +620,19 @@
         overflow: auto;
         background: #efeaf6;
         border-radius: 14px;
-        padding: 20px;
+        padding: 16px;
         min-height: 480px;
+        max-height: 82vh;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        box-sizing: border-box;
+      }
+
+      .frame-container {
+        position: relative;
+        transform-origin: top center;
+        transition: transform 0.15s ease-out;
         display: flex;
         justify-content: center;
       }
@@ -630,7 +641,6 @@
         border: 1.5px solid var(--line);
         background: #fff;
         display: block;
-        transform-origin: top center;
         width: 1016px;
         height: 1316px;
         border-radius: 8px;
@@ -1055,11 +1065,13 @@
         <div class="preview-toolbar">
           <button class="btn-soft" id="editBtn" type="button">Edit</button>
           <button class="btn-primary" id="aiEditBtn" type="button" style="padding:9px 18px; font-size:14px;">✦ AI Edit</button>
-          <button class="btn-soft" id="downloadBtn" type="button">⬇ WebP</button>
+          <button class="btn-soft" id="downloadPngBtn" type="button">⬇ PNG</button>
           <button class="btn-soft" id="downloadPdfBtn" type="button">⬇ PDF</button>
         </div>
-        <div class="frame-shell">
-          <iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe>
+        <div class="frame-shell" id="frameShell">
+          <div class="frame-container" id="frameContainer">
+            <iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe>
+          </div>
         </div>
       </section>
     </main>
@@ -1203,10 +1215,12 @@
         previewSection: el('previewSection'),
         worksheetTitle: el('worksheetTitle'),
         worksheetFrame: el('worksheetFrame'),
+        frameShell: el('frameShell'),
+        frameContainer: el('frameContainer'),
         backBtn: el('backBtn'),
         editBtn: el('editBtn'),
         aiEditBtn: el('aiEditBtn'),
-        downloadBtn: el('downloadBtn'),
+        downloadPngBtn: el('downloadPngBtn'),
         downloadPdfBtn: el('downloadPdfBtn'),
         imagePickerModal: el('imagePickerModal'),
         imageQuery: el('imageQuery'),
@@ -1472,8 +1486,9 @@
           <button class="icon-btn fav ${loved ? 'loved' : ''}" data-act="fav" data-id="${item.id}" aria-pressed="${loved ? 'true' : 'false'}" title="Favourite">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="${loved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.9"><path d="M12 20s-7-4.4-7-9.3A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.7c0 4.9-7 9.3-7 9.3Z" /></svg>
           </button>
-          <button class="btn-soft" data-act="preview" data-id="${item.id}" style="padding:6px 12px; font-size:12px;">Preview</button>
-          <button class="btn-soft" data-act="download" data-id="${item.id}" style="padding:6px 12px; font-size:12px;">PDF</button>
+          <button class="btn-soft" data-act="preview" data-id="${item.id}" style="padding:6px 10px; font-size:12px;">Preview</button>
+          <button class="btn-soft" data-act="download-png" data-id="${item.id}" style="padding:6px 10px; font-size:12px;">PNG</button>
+          <button class="btn-soft" data-act="download-pdf" data-id="${item.id}" style="padding:6px 10px; font-size:12px;">PDF</button>
         `;
 
         card.addEventListener('click', () => openPreview(item.id, item.html));
@@ -1487,7 +1502,9 @@
             toggleFav(item.id, btn);
           } else if (act === 'preview') {
             openPreview(item.id, item.html);
-          } else if (act === 'download') {
+          } else if (act === 'download-png') {
+            download(item.id, 'png');
+          } else if (act === 'download-pdf' || act === 'download') {
             download(item.id, 'pdf');
           }
         });
@@ -1499,11 +1516,26 @@
 
       function renderSkeletons(count) {
         els.empty.style.display = 'none';
-        els.worksheetGrid.innerHTML = '';
+        const hasExisting = els.worksheetGrid.querySelectorAll('.tile').length > 0;
+        if (!hasExisting) {
+          els.worksheetGrid.innerHTML = '';
+        }
         for (let i = 0; i < count; i += 1) {
           const sk = document.createElement('div');
           sk.className = 'skeleton';
-          els.worksheetGrid.appendChild(sk);
+          sk.dataset.loadingSkeleton = 'true';
+          if (hasExisting && els.worksheetGrid.firstChild) {
+            els.worksheetGrid.insertBefore(sk, els.worksheetGrid.firstChild);
+          } else {
+            els.worksheetGrid.appendChild(sk);
+          }
+        }
+      }
+
+      function removeSkeletons() {
+        els.worksheetGrid.querySelectorAll('[data-loading-skeleton="true"]').forEach((node) => node.remove());
+        if (!els.worksheetGrid.querySelectorAll('.tile').length) {
+          els.empty.style.display = 'block';
         }
       }
 
@@ -1595,12 +1627,11 @@
           });
           const body = await res.json().catch(() => ({}));
           if (!res.ok) {
+            removeSkeletons();
             showBanner(
               'error',
               errorBannerHtml(body, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
             );
-            els.worksheetGrid.innerHTML = '';
-            els.empty.style.display = 'block';
             return;
           }
 
@@ -1609,8 +1640,7 @@
           state.pageSize = Math.max(state.pageSize, count);
           await loadGrid();
         } catch (error) {
-          els.worksheetGrid.innerHTML = '';
-          els.empty.style.display = 'block';
+          removeSkeletons();
           showBanner(
             'error',
             errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
@@ -1622,13 +1652,34 @@
 
       function scaleFrame() {
         const iframe = els.worksheetFrame;
+        const container = els.frameContainer || iframe.parentElement;
+        const shell = els.frameShell || container.parentElement;
         const canvas = state.preview?.canvas || state.canvas;
-        iframe.style.width = canvas.width + 'px';
-        iframe.style.height = canvas.height + 'px';
-        const maxW = iframe.parentElement.clientWidth - 32;
-        const scale = Math.min(1, maxW / canvas.width);
-        iframe.style.transform = `scale(${scale})`;
-        iframe.parentElement.style.height = Math.round(canvas.height * scale + 16) + 'px';
+        const canvasW = canvas.width || 1016;
+        const canvasH = canvas.height || 1316;
+
+        iframe.style.width = canvasW + 'px';
+        iframe.style.height = canvasH + 'px';
+
+        const availW = Math.max(280, (shell ? shell.clientWidth : container.parentElement.clientWidth) - 36);
+        const availH = Math.max(360, (window.innerHeight * 0.76));
+        const scaleW = availW / canvasW;
+        const scaleH = availH / canvasH;
+        const scale = Math.min(1, scaleW, scaleH);
+
+        if (container && container !== iframe) {
+          container.style.transform = `scale(${scale})`;
+          container.style.width = canvasW + 'px';
+          container.style.height = canvasH + 'px';
+          if (shell) {
+            shell.style.height = Math.round(canvasH * scale + 36) + 'px';
+          }
+        } else {
+          iframe.style.transform = `scale(${scale})`;
+          if (shell) {
+            shell.style.height = Math.round(canvasH * scale + 36) + 'px';
+          }
+        }
       }
 
       async function openPreview(id, html) {
@@ -2126,7 +2177,7 @@
           return;
         }
         const blob = await res.blob();
-        let filename = format === 'pdf' ? 'worksheet.pdf' : 'worksheet.webp';
+        let filename = format === 'pdf' ? 'worksheet.pdf' : (format === 'png' ? 'worksheet.png' : 'worksheet.webp');
         const disposition = res.headers.get('content-disposition') || '';
         const named = /filename="?([^"]+)"?/i.exec(disposition);
         if (named?.[1]) filename = named[1];
@@ -2204,7 +2255,7 @@
         }
       });
       els.aiEditBtn.addEventListener('click', () => openAiPanel());
-      els.downloadBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'webp'));
+      els.downloadPngBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'png'));
       els.downloadPdfBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'pdf'));
       els.imagePickerCloseBtn.addEventListener('click', closeImagePicker);
       els.imagePickerCancelBtn.addEventListener('click', closeImagePicker);

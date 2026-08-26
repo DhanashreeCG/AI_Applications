@@ -261,7 +261,7 @@ export class WorksheetsController {
   @Post(':worksheetId/download')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Render a worksheet and download the webp or pdf as an attachment',
+    summary: 'Render a worksheet and download the png, webp or pdf as an attachment',
   })
   async download(
     @Param('worksheetId') worksheetId: string,
@@ -274,16 +274,20 @@ export class WorksheetsController {
       correlationId: correlationId || traceId,
       mode: dto.mode ?? 'export',
     });
-    if (!result.buffer || (dto.format !== 'webp' && dto.format !== 'pdf')) {
+    if (!result.buffer || (dto.format !== 'webp' && dto.format !== 'png' && dto.format !== 'pdf')) {
       throw new WorksheetException(
         'UNSUPPORTED_FORMAT',
-        'Download is only available for webp and pdf',
+        'Download is only available for png, webp and pdf',
         HttpStatus.BAD_REQUEST,
       );
     }
     const fileName = `worksheet-${worksheetId}.${result.format}`;
     const contentType =
-      result.format === 'pdf' ? 'application/pdf' : 'image/webp';
+      result.format === 'pdf'
+        ? 'application/pdf'
+        : result.format === 'png'
+          ? 'image/png'
+          : 'image/webp';
     response.setHeader('Content-Type', contentType);
     response.setHeader(
       'Content-Disposition',
