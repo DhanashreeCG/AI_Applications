@@ -2165,8 +2165,8 @@
 
 <body>
   <div id="fullPageSpinner" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(243, 244, 255, 0.9); z-index: 9999; flex-direction: column; align-items: center; justify-content: center;">
-    <div style="width: 60px; height: 60px; border: 5px solid var(--ink); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-    <div style="margin-top: 16px; font-weight: 600; color: var(--ink); font-size: 1.2rem;">Please wait, generating flashcards</div>
+    <div style="width: 40px; height: 40px; border: 5px solid var(--ink); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+    <div style="margin-top: 16px; font-weight: 600; color: var(--ink); font-size: 1.2rem;">Saving Flashcards</div>
   </div>
   <style>
     @keyframes spin { 100% { transform: rotate(360deg); } }
@@ -5663,7 +5663,7 @@
       }
       setBusy(true);
       if (document.getElementById('fullPageSpinner')) document.getElementById('fullPageSpinner').style.display = 'flex';
-      toast('<span class="spinner"></span>Please wait, generating flashcards');
+      toast('<span class="spinner"></span>Saving Flashcards');
       try {
         const selectedCards = indices.map(i => state.payload.cards[i]);
         const auth = new URLSearchParams(window.location.search).get('auth');
