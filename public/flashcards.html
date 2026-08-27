@@ -15,7 +15,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     :root {
-      --bg: #f3f1fd;
+      --bg: #F3F4FF;
       --surface: #ffffff;
       --ink: #2a1b4a;
       --ink-soft: #4b3b73;
@@ -2164,6 +2164,13 @@
 </head>
 
 <body>
+  <div id="fullPageSpinner" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(243, 244, 255, 0.9); z-index: 9999; flex-direction: column; align-items: center; justify-content: center;">
+    <div style="width: 60px; height: 60px; border: 5px solid var(--ink); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+    <div style="margin-top: 16px; font-weight: 600; color: var(--ink); font-size: 1.2rem;">pls wait, generating flashcards</div>
+  </div>
+  <style>
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+  </style>
   <main class="main">
     <header class="page-head">
       <!-- <h1>AI Flash Cards</h1> -->
@@ -5598,6 +5605,7 @@
         return;
       }
       setBusy(true);
+      if (document.getElementById('fullPageSpinner')) document.getElementById('fullPageSpinner').style.display = 'flex';
       toast('<span class="spinner"></span>pls wait, generating flashcards');
       try {
         const selectedCards = indices.map(i => state.payload.cards[i]);
@@ -5623,6 +5631,7 @@
         const message = {
           grade: body.grade || state.selectedGrade || null,
           cards: body.cards || [],
+          query: (state.payload && state.payload.request && state.payload.request.topic) || (document.getElementById('query') ? document.getElementById('query').value : ''),
         };
         window.parent.postMessage(message, origin);
         toast('✓ ' + indices.length + ' card(s) saved & sent to platform');
@@ -5630,6 +5639,7 @@
         toast(friendlyError(error, 'Could not save flashcards. Please try again.'), 4200);
       } finally {
         setBusy(false);
+        if (document.getElementById('fullPageSpinner')) document.getElementById('fullPageSpinner').style.display = 'none';
       }
     }
 
