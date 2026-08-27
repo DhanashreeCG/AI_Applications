@@ -338,7 +338,7 @@ export default (): AppConfig => ({
       ),
       costPerMCachedInputUsd: parseFloat(
         process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_CACHED_INPUT_USD ||
-          '0.1',
+        '0.1',
       ),
       costPerMOutputUsd: parseFloat(
         process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_OUTPUT_USD || '1.6',
@@ -378,7 +378,7 @@ export default (): AppConfig => ({
       enabled: process.env.FLASHCARD_RENDERER_ENABLED !== 'false',
       storageBackend:
         (process.env.FLASHCARD_RENDERER_STORAGE_BACKEND || 'local').toLowerCase() ===
-        's3'
+          's3'
           ? 's3'
           : 'local',
       storageRoot:
@@ -409,14 +409,14 @@ export default (): AppConfig => ({
     pencilIconUrl: envTrim('WORKSHEET_PENCIL_ICON_URL', '/pencil.png'),
     imageConcurrency: parseInt(
       process.env.WORKSHEET_IMAGE_CONCURRENCY ||
-        process.env.FLASHCARD_IMAGE_CONCURRENCY ||
-        '3',
+      process.env.FLASHCARD_IMAGE_CONCURRENCY ||
+      '3',
       10,
     ),
     signedUrlTtlSeconds: parseInt(
       process.env.WORKSHEET_SIGNED_URL_TTL_SECONDS ||
-        process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS ||
-        '3600',
+      process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS ||
+      '3600',
       10,
     ),
     imageSearchLimit: parseInt(

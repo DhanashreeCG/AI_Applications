@@ -20,6 +20,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import { ApiConsumes, ApiOperation, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { FLASHCARD_USER_UPLOAD_MAX_BYTES } from './constants/flashcard.constants';
 import { DownloadFlashcardDto, EditFlashcardDto, SearchFlashcardImagesQueryDto } from './dto/edit-flashcard.dto';
@@ -257,20 +258,16 @@ export class FlashcardsController {
         0,
       );
 
-      const fileName = `card-${i + 1}.png`;
+      const fileName = `${randomUUID()}-card-${i + 1}.png`;
       const stored = await this.storageService.saveFile({
-        requestId,
+        requestId, // Ignored in storage path now
         fileName,
         buffer: result.buffer,
         contentType: 'image/png',
       });
 
-      const bucketName = this.configService.get<string>('flashcards.renderer.s3Bucket') || this.configService.get<string>('aws.s3BucketName') || 'ai-asset-ingestion';
-      const region = this.configService.get<string>('aws.region') || 'us-east-1';
-      const publicUrl = `https://${bucketName}.s3.${region}.amazonaws.com/${stored.path}`;
-
       resources.push({
-        url: publicUrl,
+        url: stored.uri, // Use the signed URL
         s3Key: stored.path,
         folder: this.storageService.resolveOutputLocation(requestId),
         fileName: stored.fileName,

@@ -27,11 +27,11 @@ export class S3FlashcardRenderStorage implements FlashcardRenderStorageBackend {
   }
 
   resolveOutputLocation(requestId: string): string {
-    return `${this.keyPrefix}/${requestId}`;
+    return this.keyPrefix;
   }
 
   async saveFile(input: SaveRenderFileInput): Promise<StoredRenderFile> {
-    const key = `${this.resolveOutputLocation(input.requestId)}/${input.fileName}`;
+    const key = `${this.keyPrefix}/${input.fileName}`;
     const upload = await this.s3StorageService.uploadFile(input.buffer, {
       bucket: this.bucket,
       key,
