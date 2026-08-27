@@ -5,6 +5,7 @@ import {
   Header,
   Headers,
   HttpCode,
+  HttpException,
   HttpStatus,
   Param,
   Post,
@@ -225,6 +226,37 @@ export class FlashcardsController {
       );
     }
     return this.rendererService.render(dto);
+  }
+
+  @Get('grades')
+  @ApiOperation({
+    summary: 'Proxy request to fetch grades from Gyan API',
+  })
+  async getGrades(
+    @Query('schoolId') schoolId: string,
+    @Query('pageSize') pageSize: string,
+    @Query('paginated') paginated: string,
+    @Query('pageNo') pageNo: string,
+    @Headers('authorization') authorization: string,
+  ) {
+    const baseUrl = this.configService.get<string>('flashcards.gyanApiBaseUrl');
+    const url = `${baseUrl}/api/gyan/V1/grade?pageSize=${pageSize || 50}&paginated=${paginated || 'true'}&pageNo=${pageNo || 1}&schoolId=${schoolId}`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'accept': 'application/json, text/plain, */*',
+        'accept-language': 'en-US,en;q=0.9',
+        'authorization': authorization,
+      },
+    });
+
+    if (!response.ok) {
+      throw new HttpException('Failed to fetch grades from Gyan API', response.status);
+    }
+    
+    const data = await response.json();
+    return data;
   }
 
   @Get('templates')

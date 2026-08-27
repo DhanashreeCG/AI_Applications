@@ -54,6 +54,7 @@ export interface AppConfig {
     prefix: string;
   };
   flashcards: {
+    gyanApiBaseUrl: string;
     imageConcurrency: number;
     cardConcurrency: number;
     signedUrlTtlSeconds: number;
@@ -272,6 +273,7 @@ export default (): AppConfig => ({
     prefix: process.env.BULLMQ_PREFIX || 'asset-ingestion',
   },
   flashcards: {
+    gyanApiBaseUrl: envTrim('GYAN_API_BASE_URL') || 'https://gyan-api.creativegalileo.com',
     imageConcurrency: parseInt(
       process.env.FLASHCARD_IMAGE_CONCURRENCY || '3',
       10,

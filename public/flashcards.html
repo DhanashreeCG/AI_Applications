@@ -2526,6 +2526,50 @@
       );
     }
 
+    async function initDynamicGrades() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const schoolId = params.get('schoolId');
+        const auth = params.get('auth');
+        if (!schoolId || !auth) return;
+
+        const url = apiBase() + '/flashcards/grades?pageSize=50&paginated=true&pageNo=1&schoolId=' + encodeURIComponent(schoolId);
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'en-US,en;q=0.9',
+            'authorization': 'Bearer ' + auth
+          }
+        });
+
+        if (!res.ok) throw new Error('Failed to fetch grades');
+        const json = await res.json();
+        
+        if (json.success && json.data && Array.isArray(json.data.grade) && json.data.grade.length > 0) {
+          const container = el('ageGroup');
+          container.innerHTML = '';
+          
+          json.data.grade.forEach((grade, i) => {
+            const btn = document.createElement('button');
+            btn.className = 'age-pill';
+            btn.setAttribute('role', 'radio');
+            const isFirst = (i === 0);
+            btn.setAttribute('aria-checked', isFirst ? 'true' : 'false');
+            
+            const ageVal = grade.minAge + '-' + grade.maxAge;
+            btn.dataset.age = ageVal;
+            if (isFirst) state.ageGroup = ageVal;
+            
+            btn.innerHTML = `<span class="radio" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>${grade.name}`;
+            container.appendChild(btn);
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load dynamic grades:', err);
+      }
+    }
+
     async function initRegionSelect() {
       const select = el('regionSelect');
       if (!select) return;
@@ -6018,6 +6062,7 @@
       });
     } else {
       el('apiBase').value = configuredApiBase() || defaultApiBase();
+      initDynamicGrades();
       initRegionSelect();
       loadTemplates();
       el('apiBase').addEventListener('change', loadTemplates);
