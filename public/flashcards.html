@@ -2166,7 +2166,7 @@
 <body>
   <main class="main">
     <header class="page-head">
-      <h1>AI Flash Cards</h1>
+      <!-- <h1>AI Flash Cards</h1> -->
       <div class="api-field" style="display: none;">
         <label for="apiBase">API</label>
         <input id="apiBase" placeholder="http://localhost:3000" />
@@ -5600,7 +5600,8 @@
       toast('<span class="spinner"></span>Saving & uploading cards...');
       try {
         const selectedCards = indices.map(i => state.payload.cards[i]);
-        const payload = { ...state.payload, cards: selectedCards, grade: state.selectedGrade || undefined };
+        const auth = new URLSearchParams(window.location.search).get('auth');
+        const payload = { ...state.payload, cards: selectedCards, grade: state.selectedGrade || undefined, auth };
 
         const response = await fetch(apiBase() + '/flashcards/render-and-notify', {
           method: 'POST',

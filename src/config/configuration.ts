@@ -99,6 +99,12 @@ export interface AppConfig {
       concurrency: number;
       apiBaseUrl: string;
     };
+    upload: {
+      apiUrl: string;
+      entityName: string;
+      entityType: string;
+      folderName: string;
+    };
   };
   worksheets: {
     apiBaseUrl: string;
@@ -397,6 +403,12 @@ export default (): AppConfig => ({
       apiBaseUrl:
         process.env.FLASHCARD_RENDERER_API_BASE_URL ||
         `http://127.0.0.1:${process.env.PORT || '3000'}`,
+    },
+    upload: {
+      apiUrl: process.env.FLASHCARD_UPLOAD_API_URL || 'https://gyan-dev-api.creativegalileo.com/api/gyan/V1/media/upload-media',
+      entityName: process.env.FLASHCARD_UPLOAD_ENTITY_NAME || 'GYAN',
+      entityType: process.env.FLASHCARD_UPLOAD_ENTITY_TYPE || 'ai_flashcards',
+      folderName: process.env.FLASHCARD_UPLOAD_FOLDER_NAME || 'ai_flashcards',
     },
   },
   worksheets: {
