@@ -55,6 +55,7 @@ export interface AppConfig {
   };
   flashcards: {
     gyanApiBaseUrl: string;
+    parentOrigin: string;
     imageConcurrency: number;
     cardConcurrency: number;
     signedUrlTtlSeconds: number;
@@ -274,6 +275,7 @@ export default (): AppConfig => ({
   },
   flashcards: {
     gyanApiBaseUrl: envTrim('GYAN_API_BASE_URL') || 'https://gyan-api.creativegalileo.com',
+    parentOrigin: envTrim('PARENT_ORIGIN') || '*',
     imageConcurrency: parseInt(
       process.env.FLASHCARD_IMAGE_CONCURRENCY || '3',
       10,

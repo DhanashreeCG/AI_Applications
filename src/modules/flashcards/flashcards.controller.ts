@@ -30,6 +30,7 @@ import {
   SaveFlashcardEditsDto,
   SaveGeneratedFlashcardsDto,
 } from './dto/save-flashcards.dto';
+import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-storage.service';
 import { UploadFlashcardTemplatesDto } from './dto/upload-flashcard-template.dto';
 import { FlashcardException } from './errors/flashcard.exception';
 import { GenerateFlashcardsResponse } from './interfaces/flashcard.interfaces';
@@ -52,6 +53,7 @@ export class FlashcardsController {
     private readonly persistence: FlashcardPersistenceService,
     private readonly editService: FlashcardEditService,
     private readonly downloadService: FlashcardDownloadService,
+    private readonly storageService: FlashcardStorageService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -226,6 +228,62 @@ export class FlashcardsController {
       );
     }
     return this.rendererService.render(dto);
+  }
+
+  @Post('render-and-notify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Render selected flashcard cards to PNG, upload to S3, and return structured resource list for postMessage',
+  })
+  async renderAndNotify(
+    @Body() body: SaveGeneratedFlashcardsDto & { grade?: { id?: string; name?: string } },
+  ) {
+    const parentOrigin = this.configService.get<string>('flashcards.parentOrigin') ?? '*';
+    const grade = body.grade ?? null;
+
+    const cards = body.cards ?? [];
+    if (!cards.length) {
+      throw new HttpException('No cards provided', HttpStatus.BAD_REQUEST);
+    }
+
+    const requestId = `notify-${Date.now()}`;
+    const resources: { url: string; s3Key: string; folder: string; fileName: string }[] = [];
+
+    for (let i = 0; i < cards.length; i++) {
+      const cardPayload = { ...body, cards: [cards[i]] };
+      const result = await this.downloadService.downloadFromPayload(
+        cardPayload as unknown as import('./interfaces/flashcard.interfaces').GenerateFlashcardsResponse,
+        'png',
+        0,
+      );
+
+      const fileName = `card-${i + 1}.png`;
+      const stored = await this.storageService.saveFile({
+        requestId,
+        fileName,
+        buffer: result.buffer,
+        contentType: 'image/png',
+      });
+
+      const bucketName = this.configService.get<string>('flashcards.renderer.s3Bucket') || this.configService.get<string>('aws.s3BucketName') || 'ai-asset-ingestion';
+      const region = this.configService.get<string>('aws.region') || 'us-east-1';
+      const publicUrl = `https://${bucketName}.s3.${region}.amazonaws.com/${stored.path}`;
+
+      resources.push({
+        url: publicUrl,
+        s3Key: stored.path,
+        folder: this.storageService.resolveOutputLocation(requestId),
+        fileName: stored.fileName,
+      });
+    }
+
+    return {
+      type: 'flashcards:saved',
+      grade,
+      resources: resources.map((r) => r.url),
+      cards: resources,
+      parentOrigin,
+    };
   }
 
   @Get('grades')

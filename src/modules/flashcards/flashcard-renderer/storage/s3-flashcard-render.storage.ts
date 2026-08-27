@@ -18,7 +18,7 @@ export class S3FlashcardRenderStorage implements FlashcardRenderStorageBackend {
   ) {
     this.keyPrefix =
       this.configService.get<string>('flashcards.renderer.s3KeyPrefix') ??
-      'flashcards/rendered';
+      'flashcards';
     this.bucket =
       this.configService.get<string>('flashcards.renderer.s3Bucket') || undefined;
     this.signedUrlTtlSeconds =

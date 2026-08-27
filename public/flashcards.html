@@ -2284,6 +2284,10 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
             Select Options
           </button>
+          <button class="btn-soft" id="saveSelectedCards" style="display:none">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Selected
+          </button>
           <button class="btn-soft" id="saveAllCards">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -2401,6 +2405,7 @@
     const state = {
       payload: null,
       selectionMode: false,
+      selectedGrade: null, // { id, name }
       selectedIndices: new Set(),
       imageCache: new Map(),
       favourites: new Set(),
@@ -2559,7 +2564,12 @@
             
             const ageVal = grade.minAge + '-' + grade.maxAge;
             btn.dataset.age = ageVal;
-            if (isFirst) state.ageGroup = ageVal;
+            btn.dataset.gradeId = grade.id || '';
+            btn.dataset.gradeName = grade.name || '';
+            if (isFirst) {
+              state.ageGroup = ageVal;
+              state.selectedGrade = { id: grade.id || '', name: grade.name || '' };
+            }
             
             btn.innerHTML = `<span class="radio" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>${grade.minAge}-${grade.maxAge} years (${grade.name})`;
             container.appendChild(btn);
@@ -2876,7 +2886,7 @@
     async function generate() {
       const query = el('query').value.trim();
       const ageGroup = state.ageGroup;
-      const count = 1; // Hardcoded default
+      const count = 5; // Hardcoded default
       const templateId = el('templateSelect').value;
 
       if (!query || !ageGroup) {
@@ -5576,48 +5586,63 @@
       return body.id;
     }
 
-    async function saveAllCards() {
+    function parentOrigin() {
+      return window.__PARENT_ORIGIN__ || new URLSearchParams(window.location.search).get('parentOrigin') || '*';
+    }
+
+    async function saveAndNotify(indices) {
       if (!state.payload || state.busy) return;
-      if (state.selectionMode && state.selectedIndices.size === 0) {
+      if (!indices || indices.length === 0) {
         toast('Please select at least one card.');
         return;
       }
       setBusy(true);
-      toast('<span class="spinner"></span>Saving flashcards…');
+      toast('<span class="spinner"></span>Saving & uploading cards...');
       try {
-        await ensureSetSaved();
-        
-        let payloadToSave = state.payload;
-        if (state.selectionMode) {
-          const indices = Array.from(state.selectedIndices).sort((a,b)=>a-b);
-          payloadToSave = {
-            ...state.payload,
-            cards: indices.map(i => state.payload.cards[i])
-          };
-        }
+        const selectedCards = indices.map(i => state.payload.cards[i]);
+        const payload = { ...state.payload, cards: selectedCards, grade: state.selectedGrade || undefined };
 
-        const response = await fetch(apiBase() + '/flashcards/save', {
+        const response = await fetch(apiBase() + '/flashcards/render-and-notify', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-trace-id': uuid(),
             'x-correlation-id': uuid(),
           },
-          body: JSON.stringify(payloadToSave),
+          body: JSON.stringify(payload),
         });
+
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(friendlyError(body, 'Could not save flashcards. Please try again.'));
         }
-        
-        // Only update payload ID if we saved the whole set, or let it be.
-        state.payload.id = body.id;
-        toast(state.selectionMode ? Array.from(state.selectedIndices).length + ' cards saved' : 'All cards saved');
+
+        const origin = parentOrigin();
+        const message = {
+          type: 'flashcards:saved',
+          grade: body.grade || state.selectedGrade || null,
+          resources: body.resources || [],
+          cards: body.cards || [],
+        };
+        window.parent.postMessage(message, origin);
+        toast('✓ ' + indices.length + ' card(s) saved & sent to platform');
       } catch (error) {
         toast(friendlyError(error, 'Could not save flashcards. Please try again.'), 4200);
       } finally {
         setBusy(false);
       }
+    }
+
+    async function saveAllCards() {
+      if (!state.payload || state.busy) return;
+      if (state.selectionMode) {
+        if (state.selectedIndices.size === 0) {
+          toast('Please select at least one card.');
+          return;
+        }
+        return saveAndNotify(Array.from(state.selectedIndices).sort((a, b) => a - b));
+      }
+      return saveAndNotify(Array.from({ length: state.payload.cards.length }, (_, i) => i));
     }
 
     async function saveCardEdits(index) {
@@ -5628,83 +5653,32 @@
         ...field,
         cardId,
       }));
-      const images = [];
-      const fileEntries = [];
 
-      for (const [componentId, item] of Object.entries(state.pendingImageReplacements)) {
-        if (item && item.file) {
-          fileEntries.push({ componentId, file: item.file });
-          continue;
+      // 1. Apply text field changes to memory
+      fields.forEach((f) => {
+        const comp = card.components && card.components.find((c) => (c.componentId || c.id) === f.componentId);
+        if (comp) {
+          comp.content = f.value;
         }
-        images.push({
-          cardId,
-          path: componentId,
-          componentId,
+      });
+
+      // 2. Apply image replacements to memory
+      for (const [componentId, item] of Object.entries(state.pendingImageReplacements)) {
+        applyImageToCardData(card, componentId, {
           assetId: item.assetId || null,
           userUploadedKey: item.userUploadedKey || null,
+          imageUrl: item.imageUrl,
         });
       }
 
-      setBusy(true);
-      toast('<span class="spinner"></span>Saving card…');
-      try {
-        const setId = await ensureSetSaved();
-        const headers = { 'x-trace-id': uuid(), 'x-correlation-id': uuid() };
-        for (const entry of fileEntries) {
-          const form = new FormData();
-          form.append('file', entry.file);
-          form.append('cardId', cardId);
-          form.append('componentId', entry.componentId);
-          const uploaded = await fetch(
-            apiBase() + '/flashcards/' + encodeURIComponent(setId) + '/images/upload',
-            { method: 'POST', headers, body: form },
-          );
-          const uploadBody = await uploaded.json().catch(() => ({}));
-          if (!uploaded.ok) {
-            throw new Error(friendlyError(uploadBody, 'Image upload failed. Please try again.'));
-          }
-          images.push({
-            cardId,
-            componentId: entry.componentId,
-            assetId: null,
-            userUploadedKey: uploadBody.userUploadedKey,
-          });
-          applyImageToCardData(card, entry.componentId, {
-            assetId: null,
-            userUploadedKey: uploadBody.userUploadedKey,
-            imageUrl: uploadBody.imageUrl && uploadBody.imageUrl.startsWith('http')
-              ? uploadBody.imageUrl
-              : apiBase() + uploadBody.imageUrl,
-          });
-        }
-
-        const response = await fetch(
-          apiBase() + '/flashcards/' + encodeURIComponent(setId) + '/save',
-          {
-            method: 'POST',
-            headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields, images }),
-          },
-        );
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(friendlyError(body, 'Could not save your edits. Please try again.'));
-        }
-        if (body.cards) state.payload.cards = body.cards;
-        if (body.id) state.payload.id = body.id;
-        state.editingIndex = null;
-        state.pendingImageReplacements = {};
-        state.editSnapshot = null;
-        renderGrid();
-        if (el('modal').classList.contains('show') && state.activeIndex === index) {
-          openModal(index);
-        }
-        toast('Card saved');
-      } catch (error) {
-        toast(friendlyError(error, 'Could not save your edits. Please try again.'), 4200);
-      } finally {
-        setBusy(false);
+      state.editingIndex = null;
+      state.pendingImageReplacements = {};
+      state.editSnapshot = null;
+      renderGrid();
+      if (el('modal').classList.contains('show') && state.activeIndex === index) {
+        openModal(index);
       }
+      toast('Card updated locally');
     }
 
     /* ---------------- modal ---------------- */
@@ -6077,6 +6051,7 @@
           state.selectedIndices.clear();
         }
         el('grid').classList.toggle('selection-mode', state.selectionMode);
+        el('saveSelectedCards').style.display = state.selectionMode ? '' : 'none';
         const btn = el('toggleSelectMode');
         if (state.selectionMode) {
           btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Cancel Selection`;
@@ -6087,6 +6062,10 @@
         }
       });
       el('saveAllCards').addEventListener('click', saveAllCards);
+      el('saveSelectedCards').addEventListener('click', () => {
+        if (state.selectedIndices.size === 0) { toast('Please select at least one card.'); return; }
+        saveAndNotify(Array.from(state.selectedIndices).sort((a, b) => a - b));
+      });
       el('cancelBtn').addEventListener('click', () => {
         el('query').value = '';
         el('templateSelect').value = '';
@@ -6146,6 +6125,11 @@
         const pill = event.target.closest('.age-pill');
         if (!pill) return;
         state.ageGroup = pill.dataset.age;
+        if (pill.dataset.gradeId || pill.dataset.gradeName) {
+          state.selectedGrade = { id: pill.dataset.gradeId || '', name: pill.dataset.gradeName || '' };
+        } else {
+          state.selectedGrade = null;
+        }
         el('ageGroup')
           .querySelectorAll('.age-pill')
           .forEach((node) => node.setAttribute('aria-checked', node === pill ? 'true' : 'false'));
