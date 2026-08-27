@@ -2561,7 +2561,7 @@
             btn.dataset.age = ageVal;
             if (isFirst) state.ageGroup = ageVal;
             
-            btn.innerHTML = `<span class="radio" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>${grade.name}`;
+            btn.innerHTML = `<span class="radio" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>${grade.minAge}-${grade.maxAge} years (${grade.name})`;
             container.appendChild(btn);
           });
         }
