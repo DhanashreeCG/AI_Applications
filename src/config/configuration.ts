@@ -377,14 +377,14 @@ export default (): AppConfig => ({
     renderer: {
       enabled: process.env.FLASHCARD_RENDERER_ENABLED !== 'false',
       storageBackend:
-        (process.env.FLASHCARD_RENDERER_STORAGE_BACKEND || 'local').toLowerCase() ===
-          's3'
-          ? 's3'
-          : 'local',
+        (process.env.FLASHCARD_RENDERER_STORAGE_BACKEND || 's3').toLowerCase() ===
+        'local'
+          ? 'local'
+          : 's3',
       storageRoot:
         process.env.FLASHCARD_RENDERER_STORAGE_ROOT || 'storage/flashcards',
       s3KeyPrefix:
-        process.env.FLASHCARD_RENDERER_S3_KEY_PREFIX || 'flashcards/rendered',
+        process.env.FLASHCARD_RENDERER_S3_KEY_PREFIX || 'flashcards',
       s3Bucket: process.env.FLASHCARD_RENDERER_S3_BUCKET || undefined,
       signedUrlTtlSeconds: parseInt(
         process.env.FLASHCARD_RENDERER_SIGNED_URL_TTL_SECONDS || '3600',
