@@ -2166,7 +2166,7 @@
 <body>
   <div id="fullPageSpinner" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(243, 244, 255, 0.9); z-index: 9999; flex-direction: column; align-items: center; justify-content: center;">
     <div style="width: 60px; height: 60px; border: 5px solid var(--ink); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-    <div style="margin-top: 16px; font-weight: 600; color: var(--ink); font-size: 1.2rem;">pls wait, generating flashcards</div>
+    <div style="margin-top: 16px; font-weight: 600; color: var(--ink); font-size: 1.2rem;">Please wait, generating flashcards</div>
   </div>
   <style>
     @keyframes spin { 100% { transform: rotate(360deg); } }
@@ -2222,6 +2222,12 @@
           </span>
           4-5 years (FS 2)
         </button>
+      </div>
+
+      <label class="field-label" style="margin-top: 24px; display: none;" id="flowTypeLabel">
+        Select flow type<span class="req">*</span>
+      </label>
+      <div class="age-grid" role="radiogroup" aria-labelledby="flowTypeLabel" id="flowTypeGroup" style="display: none;">
       </div>
 
       <!-- <div class="extra-row">
@@ -2413,6 +2419,7 @@
       payload: null,
       selectionMode: false,
       selectedGrade: null, // { id, name }
+      selectedFlowType: null,
       selectedIndices: new Set(),
       imageCache: new Map(),
       favourites: new Set(),
@@ -2585,6 +2592,56 @@
         }
       } catch (err) {
         console.warn('Could not load dynamic grades:', err);
+      }
+    }
+
+    async function initFlowTypes() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const schoolId = params.get('schoolId');
+        const auth = params.get('auth');
+        if (!schoolId || !auth) return;
+
+        const url = apiBase() + '/flashcards/proxy?url=' + encodeURIComponent('https://gyan-dev-api.creativegalileo.com/api/gyan/V1/teacher-resource/flow-type?schoolId=' + schoolId);
+        // Wait, wait... the URL given by user is direct. Let's use direct.
+        const directUrl = 'https://gyan-dev-api.creativegalileo.com/api/gyan/V1/teacher-resource/flow-type?schoolId=' + encodeURIComponent(schoolId);
+        const res = await fetch(directUrl, {
+          method: 'GET',
+          headers: {
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'en-US,en;q=0.9',
+            'authorization': 'Bearer ' + auth
+          }
+        });
+
+        if (!res.ok) throw new Error('Failed to fetch flow types');
+        const json = await res.json();
+        
+        if (json.success && json.data && Array.isArray(json.data.rows) && json.data.rows.length > 0) {
+          const container = el('flowTypeGroup');
+          container.innerHTML = '';
+          el('flowTypeLabel').style.display = 'block';
+          container.style.display = 'grid';
+          
+          json.data.rows.forEach((row, i) => {
+            const isFirst = (i === 0);
+            const btn = document.createElement('button');
+            btn.className = 'age-pill';
+            btn.setAttribute('role', 'radio');
+            btn.setAttribute('aria-checked', isFirst ? 'true' : 'false');
+            
+            btn.dataset.flowType = row.flowType || '';
+            btn.dataset.displayName = row.displayName || '';
+            if (isFirst) {
+              state.selectedFlowType = row.flowType || '';
+            }
+            
+            btn.innerHTML = `<span class="radio" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>${row.displayName || row.flowType}`;
+            container.appendChild(btn);
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load dynamic flow types:', err);
       }
     }
 
@@ -5606,7 +5663,7 @@
       }
       setBusy(true);
       if (document.getElementById('fullPageSpinner')) document.getElementById('fullPageSpinner').style.display = 'flex';
-      toast('<span class="spinner"></span>pls wait, generating flashcards');
+      toast('<span class="spinner"></span>Please wait, generating flashcards');
       try {
         const selectedCards = indices.map(i => state.payload.cards[i]);
         const auth = new URLSearchParams(window.location.search).get('auth');
@@ -5630,6 +5687,7 @@
         const origin = parentOrigin();
         const message = {
           grade: body.grade || state.selectedGrade || null,
+          flowType: state.selectedFlowType || null,
           cards: body.cards || [],
           query: (state.payload && state.payload.request && state.payload.request.topic) || (document.getElementById('query') ? document.getElementById('query').value : ''),
         };
@@ -6050,6 +6108,7 @@
     } else {
       el('apiBase').value = configuredApiBase() || defaultApiBase();
       initDynamicGrades();
+      initFlowTypes();
       initRegionSelect();
       loadTemplates();
       el('apiBase').addEventListener('change', loadTemplates);
@@ -6144,6 +6203,17 @@
           .querySelectorAll('.age-pill')
           .forEach((node) => node.setAttribute('aria-checked', node === pill ? 'true' : 'false'));
       });
+
+      if (el('flowTypeGroup')) {
+        el('flowTypeGroup').addEventListener('click', (event) => {
+          const pill = event.target.closest('.age-pill');
+          if (!pill) return;
+          state.selectedFlowType = pill.dataset.flowType;
+          el('flowTypeGroup')
+            .querySelectorAll('.age-pill')
+            .forEach((node) => node.setAttribute('aria-checked', node === pill ? 'true' : 'false'));
+        });
+      }
 
       el('rowsPerPage').addEventListener('click', (event) => {
         const button = event.target.closest('button');
