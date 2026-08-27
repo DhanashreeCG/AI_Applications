@@ -2566,9 +2566,10 @@
             btn.dataset.age = ageVal;
             btn.dataset.gradeId = grade.id || '';
             btn.dataset.gradeName = grade.name || '';
+            btn.dataset.levelId = grade.levelId || '';
             if (isFirst) {
               state.ageGroup = ageVal;
-              state.selectedGrade = { id: grade.id || '', name: grade.name || '' };
+              state.selectedGrade = { id: grade.id || '', name: grade.name || '', levelId: grade.levelId || '' };
             }
             
             btn.innerHTML = `<span class="radio" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>${grade.minAge}-${grade.maxAge} years (${grade.name})`;
@@ -5597,7 +5598,7 @@
         return;
       }
       setBusy(true);
-      toast('<span class="spinner"></span>Saving & uploading cards...');
+      toast('<span class="spinner"></span>pls wait, generating flashcards');
       try {
         const selectedCards = indices.map(i => state.payload.cards[i]);
         const auth = new URLSearchParams(window.location.search).get('auth');
@@ -5620,9 +5621,7 @@
 
         const origin = parentOrigin();
         const message = {
-          type: 'flashcards:saved',
           grade: body.grade || state.selectedGrade || null,
-          resources: body.resources || [],
           cards: body.cards || [],
         };
         window.parent.postMessage(message, origin);
@@ -6127,7 +6126,7 @@
         if (!pill) return;
         state.ageGroup = pill.dataset.age;
         if (pill.dataset.gradeId || pill.dataset.gradeName) {
-          state.selectedGrade = { id: pill.dataset.gradeId || '', name: pill.dataset.gradeName || '' };
+          state.selectedGrade = { id: pill.dataset.gradeId || '', name: pill.dataset.gradeName || '', levelId: pill.dataset.levelId || '' };
         } else {
           state.selectedGrade = null;
         }
