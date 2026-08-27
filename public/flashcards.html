@@ -2292,14 +2292,14 @@
             </svg>
             Save all
           </button>
-          <button class="btn-soft" id="downloadAllPng">
+          <button class="btn-soft" id="downloadAllPng" style="display:none">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16" />
             </svg>
             All as PNG
           </button>
-          <button class="btn-soft" id="downloadAllPdf">
+          <button class="btn-soft" id="downloadAllPdf" style="display:none">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16" />
@@ -2344,8 +2344,8 @@
         <button class="btn-soft" id="modalEdit">Edit</button>
         <button class="btn-soft save-edit" id="modalSave" hidden>Save</button>
         <button class="btn-soft cancel-edit" id="modalCancel" hidden>Cancel</button>
-        <button class="btn-soft" id="modalPng">PNG</button>
-        <button class="btn-soft" id="modalPdf">PDF</button>
+        <button class="btn-soft" id="modalPng" style="display:none">PNG</button>
+        <button class="btn-soft" id="modalPdf" style="display:none">PDF</button>
       </div>
     </div>
   </div>
@@ -2876,7 +2876,7 @@
     async function generate() {
       const query = el('query').value.trim();
       const ageGroup = state.ageGroup;
-      const count = 5; // Hardcoded default
+      const count = 1; // Hardcoded default
       const templateId = el('templateSelect').value;
 
       if (!query || !ageGroup) {
@@ -5119,7 +5119,7 @@
       cardNode.addEventListener('click', (event) => {
         if (event.target.closest('.img-camera-btn')) return;
         
-        if (state.selectionMode) {
+        if (state.selectionMode && !cardNode.closest('#modal')) {
           event.preventDefault();
           event.stopPropagation();
           if (state.selectedIndices.has(index)) {
@@ -5146,6 +5146,7 @@
       actions.className = 'tile-actions';
 
       const fav = iconButton(ICONS.heart, 'Favourite card ' + (index + 1));
+      fav.style.display = 'none';
       fav.classList.add('fav');
       fav.setAttribute('aria-pressed', state.favourites.has(index) ? 'true' : 'false');
       fav.addEventListener('click', () => {
@@ -5161,9 +5162,11 @@
       view.addEventListener('click', () => openModal(index));
 
       const png = iconButton(ICONS.download, 'Download card ' + (index + 1) + ' as PNG');
+      png.style.display = 'none';
       png.addEventListener('click', () => downloadCardPng(index));
 
       const pdf = iconButton(ICONS.file, 'Download card ' + (index + 1) + ' as PDF');
+      pdf.style.display = 'none';
       pdf.addEventListener('click', () => downloadCardPdf(index));
 
       actions.append(fav, edit, view, png, pdf);
