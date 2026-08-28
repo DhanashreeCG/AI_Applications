@@ -54,6 +54,8 @@ export interface AppConfig {
     prefix: string;
   };
   flashcards: {
+    gyanApiBaseUrl: string;
+    parentOrigin: string;
     imageConcurrency: number;
     cardConcurrency: number;
     signedUrlTtlSeconds: number;
@@ -96,6 +98,12 @@ export interface AppConfig {
       signedUrlTtlSeconds: number;
       concurrency: number;
       apiBaseUrl: string;
+    };
+    upload: {
+      apiUrl: string;
+      entityName: string;
+      entityType: string;
+      folderName: string;
     };
   };
   worksheets: {
@@ -272,6 +280,8 @@ export default (): AppConfig => ({
     prefix: process.env.BULLMQ_PREFIX || 'asset-ingestion',
   },
   flashcards: {
+    gyanApiBaseUrl: envTrim('GYAN_API_BASE_URL') || 'https://gyan-api.creativegalileo.com',
+    parentOrigin: envTrim('PARENT_ORIGIN') || '*',
     imageConcurrency: parseInt(
       process.env.FLASHCARD_IMAGE_CONCURRENCY || '3',
       10,
@@ -334,7 +344,7 @@ export default (): AppConfig => ({
       ),
       costPerMCachedInputUsd: parseFloat(
         process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_CACHED_INPUT_USD ||
-          '0.1',
+        '0.1',
       ),
       costPerMOutputUsd: parseFloat(
         process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_OUTPUT_USD || '1.6',
@@ -373,14 +383,14 @@ export default (): AppConfig => ({
     renderer: {
       enabled: process.env.FLASHCARD_RENDERER_ENABLED !== 'false',
       storageBackend:
-        (process.env.FLASHCARD_RENDERER_STORAGE_BACKEND || 'local').toLowerCase() ===
-        's3'
-          ? 's3'
-          : 'local',
+        (process.env.FLASHCARD_RENDERER_STORAGE_BACKEND || 's3').toLowerCase() ===
+        'local'
+          ? 'local'
+          : 's3',
       storageRoot:
         process.env.FLASHCARD_RENDERER_STORAGE_ROOT || 'storage/flashcards',
       s3KeyPrefix:
-        process.env.FLASHCARD_RENDERER_S3_KEY_PREFIX || 'flashcards/rendered',
+        process.env.FLASHCARD_RENDERER_S3_KEY_PREFIX || 'flashcards',
       s3Bucket: process.env.FLASHCARD_RENDERER_S3_BUCKET || undefined,
       signedUrlTtlSeconds: parseInt(
         process.env.FLASHCARD_RENDERER_SIGNED_URL_TTL_SECONDS || '3600',
@@ -394,6 +404,12 @@ export default (): AppConfig => ({
         process.env.FLASHCARD_RENDERER_API_BASE_URL ||
         `http://127.0.0.1:${process.env.PORT || '3000'}`,
     },
+    upload: {
+      apiUrl: process.env.FLASHCARD_UPLOAD_API_URL || 'https://gyan-dev-api.creativegalileo.com/api/gyan/V1/media/upload-media',
+      entityName: process.env.FLASHCARD_UPLOAD_ENTITY_NAME || 'GYAN',
+      entityType: process.env.FLASHCARD_UPLOAD_ENTITY_TYPE || 'ai_flashcards',
+      folderName: process.env.FLASHCARD_UPLOAD_FOLDER_NAME || 'ai_flashcards',
+    },
   },
   worksheets: {
     apiBaseUrl: envTrim('WORKSHEET_API_BASE_URL').replace(/\/$/, ''),
@@ -405,14 +421,14 @@ export default (): AppConfig => ({
     pencilIconUrl: envTrim('WORKSHEET_PENCIL_ICON_URL', '/pencil.png'),
     imageConcurrency: parseInt(
       process.env.WORKSHEET_IMAGE_CONCURRENCY ||
-        process.env.FLASHCARD_IMAGE_CONCURRENCY ||
-        '3',
+      process.env.FLASHCARD_IMAGE_CONCURRENCY ||
+      '3',
       10,
     ),
     signedUrlTtlSeconds: parseInt(
       process.env.WORKSHEET_SIGNED_URL_TTL_SECONDS ||
-        process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS ||
-        '3600',
+      process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS ||
+      '3600',
       10,
     ),
     imageSearchLimit: parseInt(
