@@ -5,6 +5,7 @@ import { ImageModule } from '../image/image.module';
 import { SearchModule } from '../search/search.module';
 import { StorageModule } from '../storage/storage.module';
 import { GenericWorksheetRenderer } from './renderers/generic-worksheet.renderer';
+import { CircleTheThingsRenderer } from './renderers/circle-the-things.renderer';
 import { WorksheetRendererRegistry } from './renderers/worksheet-renderer.registry';
 import { WorksheetAssetService } from './services/worksheet-asset.service';
 import { WorksheetFieldMetadataService } from './services/worksheet-field-metadata.service';
@@ -31,6 +32,7 @@ import { WorksheetsController } from './worksheets.controller';
     WorksheetGenerationService,
     WorksheetEditService,
     GenericWorksheetRenderer,
+    CircleTheThingsRenderer,
     WorksheetRendererRegistry,
     WorksheetRenderService,
     WorksheetFieldMetadataService,

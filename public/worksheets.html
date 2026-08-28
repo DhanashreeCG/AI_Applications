@@ -1076,8 +1076,9 @@
         <button class="btn-soft" id="editBtn" type="button">Edit</button>
         <button class="btn-primary" id="aiEditBtn" type="button" style="padding:9px 18px; font-size:14px;">✦ AI
           Edit</button>
-        <button class="btn-soft" id="downloadPngBtn" type="button">⬇ PNG</button>
-        <button class="btn-soft" id="downloadPdfBtn" type="button">⬇ PDF</button>
+        <button class="btn-soft" id="saveWorksheetBtn" type="button" style="color:var(--primary)">Save Worksheet</button>
+        <button class="btn-soft" id="downloadPngBtn" type="button" style="display:none;">⬇ PNG</button>
+        <button class="btn-soft" id="downloadPdfBtn" type="button" style="display:none;">⬇ PDF</button>
       </div>
       <div class="frame-shell" id="frameShell">
         <div class="frame-container" id="frameContainer">
@@ -1236,6 +1237,7 @@
       backBtn: el('backBtn'),
       editBtn: el('editBtn'),
       aiEditBtn: el('aiEditBtn'),
+      saveWorksheetBtn: el('saveWorksheetBtn'),
       downloadPngBtn: el('downloadPngBtn'),
       downloadPdfBtn: el('downloadPdfBtn'),
       imagePickerModal: el('imagePickerModal'),
@@ -1503,7 +1505,7 @@
           <button class="btn-soft" data-act="download-pdf" data-id="${item.id}" style="padding:6px 10px; font-size:12px;">PDF</button>
         `;
 
-      card.addEventListener('click', () => openPreview(item.id, item.html));
+      card.addEventListener('click', () => openPreview(item));
 
       actions.addEventListener('click', (event) => {
         const btn = event.target.closest('[data-act]');
@@ -1513,7 +1515,7 @@
         if (act === 'fav') {
           toggleFav(item.id, btn);
         } else if (act === 'preview') {
-          openPreview(item.id, item.html);
+          openPreview(item);
         } else if (act === 'download-png') {
           download(item.id, 'png');
         } else if (act === 'download-pdf' || act === 'download') {
@@ -1676,12 +1678,12 @@
       }
     }
 
-    async function openPreview(id, html) {
-      if (!id || id === 'null' || id === 'undefined') {
-        toast('Worksheet ID is missing');
+    async function openPreview(item) {
+      if (!item) {
+        toast('Worksheet data is missing');
         return;
       }
-      state.worksheetId = id;
+      state.worksheetId = item.id || Date.now().toString();
       state.editMode = false;
       els.editBtn.textContent = 'Edit';
       els.formSection.classList.add('hidden');
@@ -1697,20 +1699,11 @@
           wireFrame();
         };
         iframe.onload = onReady;
-        iframe.srcdoc = preview.html || html || '';
+        iframe.srcdoc = preview.html || '';
         requestAnimationFrame(onReady);
       };
 
-      if (html) {
-        apply({ html, template: { name: 'Worksheet' }, canvas: state.canvas, structure: {}, editableFields: [], fieldPrompts: {} });
-      }
-      try {
-        const res = await apiFetch(`/${encodeURIComponent(id)}/preview?mode=editor`);
-        const preview = await res.json();
-        if (res.ok) apply(preview);
-      } catch (error) {
-        console.warn('Preview fetch error:', error);
-      }
+      apply(item);
     }
 
     function wireFrame() {
@@ -2011,6 +2004,14 @@
       if (/question/i.test(raw) || /question/i.test(cls)) return 'Question';
       if (/option/i.test(raw) || /option/i.test(cls)) return 'Option';
       if (/badge/i.test(raw) || /badge/i.test(cls)) return 'Badge';
+      
+      const match = raw.match(/\[(\d+)\]/);
+      if (match) {
+        const index = parseInt(match[1]) + 1;
+        if (/label/i.test(raw)) return `Item ${index} - Label`;
+        return `Item ${index} - Image`;
+      }
+      
       const visible = (el?.innerText || '').trim();
       if (visible) return visible.slice(0, 48);
       return raw.replace(/[_[\]]+/g, ' ').trim();
@@ -2107,54 +2108,34 @@
       });
     }
 
+    function setStructureValue(obj, path, value) {
+      if (!obj || !path) return;
+      const parts = path.replace(/\]/g, '').split(/[.\[]/).filter(Boolean);
+      let current = obj;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]]) current[parts[i]] = {};
+        current = current[parts[i]];
+      }
+      current[parts[parts.length - 1]] = value;
+    }
+
     async function saveInlineEdits() {
       const doc = els.worksheetFrame.contentDocument;
-      const fields = [];
+      if (!state.preview || !state.preview.structure) return;
+      const structure = state.preview.structure;
+
       doc?.querySelectorAll('[data-editable]').forEach((el) => {
         const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
         if (!path) return;
-        fields.push({ path, value: el.innerText.trim() });
+        setStructureValue(structure, path, el.innerText.trim());
       });
-      const images = [];
+
       for (const [path, item] of Object.entries(state.pendingImageReplacements)) {
-        if (item?.file) {
-          const form = new FormData();
-          form.append('file', item.file);
-          form.append('path', path);
-          const uploaded = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/upload`, {
-            method: 'POST',
-            body: form,
-          });
-          const body = await uploaded.json().catch(() => ({}));
-          if (!uploaded.ok) {
-            throw new Error(friendlyError(body, 'Image upload failed'));
-          }
-          images.push({
-            path,
-            assetId: null,
-            userUploadedKey: body.userUploadedKey,
-          });
-          continue;
+        if (item?.imageUrl) {
+          setStructureValue(structure, path, item.imageUrl);
         }
-        if (item?.userUploadedKey) {
-          images.push({ path, assetId: null, userUploadedKey: item.userUploadedKey });
-          continue;
-        }
-        if (item?.assetId) {
-          images.push({ path, assetId: item.assetId });
-        }
-      }
-      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields, images }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(friendlyError(body, 'Could not save worksheet edits'));
       }
       state.pendingImageReplacements = {};
-      await openPreview(state.worksheetId);
     }
 
     async function download(id, format) {
@@ -2231,17 +2212,18 @@
       if (!state.editMode) {
         state.editMode = true;
         enableInlineEditing(true);
-        els.editBtn.textContent = 'Save';
+        els.editBtn.textContent = 'Save edits to memory';
         toast('Click on text elements or pencil icons to edit');
         return;
       }
       els.editBtn.disabled = true;
-      toast('Saving worksheet…');
+      toast('Saving edits to memory…');
       try {
         await saveInlineEdits();
         state.editMode = false;
+        enableInlineEditing(false);
         els.editBtn.textContent = 'Edit';
-        toast('Worksheet saved');
+        toast('Edits saved locally');
       } catch (error) {
         toast(error.message || 'Could not save worksheet edits');
       } finally {
@@ -2249,6 +2231,53 @@
       }
     });
     els.aiEditBtn.addEventListener('click', () => openAiPanel());
+    els.saveWorksheetBtn.addEventListener('click', async () => {
+      if (!state.preview || !state.preview.structure) return;
+      if (state.editMode) {
+        toast('Saving inline edits first...');
+        await saveInlineEdits();
+        state.editMode = false;
+        enableInlineEditing(false);
+        els.editBtn.textContent = 'Edit';
+      }
+      
+      els.saveWorksheetBtn.disabled = true;
+      toast('<span class="spinner"></span>Saving Worksheet...');
+      
+      try {
+        const auth = new URLSearchParams(window.location.search).get('auth');
+        const payload = {
+          templateId: state.preview.template?.id || state.preview.templateId,
+          structure: state.preview.structure,
+          request: state.preview.request || { topic: els.topicInput.value },
+          auth
+        };
+        
+        const res = await apiFetch(`/render-and-notify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(friendlyError(body, 'Could not save worksheet'));
+        }
+        
+        const origin = window.__PARENT_ORIGIN__ || new URLSearchParams(window.location.search).get('parentOrigin') || '*';
+        const message = {
+          grade: state.ageGroup || null,
+          cards: body.resources || [],
+          query: els.topicInput.value || '',
+        };
+        window.parent.postMessage(message, origin);
+        toast('✓ Worksheet saved & sent to platform');
+      } catch (error) {
+        toast(friendlyError(error, 'Could not save worksheet. Please try again.'), 4200);
+      } finally {
+        els.saveWorksheetBtn.disabled = false;
+      }
+    });
     els.downloadPngBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'png'));
     els.downloadPdfBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'pdf'));
     els.imagePickerCloseBtn.addEventListener('click', closeImagePicker);

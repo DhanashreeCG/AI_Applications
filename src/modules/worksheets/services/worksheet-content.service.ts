@@ -119,7 +119,8 @@ export class WorksheetContentService {
         parsed &&
         typeof parsed === 'object' &&
         Array.isArray((parsed as Record<string, unknown>).items) &&
-        !((parsed as Record<string, unknown>).instruction || (parsed as Record<string, unknown>).title)
+        !((parsed as Record<string, unknown>).instruction || (parsed as Record<string, unknown>).title) &&
+        !((template.structureDefinition as Record<string, any>)?.properties?.items)
       ) {
         rawItems = (parsed as Record<string, unknown>).items as unknown[];
       } else if (parsed && typeof parsed === 'object') {

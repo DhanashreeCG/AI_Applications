@@ -60,6 +60,14 @@ export function buildWorksheetContentPrompt(input: {
     'Educational request:',
     userRequest || 'Generate age-appropriate worksheet content for the selected template.',
     '',
+    ...(input.templateSlug === 'circle_the_things' ? [
+      'For circle_the_things worksheets:',
+      '- items[] must have exactly 6-8 items',
+      '- Each item must have: label (short noun), imageQuery (visual search phrase like "red apple fruit"), is_correct (boolean)',
+      '- imageQuery must be a descriptive phrase, NEVER a filename or path',
+      '- Mix correct and incorrect items (roughly 3-5 correct, 2-3 incorrect)',
+      ''
+    ] : []),
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',

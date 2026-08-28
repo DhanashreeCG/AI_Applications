@@ -137,6 +137,93 @@ export class WorksheetRenderService {
     return { html, canvas };
   }
 
+  public async renderFromPayload(
+    payload: {
+      templateId: string;
+      structure: Record<string, unknown>;
+      request?: Record<string, unknown>;
+    },
+    format: string,
+    options: { correlationId?: string; mode?: string } = {},
+  ): Promise<RenderWorksheetResult> {
+    const value = format?.trim().toLowerCase() as WorksheetRenderFormat;
+    if (!WORKSHEET_RENDER_FORMATS.includes(value)) {
+      throw new WorksheetException(
+        'UNSUPPORTED_FORMAT',
+        `format must be one of ${WORKSHEET_RENDER_FORMATS.join(', ')}`,
+      );
+    }
+    const normalized = value;
+
+    this.logger.log(`renderFromPayload started format=${normalized}`);
+
+    const template = await this.templateService.getById(payload.templateId);
+
+    const rendererConfig = this.templateService.parseRendererConfig(template);
+    const canvas = {
+      width: rendererConfig.width ?? this.defaultWidth,
+      height: rendererConfig.height ?? this.defaultHeight,
+    };
+    const mode = this.resolveMode(options.mode, normalized);
+    const composed = this.composeHtml({
+      template,
+      structure: payload.structure,
+      request: payload.request,
+      mode,
+    });
+    const html = composed.html;
+
+    if (normalized === 'html') {
+      this.logger.log('renderFromPayload completed format=html');
+      return {
+        worksheetId: 'temp',
+        format: normalized,
+        mode,
+        html,
+        canvas,
+      };
+    }
+
+    if (!this.enabled) {
+      throw new WorksheetException(
+        'RENDER_FAILED',
+        'Worksheet renderer is disabled',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    try {
+      const width = canvas.width;
+      const height = canvas.height;
+      let buffer: Buffer;
+      if (normalized === 'pdf') {
+        buffer = await this.renderPdf(html, width, height);
+      } else if (normalized === 'png') {
+        buffer = await this.renderPng(html, width, height);
+      } else {
+        buffer = await this.renderWebp(html, width, height);
+      }
+
+      this.logger.log(`renderFromPayload completed format=${normalized}`);
+      return {
+        worksheetId: 'temp',
+        format: normalized,
+        mode,
+        canvas,
+        buffer,
+      };
+    } catch (error) {
+      if (error instanceof WorksheetException) {
+        throw error;
+      }
+      throw new WorksheetException(
+        'RENDER_FAILED',
+        'Worksheet rendering failed',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
   public async render(
     worksheetId: string,
     format: string,

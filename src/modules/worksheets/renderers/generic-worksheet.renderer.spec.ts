@@ -1,5 +1,6 @@
 import { GenericWorksheetRenderer } from './generic-worksheet.renderer';
 import { WorksheetRendererRegistry } from './worksheet-renderer.registry';
+import { CircleTheThingsRenderer } from './circle-the-things.renderer';
 
 describe('GenericWorksheetRenderer', () => {
   const renderer = new GenericWorksheetRenderer();
@@ -274,12 +275,14 @@ NULL
 
 describe('WorksheetRendererRegistry', () => {
   it('resolves the generic renderer', () => {
-    const registry = new WorksheetRendererRegistry(new GenericWorksheetRenderer());
+    const generic = new GenericWorksheetRenderer();
+    const registry = new WorksheetRendererRegistry(generic, new CircleTheThingsRenderer(generic));
     expect(registry.get('generic').type).toBe('generic');
   });
 
   it('rejects an unknown renderer type', () => {
-    const registry = new WorksheetRendererRegistry(new GenericWorksheetRenderer());
+    const generic = new GenericWorksheetRenderer();
+    const registry = new WorksheetRendererRegistry(generic, new CircleTheThingsRenderer(generic));
     expect(() => registry.get('counting_objects')).toThrow(
       /No trusted renderer registered/,
     );
