@@ -1,1484 +1,1500 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Generate AI Worksheets</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-    <script src="env-config.js"></script>
-    <script src="public-assets.js"></script>
-    <style>
-      :root {
-        --bg: #f3f1fd;
-        --surface: #ffffff;
-        --ink: #2a1b4a;
-        --ink-soft: #4b3b73;
-        --muted: #8b84ab;
-        --line: #e8e4f7;
-        --primary: #6d28d9;
-        --primary-deep: #4c1d95;
-        --magenta: #b4189b;
-        --danger: #e0245e;
-        --ok: #22a06b;
-        --warn: #d98600;
-        --shadow-sm: 0 2px 10px rgba(76, 29, 149, 0.06);
-        --shadow-md: 0 14px 40px rgba(76, 29, 149, 0.1);
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-        background: var(--bg);
-      }
-
-      body {
-        min-height: 100vh;
-        font-family: 'Urbanist', system-ui, -apple-system, 'Segoe UI', sans-serif;
-        color: var(--ink);
-        -webkit-font-smoothing: antialiased;
-      }
-
-      button, input, select, textarea {
-        font-family: inherit;
-      }
-
-      button {
-        font: inherit;
-        cursor: pointer;
-        border: none;
-        background: none;
-        color: inherit;
-      }
-
-      button:disabled {
-        cursor: not-allowed;
-      }
-
-      .main {
-        max-width: 1240px;
-        margin: 0 auto;
-        padding: 26px 26px 40px;
-        display: flex;
-        flex-direction: column;
-        gap: 18px;
-        min-height: 100vh;
-      }
-
-      /* ---------- page head ---------- */
-
-      .page-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 18px;
-        flex-wrap: wrap;
-      }
-
-      .page-head h1 {
-        margin: 0;
-        font-family: 'Toondemy', sans-serif;
-        font-size: 28px;
-        font-weight: 700;
-        color: var(--primary);
-        letter-spacing: 0.2px;
-      }
-
-      .api-field {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 8px 16px;
-        font-size: 13px;
-        color: var(--muted);
-        box-shadow: var(--shadow-sm);
-      }
-
-      .api-field input {
-        border: none;
-        outline: none;
-        background: transparent;
-        font: inherit;
-        color: var(--ink);
-        width: 200px;
-      }
-
-      /* ---------- console panel ---------- */
-
-      .panel {
-        background: var(--surface);
-        border-radius: 20px;
-        padding: 28px;
-        box-shadow: var(--shadow-md);
-      }
-
-      .field-label {
-        display: block;
-        font-size: 16px;
-        font-weight: 700;
-        color: var(--ink);
-        margin-bottom: 10px;
-      }
-
-      .field-label .req {
-        color: var(--danger);
-      }
-
-      .topic-input {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        max-width: 450px;
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        padding: 12px 16px;
-        transition: border-color 0.16s, box-shadow 0.16s;
-      }
-
-      .topic-input:focus-within {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 4px rgba(109, 40, 217, 0.1);
-      }
-
-      .topic-input svg {
-        flex: 0 0 auto;
-        color: var(--muted);
-      }
-
-      .topic-input input {
-        border: none;
-        outline: none;
-        font: inherit;
-        font-size: 15px;
-        width: 100%;
-        color: var(--ink);
-        background: transparent;
-      }
-
-      .topic-input input::placeholder {
-        color: #a9a2c4;
-      }
-
-      .age-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(196px, 216px));
-        gap: 14px;
-        margin: 22px 0 0;
-        max-width: 460px;
-      }
-
-      .age-pill {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 13px 18px;
-        border-radius: 12px;
-        border: 1px solid var(--line);
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--muted);
-        text-align: left;
-        transition: border-color 0.16s, color 0.16s, background 0.16s;
-      }
-
-      .age-pill .radio {
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        border: 1.5px solid #d9d3ee;
-        display: grid;
-        place-items: center;
-        flex: 0 0 auto;
-        color: transparent;
-      }
-
-      .age-pill[aria-checked='true'] {
-        border-color: var(--primary);
-        color: var(--primary);
-        background: #faf7ff;
-      }
-
-      .age-pill[aria-checked='true'] .radio {
-        background: var(--primary);
-        border-color: var(--primary);
-        color: #fff;
-      }
-
-      .extra-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-top: 22px;
-        font-size: 14px;
-        color: var(--muted);
-        font-weight: 600;
-      }
-
-      .extra-row select {
-        font: inherit;
-        color: var(--ink);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 8px 12px;
-        background: #fff;
-        outline: none;
-      }
-
-      .extra-row select#templateSelect {
-        min-width: 260px;
-        max-width: 420px;
-      }
-
-      .actions {
-        display: flex;
-        gap: 16px;
-        flex-wrap: wrap;
-        margin-top: 24px;
-      }
-
-      .btn-outline {
-        min-width: 218px;
-        padding: 14px 26px;
-        border-radius: 12px;
-        border: 1.5px solid var(--primary);
-        color: var(--primary);
-        font-weight: 700;
-        font-size: 16px;
-        background: #fff;
-        transition: background 0.16s;
-      }
-
-      .btn-outline:hover:not(:disabled) {
-        background: #f7f2ff;
-      }
-
-      .btn-primary {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        padding: 14px 28px;
-        border-radius: 12px;
-        font-weight: 700;
-        font-size: 16px;
-        color: #fff;
-        background: linear-gradient(100deg, var(--magenta), var(--primary) 60%, var(--primary-deep));
-        box-shadow: 0 10px 26px rgba(109, 40, 217, 0.28);
-        transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
-      }
-
-      .btn-primary:hover:not(:disabled) {
-        transform: translateY(-1px);
-        box-shadow: 0 14px 30px rgba(109, 40, 217, 0.36);
-      }
-
-      .btn-primary:disabled {
-        opacity: 0.4;
-        box-shadow: none;
-      }
-
-      .btn-soft {
-        padding: 9px 16px;
-        border-radius: 10px;
-        border: 1px solid var(--line);
-        background: #fff;
-        font-size: 13px;
-        font-weight: 700;
-        color: var(--ink-soft);
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-      }
-
-      .btn-soft:hover:not(:disabled) {
-        border-color: #cfc7ea;
-        background: #faf8ff;
-      }
-
-      .btn-soft:disabled {
-        opacity: 0.5;
-      }
-
-      .chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-        margin-top: 20px;
-        font-size: 13px;
-        color: var(--muted);
-      }
-
-      .chip {
-        padding: 7px 14px;
-        border-radius: 999px;
-        background: #f5f2ff;
-        border: 1px solid #eae4fb;
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--ink-soft);
-      }
-
-      .chip:hover {
-        background: #ede6ff;
-      }
-
-      /* ---------- banners ---------- */
-
-      .banner {
-        display: none;
-        gap: 10px;
-        margin-top: 18px;
-        padding: 13px 16px;
-        border-radius: 12px;
-        font-size: 14px;
-        line-height: 1.5;
-      }
-
-      .banner.show {
-        display: flex;
-      }
-
-      .banner.error {
-        background: #fff1f4;
-        border: 1px solid #f8ccd8;
-        color: #a01340;
-        align-items: flex-start;
-      }
-
-      .banner.warn {
-        background: #fff8ec;
-        border: 1px solid #f6e0bb;
-        color: #8a5a06;
-        align-items: flex-start;
-      }
-
-      .banner .banner-title {
-        font-weight: 800;
-        margin-bottom: 2px;
-      }
-
-      .banner .banner-body {
-        font-weight: 600;
-      }
-
-      /* ---------- results ---------- */
-
-      .results {
-        background: var(--surface);
-        border-radius: 20px;
-        padding: 22px 22px 8px;
-        box-shadow: var(--shadow-md);
-        display: flex;
-        flex-direction: column;
-        flex: 1 1 auto;
-      }
-
-      .summary {
-        display: none;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-        flex-wrap: wrap;
-        padding-bottom: 18px;
-        border-bottom: 1px solid var(--line);
-        margin-bottom: 20px;
-      }
-
-      .summary.show {
-        display: flex;
-      }
-
-      .pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      .pill {
-        padding: 6px 13px;
-        border-radius: 999px;
-        background: #f5f2ff;
-        font-size: 12.5px;
-        color: var(--muted);
-        font-weight: 600;
-      }
-
-      .pill b {
-        color: var(--ink);
-      }
-
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-        gap: 26px 22px;
-        align-items: start;
-      }
-
-      .tile {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        min-width: 0;
-        position: relative;
-        z-index: 0;
-      }
-
-      .tile-card {
-        background: #fff;
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        overflow: hidden;
-        box-shadow: var(--shadow-sm);
-        cursor: pointer;
-        transition: transform 0.16s, box-shadow 0.16s;
-      }
-
-      .tile-card:hover {
-        transform: translateY(-3px);
-        box-shadow: var(--shadow-md);
-      }
-
-      .thumb-frame {
-        width: 100%;
-        height: 190px;
-        overflow: hidden;
-        background: #f8f6fc;
-        pointer-events: none;
-      }
-
-      .thumb-frame iframe {
-        border: 0;
-        transform-origin: top left;
-        pointer-events: none;
-      }
-
-      .tile-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 10px;
-        align-items: center;
-        padding-left: 2px;
-        width: 100%;
-        box-sizing: border-box;
-      }
-
-      .icon-btn {
-        width: 32px;
-        height: 32px;
-        display: grid;
-        place-items: center;
-        border-radius: 8px;
-        color: var(--muted);
-        transition: color 0.16s, background 0.16s;
-        border: none;
-        background: none;
-      }
-
-      .icon-btn:hover:not(:disabled) {
-        background: #f5f2ff;
-        color: var(--primary);
-      }
-
-      .icon-btn.fav {
-        color: #f0aec2;
-      }
-
-      .icon-btn.fav[aria-pressed='true'],
-      .icon-btn.fav.loved {
-        color: var(--danger);
-      }
-
-      /* ---------- skeleton ---------- */
-
-      .skeleton {
-        aspect-ratio: 1016 / 1316;
-        border-radius: 14px;
-        background: linear-gradient(100deg, #f1eefb 30%, #e6e0f7 50%, #f1eefb 70%);
-        background-size: 220% 100%;
-        animation: shimmer 1.2s infinite linear;
-      }
-
-      @keyframes shimmer {
-        from {
-          background-position: 160% 0;
-        }
-        to {
-          background-position: -60% 0;
-        }
-      }
-
-      .empty {
-        text-align: center;
-        padding: 70px 20px;
-        color: var(--muted);
-      }
-
-      .empty h2 {
-        font-family: 'Toondemy', sans-serif;
-        margin: 0 0 6px;
-        font-size: 22px;
-        color: var(--ink);
-      }
-
-      .empty p {
-        margin: 0;
-        font-size: 14px;
-      }
-
-      /* ---------- footer / pagination ---------- */
-
-      .table-foot {
-        margin-top: auto;
-        padding: 16px 2px 14px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        flex-wrap: wrap;
-        font-size: 14px;
-        color: var(--muted);
-      }
-
-      .rows-per-page {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-      }
-
-      .rows-per-page button {
-        font-weight: 700;
-        color: var(--muted);
-      }
-
-      .rows-per-page button[aria-current='true'] {
-        color: var(--primary);
-      }
-
-      .pager {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .pager .page-num {
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        display: grid;
-        place-items: center;
-        font-weight: 700;
-        font-size: 13px;
-        color: var(--ink-soft);
-      }
-
-      .pager .page-num[aria-current='true'] {
-        background: var(--primary);
-        color: #fff;
-      }
-
-      .pager .arrow {
-        color: var(--ink-soft);
-        display: grid;
-        place-items: center;
-      }
-
-      .pager button:disabled {
-        opacity: 0.35;
-      }
-
-      /* ---------- preview pane & frame ---------- */
-
-      .preview-wrap {
-        background: var(--surface);
-        border-radius: 20px;
-        padding: 24px;
-        box-shadow: var(--shadow-md);
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-      }
-
-      .preview-toolbar {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-
-      .frame-shell {
-        overflow: auto;
-        background: #efeaf6;
-        border-radius: 14px;
-        padding: 16px;
-        min-height: 480px;
-        max-height: 82vh;
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        box-sizing: border-box;
-      }
-
-      .frame-container {
-        position: relative;
-        transform-origin: top center;
-        transition: transform 0.15s ease-out;
-        display: flex;
-        justify-content: center;
-      }
-
-      iframe.worksheet-frame {
-        border: 1.5px solid var(--line);
-        background: #fff;
-        display: block;
-        width: 1016px;
-        height: 1316px;
-        border-radius: 8px;
-        box-shadow: var(--shadow-sm);
-      }
-
-      /* ---------- modals ---------- */
-
-      .modal {
-        position: fixed;
-        inset: 0;
-        z-index: 60;
-        display: none;
-        padding: 30px;
-        overflow: auto;
-        background: rgba(42, 27, 74, 0.55);
-        backdrop-filter: blur(6px);
-      }
-
-      .modal.show {
-        display: grid;
-        place-items: center;
-      }
-
-      .modal-card {
-        background: #fff;
-        border-radius: 20px;
-        padding: 24px;
-        box-shadow: var(--shadow-md);
-        width: min(720px, 92vw);
-        max-height: 86vh;
-        overflow: auto;
-      }
-
-      .modal-card.ai-panel {
-        width: min(760px, 94vw);
-        max-height: 90vh;
-        display: flex;
-        flex-direction: column;
-      }
-
-      .modal-x {
-        width: 36px;
-        height: 36px;
-        font-size: 22px;
-        color: var(--muted);
-      }
-
-      .ai-panel-body {
-        overflow: auto;
-        padding-right: 4px;
-      }
-
-      .ai-field-card {
-        border: 1.5px solid var(--line);
-        border-radius: 12px;
-        padding: 14px;
-        margin-bottom: 12px;
-        background: #fbf8ff;
-      }
-
-      .ai-field-card h3 {
-        margin: 0 0 8px;
-        font-size: 15px;
-        color: var(--primary);
-      }
-
-      .ai-field-card .row {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 8px;
-      }
-
-      .ai-thumb {
-        width: 72px;
-        height: 72px;
-        object-fit: cover;
-        border-radius: 8px;
-        background: #efe6f8;
-      }
-
-      .regen-box {
-        border: 1.5px dashed #d8cce8;
-        border-radius: 12px;
-        padding: 16px;
-        margin-top: 10px;
-        background: #faf7ff;
-      }
-
-      textarea, .modal input {
-        width: 100%;
-        border: 1.5px solid var(--line);
-        border-radius: 10px;
-        padding: 10px 12px;
-        font: inherit;
-        outline: none;
-      }
-
-      textarea:focus, .modal input:focus {
-        border-color: var(--primary);
-      }
-
-      /* ---------- image picker (Select Image) ---------- */
-
-      .picker-modal {
-        position: fixed;
-        inset: 0;
-        z-index: 80;
-        display: none;
-        place-items: center;
-        padding: 24px;
-        background: rgba(42, 27, 74, 0.48);
-        backdrop-filter: blur(5px);
-      }
-
-      .picker-modal.show {
-        display: grid;
-      }
-
-      .image-picker {
-        width: min(980px, 94vw);
-        max-height: 90vh;
-        overflow: auto;
-        background: #fff;
-        border-radius: 20px;
-        padding: 22px 24px 18px;
-        display: flex;
-        flex-direction: column;
-        box-shadow: var(--shadow-md);
-      }
-
-      .image-picker-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-      }
-
-      .image-picker-head h2 {
-        margin: 0;
-        font-family: 'Urbanist', sans-serif;
-        font-size: 28px;
-        color: var(--ink);
-      }
-
-      .image-picker-tabs {
-        display: flex;
-        gap: 28px;
-        margin: 10px 0 16px;
-        border-bottom: 1px solid var(--line);
-      }
-
-      .image-tab {
-        padding: 10px 0 12px;
-        font-weight: 800;
-        color: var(--muted);
-      }
-
-      .image-tab.active {
-        color: var(--ink);
-        box-shadow: inset 0 -3px 0 var(--magenta);
-      }
-
-      .image-search-row {
-        display: flex;
-        gap: 10px;
-        align-items: stretch;
-      }
-
-      .image-search-row input {
-        flex: 1;
-        margin: 0;
-        border: 1.5px solid var(--line);
-        border-radius: 12px;
-        padding: 12px 14px 12px 40px;
-        font: inherit;
-        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' stroke='%238b84ab' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3-3'/%3E%3C/svg%3E") 12px center no-repeat;
-      }
-
-      .btn-search {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        color: #fff;
-        background: linear-gradient(100deg, var(--magenta), var(--primary) 60%, var(--primary-deep));
-        box-shadow: 0 10px 26px rgba(109, 40, 217, 0.28);
-        transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
-        white-space: nowrap;
-        border-radius: 10px;
-        padding: 11px 18px;
-        font-weight: 800;
-      }
-
-      .image-results-meta {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        margin: 16px 0 10px;
-        font-weight: 800;
-      }
-
-      .image-results-meta span {
-        color: var(--muted);
-        font-weight: 700;
-        font-size: 13px;
-      }
 
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Generate AI Worksheets</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="env-config.js"></script>
+  <script src="public-assets.js"></script>
+  <style>
+    :root {
+      --bg: #f3f1fd;
+      --surface: #ffffff;
+      --ink: #2a1b4a;
+      --ink-soft: #4b3b73;
+      --muted: #8b84ab;
+      --line: #e8e4f7;
+      --primary: #6d28d9;
+      --primary-deep: #4c1d95;
+      --magenta: #b4189b;
+      --danger: #e0245e;
+      --ok: #22a06b;
+      --warn: #d98600;
+      --shadow-sm: 0 2px 10px rgba(76, 29, 149, 0.06);
+      --shadow-md: 0 14px 40px rgba(76, 29, 149, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: #F3F4FF;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: 'Urbanist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font-family: inherit;
+    }
+
+    button {
+      font: inherit;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: inherit;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+    }
+
+    .main {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 26px 26px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      min-height: 100vh;
+    }
+
+    /* ---------- page head ---------- */
+
+    .page-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .page-head h1 {
+      margin: 0;
+      font-family: 'Toondemy', sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: 0.2px;
+    }
+
+    .api-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-size: 13px;
+      color: var(--muted);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .api-field input {
+      border: none;
+      outline: none;
+      background: transparent;
+      font: inherit;
+      color: var(--ink);
+      width: 200px;
+    }
+
+    /* ---------- console panel ---------- */
+
+    .panel {
+      background: var(--surface);
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .field-label {
+      display: block;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 10px;
+    }
+
+    .field-label .req {
+      color: var(--danger);
+    }
+
+    .topic-input {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: 450px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 16px;
+      transition: border-color 0.16s, box-shadow 0.16s;
+    }
+
+    .topic-input:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(109, 40, 217, 0.1);
+    }
+
+    .topic-input svg {
+      flex: 0 0 auto;
+      color: var(--muted);
+    }
+
+    .topic-input input {
+      border: none;
+      outline: none;
+      font: inherit;
+      font-size: 15px;
+      width: 100%;
+      color: var(--ink);
+      background: transparent;
+    }
+
+    .topic-input input::placeholder {
+      color: #a9a2c4;
+    }
+
+    .age-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(196px, 216px));
+      gap: 14px;
+      margin: 22px 0 0;
+      max-width: 460px;
+    }
+
+    .age-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 13px 18px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--muted);
+      text-align: left;
+      transition: border-color 0.16s, color 0.16s, background 0.16s;
+    }
+
+    .age-pill .radio {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 1.5px solid #d9d3ee;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      color: transparent;
+    }
+
+    .age-pill[aria-checked='true'] {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: #faf7ff;
+    }
+
+    .age-pill[aria-checked='true'] .radio {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .extra-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 22px;
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .extra-row select {
+      font: inherit;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 12px;
+      background: #fff;
+      outline: none;
+    }
+
+    .extra-row select#templateSelect {
+      min-width: 260px;
+      max-width: 420px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 24px;
+    }
+
+    .btn-outline {
+      min-width: 218px;
+      padding: 14px 26px;
+      border-radius: 12px;
+      border: 1.5px solid var(--primary);
+      color: var(--primary);
+      font-weight: 700;
+      font-size: 16px;
+      background: #fff;
+      transition: background 0.16s;
+    }
+
+    .btn-outline:hover:not(:disabled) {
+      background: #f7f2ff;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 28px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 16px;
+      color: #fff;
+      background: linear-gradient(100deg, var(--magenta), var(--primary) 60%, var(--primary-deep));
+      box-shadow: 0 10px 26px rgba(109, 40, 217, 0.28);
+      transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(109, 40, 217, 0.36);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.4;
+      box-shadow: none;
+    }
+
+    .btn-soft {
+      padding: 9px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink-soft);
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .btn-soft:hover:not(:disabled) {
+      border-color: #cfc7ea;
+      background: #faf8ff;
+    }
+
+    .btn-soft:disabled {
+      opacity: 0.5;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 20px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .chip {
+      padding: 7px 14px;
+      border-radius: 999px;
+      background: #f5f2ff;
+      border: 1px solid #eae4fb;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink-soft);
+    }
+
+    .chip:hover {
+      background: #ede6ff;
+    }
+
+    /* ---------- banners ---------- */
+
+    .banner {
+      display: none;
+      gap: 10px;
+      margin-top: 18px;
+      padding: 13px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .banner.show {
+      display: flex;
+    }
+
+    .banner.error {
+      background: #fff1f4;
+      border: 1px solid #f8ccd8;
+      color: #a01340;
+      align-items: flex-start;
+    }
+
+    .banner.warn {
+      background: #fff8ec;
+      border: 1px solid #f6e0bb;
+      color: #8a5a06;
+      align-items: flex-start;
+    }
+
+    .banner .banner-title {
+      font-weight: 800;
+      margin-bottom: 2px;
+    }
+
+    .banner .banner-body {
+      font-weight: 600;
+    }
+
+    /* ---------- results ---------- */
+
+    .results {
+      background: var(--surface);
+      border-radius: 20px;
+      padding: 22px 22px 8px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+    }
+
+    .summary {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 20px;
+    }
+
+    .summary.show {
+      display: flex;
+    }
+
+    .pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pill {
+      padding: 6px 13px;
+      border-radius: 999px;
+      background: #f5f2ff;
+      font-size: 12.5px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .pill b {
+      color: var(--ink);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 26px 22px;
+      align-items: start;
+    }
+
+    .tile {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+      position: relative;
+      z-index: 0;
+    }
+
+    .tile-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      transition: transform 0.16s, box-shadow 0.16s;
+    }
+
+    .tile-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .thumb-frame {
+      width: 100%;
+      height: 190px;
+      overflow: hidden;
+      background: #f8f6fc;
+      pointer-events: none;
+    }
+
+    .thumb-frame iframe {
+      border: 0;
+      transform-origin: top left;
+      pointer-events: none;
+    }
+
+    .tile-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+      align-items: center;
+      padding-left: 2px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: var(--muted);
+      transition: color 0.16s, background 0.16s;
+      border: none;
+      background: none;
+    }
+
+    .icon-btn:hover:not(:disabled) {
+      background: #f5f2ff;
+      color: var(--primary);
+    }
+
+    .icon-btn.fav {
+      color: #f0aec2;
+    }
+
+    .icon-btn.fav[aria-pressed='true'],
+    .icon-btn.fav.loved {
+      color: var(--danger);
+    }
+
+    /* ---------- skeleton ---------- */
+
+    .skeleton {
+      aspect-ratio: 1016 / 1316;
+      border-radius: 14px;
+      background: linear-gradient(100deg, #f1eefb 30%, #e6e0f7 50%, #f1eefb 70%);
+      background-size: 220% 100%;
+      animation: shimmer 1.2s infinite linear;
+    }
+
+    @keyframes shimmer {
+      from {
+        background-position: 160% 0;
+      }
+
+      to {
+        background-position: -60% 0;
+      }
+    }
+
+    .empty {
+      text-align: center;
+      padding: 70px 20px;
+      color: var(--muted);
+    }
+
+    .empty h2 {
+      font-family: 'Toondemy', sans-serif;
+      margin: 0 0 6px;
+      font-size: 22px;
+      color: var(--ink);
+    }
+
+    .empty p {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    /* ---------- footer / pagination ---------- */
+
+    .table-foot {
+      margin-top: auto;
+      padding: 16px 2px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .rows-per-page {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .rows-per-page button {
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .rows-per-page button[aria-current='true'] {
+      color: var(--primary);
+    }
+
+    .pager {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .pager .page-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--ink-soft);
+    }
+
+    .pager .page-num[aria-current='true'] {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .pager .arrow {
+      color: var(--ink-soft);
+      display: grid;
+      place-items: center;
+    }
+
+    .pager button:disabled {
+      opacity: 0.35;
+    }
+
+    /* ---------- preview pane & frame ---------- */
+
+    .preview-wrap {
+      background: var(--surface);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .preview-toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .frame-shell {
+      overflow: auto;
+      background: #efeaf6;
+      border-radius: 14px;
+      padding: 16px;
+      min-height: 480px;
+      max-height: 82vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      box-sizing: border-box;
+    }
+
+    .frame-container {
+      position: relative;
+      transform-origin: top center;
+      transition: transform 0.15s ease-out;
+      display: flex;
+      justify-content: center;
+    }
+
+    iframe.worksheet-frame {
+      border: 1.5px solid var(--line);
+      background: #fff;
+      display: block;
+      width: 1016px;
+      height: 1316px;
+      border-radius: 8px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* ---------- modals ---------- */
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: none;
+      padding: 30px;
+      overflow: auto;
+      background: rgba(42, 27, 74, 0.55);
+      backdrop-filter: blur(6px);
+    }
+
+    .modal.show {
+      display: grid;
+      place-items: center;
+    }
+
+    .modal-card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: var(--shadow-md);
+      width: min(720px, 92vw);
+      max-height: 86vh;
+      overflow: auto;
+    }
+
+    .modal-card.ai-panel {
+      width: min(760px, 94vw);
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-x {
+      width: 36px;
+      height: 36px;
+      font-size: 22px;
+      color: var(--muted);
+    }
+
+    .ai-panel-body {
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .ai-field-card {
+      border: 1.5px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+      background: #fbf8ff;
+    }
+
+    .ai-field-card h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+      color: var(--primary);
+    }
+
+    .ai-field-card .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .ai-thumb {
+      width: 72px;
+      height: 72px;
+      object-fit: cover;
+      border-radius: 8px;
+      background: #efe6f8;
+    }
+
+    .regen-box {
+      border: 1.5px dashed #d8cce8;
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 10px;
+      background: #faf7ff;
+    }
+
+    textarea,
+    .modal input {
+      width: 100%;
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+      outline: none;
+    }
+
+    textarea:focus,
+    .modal input:focus {
+      border-color: var(--primary);
+    }
+
+    /* ---------- image picker (Select Image) ---------- */
+
+    .picker-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      background: rgba(42, 27, 74, 0.48);
+      backdrop-filter: blur(5px);
+    }
+
+    .picker-modal.show {
+      display: grid;
+    }
+
+    .image-picker {
+      width: min(980px, 94vw);
+      max-height: 90vh;
+      overflow: auto;
+      background: #fff;
+      border-radius: 20px;
+      padding: 22px 24px 18px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-md);
+    }
+
+    .image-picker-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .image-picker-head h2 {
+      margin: 0;
+      font-family: 'Urbanist', sans-serif;
+      font-size: 28px;
+      color: var(--ink);
+    }
+
+    .image-picker-tabs {
+      display: flex;
+      gap: 28px;
+      margin: 10px 0 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .image-tab {
+      padding: 10px 0 12px;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .image-tab.active {
+      color: var(--ink);
+      box-shadow: inset 0 -3px 0 var(--magenta);
+    }
+
+    .image-search-row {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .image-search-row input {
+      flex: 1;
+      margin: 0;
+      border: 1.5px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px 12px 40px;
+      font: inherit;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' stroke='%238b84ab' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3-3'/%3E%3C/svg%3E") 12px center no-repeat;
+    }
+
+    .btn-search {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #fff;
+      background: linear-gradient(100deg, var(--magenta), var(--primary) 60%, var(--primary-deep));
+      box-shadow: 0 10px 26px rgba(109, 40, 217, 0.28);
+      transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+      white-space: nowrap;
+      border-radius: 10px;
+      padding: 11px 18px;
+      font-weight: 800;
+    }
+
+    .image-results-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin: 16px 0 10px;
+      font-weight: 800;
+    }
+
+    .image-results-meta span {
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      min-height: 220px;
+    }
+
+    @media (max-width: 900px) {
       .image-grid {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 12px;
-        min-height: 220px;
+        grid-template-columns: repeat(3, 1fr);
       }
+    }
 
-      @media (max-width: 900px) {
-        .image-grid {
-          grid-template-columns: repeat(3, 1fr);
-        }
-      }
+    .image-tile {
+      position: relative;
+      border: 2px solid transparent;
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      background: #f5f2ff;
+      aspect-ratio: 1;
+      padding: 0;
+    }
 
-      .image-tile {
-        position: relative;
-        border: 2px solid transparent;
-        border-radius: 12px;
-        overflow: hidden;
-        cursor: pointer;
-        background: #f5f2ff;
-        aspect-ratio: 1;
-        padding: 0;
-      }
+    .image-tile img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      pointer-events: none;
+    }
 
-      .image-tile img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-        pointer-events: none;
-      }
+    .image-tile .pick {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      background: rgba(255, 255, 255, 0.35);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+    }
 
-      .image-tile .pick {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        border: 2px solid #fff;
-        background: rgba(255, 255, 255, 0.35);
-        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
-      }
+    .image-tile.selected {
+      border-color: var(--magenta);
+    }
 
-      .image-tile.selected {
-        border-color: var(--magenta);
-      }
+    .image-tile.selected .pick {
+      background: var(--magenta);
+      border-color: #fff;
+    }
 
-      .image-tile.selected .pick {
-        background: var(--magenta);
-        border-color: #fff;
-      }
+    .upload-pane {
+      border: 1.5px dashed #d9d3ee;
+      border-radius: 14px;
+      padding: 36px 20px;
+      text-align: center;
+      color: var(--muted);
+      font-weight: 700;
+    }
 
-      .upload-pane {
-        border: 1.5px dashed #d9d3ee;
-        border-radius: 14px;
-        padding: 36px 20px;
-        text-align: center;
-        color: var(--muted);
-        font-weight: 700;
-      }
+    .upload-preview {
+      display: block;
+      width: min(280px, 100%);
+      max-height: 220px;
+      object-fit: contain;
+      margin: 16px auto 0;
+      border-radius: 12px;
+      background: #f5f2ff;
+    }
 
-      .upload-preview {
-        display: block;
-        width: min(280px, 100%);
-        max-height: 220px;
-        object-fit: contain;
-        margin: 16px auto 0;
-        border-radius: 12px;
-        background: #f5f2ff;
-      }
+    .image-picker-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-top: 18px;
+      flex-wrap: wrap;
+    }
 
-      .image-picker-foot {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 16px;
-        margin-top: 18px;
-        flex-wrap: wrap;
-      }
+    .image-tip {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
 
-      .image-tip {
-        color: var(--muted);
-        font-size: 13px;
-        font-weight: 700;
-      }
+    .image-picker-actions {
+      display: flex;
+      gap: 10px;
+    }
 
-      .image-picker-actions {
-        display: flex;
-        gap: 10px;
-      }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translate(-50%, 14px);
+      padding: 10px 18px;
+      border-radius: 999px;
+      background: #2a1b4a;
+      color: #fff;
+      font-size: 13.5px;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 90;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
 
-      .toast {
-        position: fixed;
-        bottom: 24px;
-        left: 50%;
-        transform: translate(-50%, 14px);
-        padding: 10px 18px;
-        border-radius: 999px;
-        background: #2a1b4a;
-        color: #fff;
-        font-size: 13.5px;
-        font-weight: 700;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s, transform 0.2s;
-        z-index: 90;
-        display: flex;
-        align-items: center;
-        gap: 9px;
-      }
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
 
-      .toast.show {
-        opacity: 1;
-        transform: translate(-50%, 0);
-      }
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
 
-      .hidden {
-        display: none !important;
-      }
-    </style>
-  </head>
-  <body>
-    <main class="main">
-      <header class="page-head">
-        <h1>AI Worksheets</h1>
-        <div class="api-field">
-          <label for="apiBase">API</label>
-          <input id="apiBase" placeholder="http://localhost:3000" />
-        </div>
-      </header>
+<body>
+  <main class="main">
+    <header class="page-head">
+      <h1>AI Worksheets</h1>
+      <div class="api-field">
+        <label for="apiBase">API</label>
+        <input id="apiBase" placeholder="http://localhost:3000" />
+      </div>
+    </header>
 
-      <section class="panel" id="formSection">
-        <label class="field-label" for="topicInput">Today&rsquo;s learning topic</label>
-        <div class="topic-input">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    <section class="panel" id="formSection">
+      <label class="field-label" for="topicInput">Today&rsquo;s learning topic</label>
+      <div class="topic-input">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+        <input id="topicInput" placeholder="e.g My body Parts, Healthy Food, Animals" value="Vegetables" />
+      </div>
+
+      <label class="field-label" style="margin-top: 24px" id="ageLabel">
+        Select age group<span class="req">*</span>
+      </label>
+      <div class="age-grid" role="radiogroup" aria-labelledby="ageLabel" id="ageGroup"></div>
+
+      <div class="extra-row">
+        <label for="templateSelect">Template</label>
+        <select id="templateSelect">
+          <option value="">Auto — no template selected</option>
+        </select>
+      </div>
+
+      <div class="extra-row">
+        <label for="countSelect">Number of worksheets</label>
+        <select id="countSelect">
+          <option value="1" selected>1</option>
+          <option value="3">3</option>
+          <option value="5">5</option>
+          <option value="8">8</option>
+          <option value="10">10</option>
+        </select>
+      </div>
+
+      <div class="actions">
+        <button class="btn-outline" id="cancelBtn" type="button">Cancel</button>
+        <button class="btn-primary" id="generateBtn" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 4V2m0 20v-2M8 9l-6 6 3 3 6-6M13.5 6.5 17 3l4 4-3.5 3.5M19 15h2M4 5h2" />
           </svg>
-          <input id="topicInput" placeholder="e.g My body Parts, Healthy Food, Animals" value="Vegetables" />
-        </div>
+          Generate Worksheets
+        </button>
+      </div>
 
-        <label class="field-label" style="margin-top: 24px" id="ageLabel">
-          Select age group<span class="req">*</span>
-        </label>
-        <div class="age-grid" role="radiogroup" aria-labelledby="ageLabel" id="ageGroup"></div>
+      <div class="chips">
+        <span>Try:</span>
+        <button class="chip" data-q="Vegetables" data-a="3-4" type="button">Vegetables</button>
+        <button class="chip" data-q="Animals" data-a="2-3" type="button">Animals</button>
+        <button class="chip" data-q="Letters and phonics" data-a="3-4" type="button">Letters</button>
+        <button class="chip" data-q="Numbers and counting" data-a="4-5" type="button">Numbers</button>
+        <button class="chip" data-q="Shapes and colors" data-a="4-5" type="button">Shapes</button>
+      </div>
 
-        <div class="extra-row">
-          <label for="templateSelect">Template</label>
-          <select id="templateSelect">
-            <option value="">Auto — no template selected</option>
-          </select>
-        </div>
+      <div class="banner error" id="errorBanner"></div>
+      <div class="banner warn" id="warnBanner"></div>
+    </section>
 
-        <div class="extra-row">
-          <label for="countSelect">Number of worksheets</label>
-          <select id="countSelect">
-            <option value="1" selected>1</option>
-            <option value="3">3</option>
-            <option value="5">5</option>
-            <option value="8">8</option>
-            <option value="10">10</option>
-          </select>
-        </div>
+    <section class="results" id="gridSection">
+      <div class="summary" id="summary">
+        <div class="pills" id="metaPills"></div>
+      </div>
 
-        <div class="actions">
-          <button class="btn-outline" id="cancelBtn" type="button">Cancel</button>
-          <button class="btn-primary" id="generateBtn" type="button">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M15 4V2m0 20v-2M8 9l-6 6 3 3 6-6M13.5 6.5 17 3l4 4-3.5 3.5M19 15h2M4 5h2" />
-            </svg>
-            Generate Worksheets
-          </button>
-        </div>
+      <div class="grid" id="worksheetGrid"></div>
 
-        <div class="chips">
-          <span>Try:</span>
-          <button class="chip" data-q="Vegetables" data-a="3-4" type="button">Vegetables</button>
-          <button class="chip" data-q="Animals" data-a="2-3" type="button">Animals</button>
-          <button class="chip" data-q="Letters and phonics" data-a="3-4" type="button">Letters</button>
-          <button class="chip" data-q="Numbers and counting" data-a="4-5" type="button">Numbers</button>
-          <button class="chip" data-q="Shapes and colors" data-a="4-5" type="button">Shapes</button>
-        </div>
+      <div class="empty" id="empty">
+        <h2>No worksheets yet</h2>
+        <p>Add a learning topic, pick an age group, then generate.</p>
+      </div>
 
-        <div class="banner error" id="errorBanner"></div>
-        <div class="banner warn" id="warnBanner"></div>
-      </section>
+      <div class="table-foot">
+        <div class="rows-per-page" id="rowsPerPage">
+          <span>Row per page:</span>
+          <button aria-current="true" data-size="10" type="button">10</button>
+          <button data-size="20" type="button">20</button>
+          <button data-size="50" type="button">50</button>
+        </div>
+        <div class="pager" id="pager"></div>
+      </div>
+    </section>
 
-      <section class="results" id="gridSection">
-        <div class="summary" id="summary">
-          <div class="pills" id="metaPills"></div>
+    <section id="previewSection" class="preview-wrap hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <button class="btn-soft" id="backBtn" type="button">← Back to worksheets</button>
+        <h2 id="worksheetTitle" style="margin:0; font-family:'Toondemy',sans-serif; color:var(--primary);"></h2>
+      </div>
+      <div class="preview-toolbar">
+        <button class="btn-soft" id="editBtn" type="button">Edit</button>
+        <button class="btn-primary" id="aiEditBtn" type="button" style="padding:9px 18px; font-size:14px;">✦ AI
+          Edit</button>
+        <button class="btn-soft" id="downloadPngBtn" type="button">⬇ PNG</button>
+        <button class="btn-soft" id="downloadPdfBtn" type="button">⬇ PDF</button>
+      </div>
+      <div class="frame-shell" id="frameShell">
+        <div class="frame-container" id="frameContainer">
+          <iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe>
         </div>
+      </div>
+    </section>
+  </main>
 
-        <div class="grid" id="worksheetGrid"></div>
+  <div id="imagePickerModal" class="picker-modal" role="dialog" aria-modal="true" aria-label="Select Image">
+    <div class="image-picker">
+      <div class="image-picker-head">
+        <h2>Select Image</h2>
+        <button class="modal-x" id="imagePickerCloseBtn" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="image-picker-tabs">
+        <button class="image-tab active" id="searchTabBtn" type="button" data-tab="search">Search Images</button>
+        <button class="image-tab" id="uploadTabBtn" type="button" data-tab="upload">Upload From Computer</button>
+      </div>
+      <div id="searchPane">
+        <div class="image-search-row">
+          <input id="imageQuery" placeholder='Search for images (e.g., "airplane", "happy child", "red apple")' />
+          <button class="btn-search" id="searchImagesBtn" type="button">🔍 Search</button>
+        </div>
+        <div class="image-results-meta">
+          <strong>Search Results</strong>
+          <span id="imageResultsCount">No search yet</span>
+        </div>
+        <div class="image-grid" id="imageBank"></div>
+      </div>
+      <div id="uploadPane" class="hidden">
+        <div class="upload-pane">
+          <p>Choose a JPEG, PNG, WebP, or GIF. It is stored and used for this image slot.</p>
+          <input id="imageUploadInput" type="file" accept="image/*" />
+          <img id="uploadPreview" class="upload-preview hidden" alt="Selected upload preview" />
+        </div>
+      </div>
+      <div class="image-picker-foot">
+        <div class="image-tip">Can't find what you're looking for? Try different keywords or upload your own image.
+        </div>
+        <div class="image-picker-actions">
+          <button class="btn-soft" id="imagePickerCancelBtn" type="button">Cancel</button>
+          <button class="btn-search" id="selectImageBtn" type="button">Select Image</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        <div class="empty" id="empty">
-          <h2>No worksheets yet</h2>
-          <p>Add a learning topic, pick an age group, then generate.</p>
-        </div>
+  <div id="singleFieldModal" class="modal">
+    <div class="modal-card">
+      <div class="image-picker-head">
+        <h2 id="singleFieldTitle">Edit text</h2>
+        <button class="modal-x" id="singleFieldCloseBtn" type="button" aria-label="Close">×</button>
+      </div>
+      <label class="field-label" style="margin-top:14px;">Current text</label>
+      <textarea id="singleFieldCurrent" rows="4"></textarea>
+      <label class="field-label" style="margin-top:14px;">AI prompt (optional)</label>
+      <textarea id="singleFieldPrompt" rows="2" placeholder="Rewrite this for the same age group…"></textarea>
+      <p id="singleFieldError" class="banner error" style="display:none;"></p>
+      <div class="actions" style="margin-top:16px;">
+        <button class="btn-soft" id="singleFieldCancelBtn" type="button">Cancel</button>
+        <button class="btn-primary" id="singleFieldRewriteBtn" type="button"
+          style="padding:10px 18px; font-size:14px;">✦ AI rewrite</button>
+        <button class="btn-search" id="singleFieldSaveBtn" type="button">Apply</button>
+      </div>
+    </div>
+  </div>
 
-        <div class="table-foot">
-          <div class="rows-per-page" id="rowsPerPage">
-            <span>Row per page:</span>
-            <button aria-current="true" data-size="10" type="button">10</button>
-            <button data-size="20" type="button">20</button>
-            <button data-size="50" type="button">50</button>
-          </div>
-          <div class="pager" id="pager"></div>
-        </div>
-      </section>
-
-      <section id="previewSection" class="preview-wrap hidden">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <button class="btn-soft" id="backBtn" type="button">← Back to worksheets</button>
-          <h2 id="worksheetTitle" style="margin:0; font-family:'Toondemy',sans-serif; color:var(--primary);"></h2>
-        </div>
-        <div class="preview-toolbar">
-          <button class="btn-soft" id="editBtn" type="button">Edit</button>
-          <button class="btn-primary" id="aiEditBtn" type="button" style="padding:9px 18px; font-size:14px;">✦ AI Edit</button>
-          <button class="btn-soft" id="downloadPngBtn" type="button">⬇ PNG</button>
-          <button class="btn-soft" id="downloadPdfBtn" type="button">⬇ PDF</button>
-        </div>
-        <div class="frame-shell" id="frameShell">
-          <div class="frame-container" id="frameContainer">
-            <iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <div id="imagePickerModal" class="picker-modal" role="dialog" aria-modal="true" aria-label="Select Image">
-      <div class="image-picker">
-        <div class="image-picker-head">
-          <h2>Select Image</h2>
-          <button class="modal-x" id="imagePickerCloseBtn" type="button" aria-label="Close">×</button>
-        </div>
-        <div class="image-picker-tabs">
-          <button class="image-tab active" id="searchTabBtn" type="button" data-tab="search">Search Images</button>
-          <button class="image-tab" id="uploadTabBtn" type="button" data-tab="upload">Upload From Computer</button>
-        </div>
-        <div id="searchPane">
-          <div class="image-search-row">
-            <input id="imageQuery" placeholder='Search for images (e.g., "airplane", "happy child", "red apple")' />
-            <button class="btn-search" id="searchImagesBtn" type="button">🔍 Search</button>
-          </div>
-          <div class="image-results-meta">
-            <strong>Search Results</strong>
-            <span id="imageResultsCount">No search yet</span>
-          </div>
-          <div class="image-grid" id="imageBank"></div>
-        </div>
-        <div id="uploadPane" class="hidden">
-          <div class="upload-pane">
-            <p>Choose a JPEG, PNG, WebP, or GIF. It is stored and used for this image slot.</p>
-            <input id="imageUploadInput" type="file" accept="image/*" />
-            <img id="uploadPreview" class="upload-preview hidden" alt="Selected upload preview" />
-          </div>
-        </div>
-        <div class="image-picker-foot">
-          <div class="image-tip">Can't find what you're looking for? Try different keywords or upload your own image.</div>
-          <div class="image-picker-actions">
-            <button class="btn-soft" id="imagePickerCancelBtn" type="button">Cancel</button>
-            <button class="btn-search" id="selectImageBtn" type="button">Select Image</button>
+  <div id="fieldEditModal" class="modal">
+    <div class="modal-card ai-panel">
+      <div class="image-picker-head">
+        <h2>AI Edit</h2>
+        <button class="modal-x" id="fieldEditCancelBtn" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="ai-panel-body">
+        <div id="aiFieldsList"></div>
+        <div class="regen-box">
+          <h3 style="margin:0 0 8px; color:var(--primary);">Regenerate whole worksheet</h3>
+          <p class="image-tip" style="margin-bottom:10px;">Keep this template and generate new text and images from your
+            requirements.</p>
+          <textarea id="regenQuery" rows="3"
+            placeholder="e.g. Make this about ocean animals, easier questions, same age group"></textarea>
+          <p id="fieldEditError" class="banner error" style="display:none;"></p>
+          <div class="actions" style="margin-top:12px">
+            <button class="btn-primary" id="regenWorksheetBtn" type="button" style="padding:11px 20px;">✦ Regenerate
+              worksheet</button>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
-    <div id="singleFieldModal" class="modal">
-      <div class="modal-card">
-        <div class="image-picker-head">
-          <h2 id="singleFieldTitle">Edit text</h2>
-          <button class="modal-x" id="singleFieldCloseBtn" type="button" aria-label="Close">×</button>
-        </div>
-        <label class="field-label" style="margin-top:14px;">Current text</label>
-        <textarea id="singleFieldCurrent" rows="4"></textarea>
-        <label class="field-label" style="margin-top:14px;">AI prompt (optional)</label>
-        <textarea id="singleFieldPrompt" rows="2" placeholder="Rewrite this for the same age group…"></textarea>
-        <p id="singleFieldError" class="banner error" style="display:none;"></p>
-        <div class="actions" style="margin-top:16px;">
-          <button class="btn-soft" id="singleFieldCancelBtn" type="button">Cancel</button>
-          <button class="btn-primary" id="singleFieldRewriteBtn" type="button" style="padding:10px 18px; font-size:14px;">✦ AI rewrite</button>
-          <button class="btn-search" id="singleFieldSaveBtn" type="button">Apply</button>
-        </div>
-      </div>
-    </div>
+  <div class="toast" id="toast"></div>
 
-    <div id="fieldEditModal" class="modal">
-      <div class="modal-card ai-panel">
-        <div class="image-picker-head">
-          <h2>AI Edit</h2>
-          <button class="modal-x" id="fieldEditCancelBtn" type="button" aria-label="Close">×</button>
-        </div>
-        <div class="ai-panel-body">
-          <div id="aiFieldsList"></div>
-          <div class="regen-box">
-            <h3 style="margin:0 0 8px; color:var(--primary);">Regenerate whole worksheet</h3>
-            <p class="image-tip" style="margin-bottom:10px;">Keep this template and generate new text and images from your requirements.</p>
-            <textarea id="regenQuery" rows="3" placeholder="e.g. Make this about ocean animals, easier questions, same age group"></textarea>
-            <p id="fieldEditError" class="banner error" style="display:none;"></p>
-            <div class="actions" style="margin-top:12px">
-              <button class="btn-primary" id="regenWorksheetBtn" type="button" style="padding:11px 20px;">✦ Regenerate worksheet</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+  <script>
+    const FAVORITES_KEY = 'worksheet-favorites';
+    const _elCache = Object.create(null);
+    const el = (id) => _elCache[id] || (_elCache[id] = document.getElementById(id));
 
-    <div class="toast" id="toast"></div>
+    const state = {
+      ages: [
+        { id: '2-3', label: '2-3 years (FS 0)', age: 3, grade: 'FS 0' },
+        { id: '3-4', label: '3-4 years (FS 1)', age: 4, grade: 'FS 1' },
+        { id: '4-5', label: '4-5 years (FS 2)', age: 5, grade: 'FS 2' },
+      ],
+      ageGroup: '3-4',
+      countryCode: '',
+      page: 1,
+      pageSize: 10,
+      pagerMaxButtons: 8,
+      total: 0,
+      defaultCount: 1,
+      maxCount: 10,
+      apiBaseUrl: '',
+      apiPrefix: '/worksheets',
+      canvas: { width: 1016, height: 1316 },
+      worksheetId: null,
+      preview: null,
+      editMode: false,
+      selectedImagePath: null,
+      selectedImageSlotId: null,
+      selectedFieldPath: null,
+      selectedSearchItem: null,
+      pendingImageReplacements: {},
+      imageSearchCache: new Map(),
+      imageBlobCache: new Map(),
+      lastImageSearch: { query: '', results: [], path: null },
+      imagePickerTab: 'search',
+      imagePickerLimit: 10,
+      imagePickFromAi: false,
+      busy: false,
+    };
 
-    <script>
-      const FAVORITES_KEY = 'worksheet-favorites';
-      const _elCache = Object.create(null);
-      const el = (id) => _elCache[id] || (_elCache[id] = document.getElementById(id));
+    const els = {
+      topicInput: el('topicInput'),
+      ageGroup: el('ageGroup'),
+      generateBtn: el('generateBtn'),
+      cancelBtn: el('cancelBtn'),
+      countSelect: el('countSelect'),
+      templateSelect: el('templateSelect'),
+      errorBanner: el('errorBanner'),
+      warnBanner: el('warnBanner'),
+      summary: el('summary'),
+      metaPills: el('metaPills'),
+      empty: el('empty'),
+      worksheetGrid: el('worksheetGrid'),
+      pager: el('pager'),
+      rowsPerPage: el('rowsPerPage'),
+      formSection: el('formSection'),
+      gridSection: el('gridSection'),
+      previewSection: el('previewSection'),
+      worksheetTitle: el('worksheetTitle'),
+      worksheetFrame: el('worksheetFrame'),
+      frameShell: el('frameShell'),
+      frameContainer: el('frameContainer'),
+      backBtn: el('backBtn'),
+      editBtn: el('editBtn'),
+      aiEditBtn: el('aiEditBtn'),
+      downloadPngBtn: el('downloadPngBtn'),
+      downloadPdfBtn: el('downloadPdfBtn'),
+      imagePickerModal: el('imagePickerModal'),
+      imageQuery: el('imageQuery'),
+      searchImagesBtn: el('searchImagesBtn'),
+      imageBank: el('imageBank'),
+      imageResultsCount: el('imageResultsCount'),
+      imagePickerCloseBtn: el('imagePickerCloseBtn'),
+      imagePickerCancelBtn: el('imagePickerCancelBtn'),
+      selectImageBtn: el('selectImageBtn'),
+      searchTabBtn: el('searchTabBtn'),
+      uploadTabBtn: el('uploadTabBtn'),
+      searchPane: el('searchPane'),
+      uploadPane: el('uploadPane'),
+      imageUploadInput: el('imageUploadInput'),
+      uploadPreview: el('uploadPreview'),
+      fieldEditModal: el('fieldEditModal'),
+      fieldEditError: el('fieldEditError'),
+      fieldEditCancelBtn: el('fieldEditCancelBtn'),
+      aiFieldsList: el('aiFieldsList'),
+      regenQuery: el('regenQuery'),
+      regenWorksheetBtn: el('regenWorksheetBtn'),
+      singleFieldModal: el('singleFieldModal'),
+      singleFieldTitle: el('singleFieldTitle'),
+      singleFieldCurrent: el('singleFieldCurrent'),
+      singleFieldPrompt: el('singleFieldPrompt'),
+      singleFieldError: el('singleFieldError'),
+      singleFieldCloseBtn: el('singleFieldCloseBtn'),
+      singleFieldCancelBtn: el('singleFieldCancelBtn'),
+      singleFieldRewriteBtn: el('singleFieldRewriteBtn'),
+      singleFieldSaveBtn: el('singleFieldSaveBtn'),
+    };
 
-      const state = {
-        ages: [
-          { id: '2-3', label: '2-3 years (FS 0)', age: 3, grade: 'FS 0' },
-          { id: '3-4', label: '3-4 years (FS 1)', age: 4, grade: 'FS 1' },
-          { id: '4-5', label: '4-5 years (FS 2)', age: 5, grade: 'FS 2' },
-        ],
-        ageGroup: '3-4',
-        countryCode: '',
-        page: 1,
-        pageSize: 10,
-        pagerMaxButtons: 8,
-        total: 0,
-        defaultCount: 1,
-        maxCount: 10,
-        apiBaseUrl: '',
-        apiPrefix: '/worksheets',
-        canvas: { width: 1016, height: 1316 },
-        worksheetId: null,
-        preview: null,
-        editMode: false,
-        selectedImagePath: null,
-        selectedImageSlotId: null,
-        selectedFieldPath: null,
-        selectedSearchItem: null,
-        pendingImageReplacements: {},
-        imageSearchCache: new Map(),
-        imageBlobCache: new Map(),
-        lastImageSearch: { query: '', results: [], path: null },
-        imagePickerTab: 'search',
-        imagePickerLimit: 10,
-        imagePickFromAi: false,
-        busy: false,
+    function favorites() {
+      try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch { return []; }
+    }
+
+    function setFavorites(ids) {
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+    }
+
+    function defaultApiBase() {
+      return location.protocol.startsWith('http') ? location.origin : 'http://localhost:3000';
+    }
+
+    function configuredApiBase() {
+      const env = window.__ENV__ || {};
+      const url = env.WORKSHEETS_API_URL || env.API_URL || '';
+      return String(url).trim().replace(/\/+$/, '');
+    }
+
+    function publicAsset(path) {
+      if (typeof window.publicAssetUrl === 'function') return window.publicAssetUrl(path);
+      if (!path) return path;
+      if (/^(https?:|data:|blob:)/i.test(path)) return path;
+      return path.charAt(0) === '/' ? path.slice(1) : path;
+    }
+
+    function apiBase() {
+      return (el('apiBase').value || configuredApiBase() || defaultApiBase()).replace(/\/+$/, '');
+    }
+
+    function apiUrl(path) {
+      const base = apiBase();
+      const prefix = (state.apiPrefix || '/worksheets').replace(/\/$/, '');
+      if (!path) return `${base}${prefix}`;
+      if (path.startsWith('?')) return `${base}${prefix}${path}`;
+      const suffix = path.startsWith('/') ? path : `/${path}`;
+      return `${base}${prefix}${suffix}`;
+    }
+
+    function resolveUrl(path) {
+      if (!path || /^(https?:|data:|blob:)/i.test(path)) return path;
+      if (/^\/(fonts|logos)\//.test(path) || /\.(png|css|ttf|woff2?)$/i.test(path)) {
+        return publicAsset(path);
+      }
+      const base = apiBase();
+      return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+    }
+
+    function uuid() {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
+    }
+
+    function withRestrictionHeaders(headers) {
+      const next = Object.assign(
+        {
+          'x-trace-id': uuid(),
+          'x-correlation-id': uuid(),
+        },
+        headers || {},
+      );
+      if (state.countryCode) next['x-country-code'] = state.countryCode;
+      return next;
+    }
+
+    function apiFetch(path, options = {}) {
+      const opts = {
+        ...options,
+        headers: withRestrictionHeaders(options.headers),
       };
+      return fetch(apiUrl(path), opts);
+    }
 
-      const els = {
-        topicInput: el('topicInput'),
-        ageGroup: el('ageGroup'),
-        generateBtn: el('generateBtn'),
-        cancelBtn: el('cancelBtn'),
-        countSelect: el('countSelect'),
-        templateSelect: el('templateSelect'),
-        errorBanner: el('errorBanner'),
-        warnBanner: el('warnBanner'),
-        summary: el('summary'),
-        metaPills: el('metaPills'),
-        empty: el('empty'),
-        worksheetGrid: el('worksheetGrid'),
-        pager: el('pager'),
-        rowsPerPage: el('rowsPerPage'),
-        formSection: el('formSection'),
-        gridSection: el('gridSection'),
-        previewSection: el('previewSection'),
-        worksheetTitle: el('worksheetTitle'),
-        worksheetFrame: el('worksheetFrame'),
-        frameShell: el('frameShell'),
-        frameContainer: el('frameContainer'),
-        backBtn: el('backBtn'),
-        editBtn: el('editBtn'),
-        aiEditBtn: el('aiEditBtn'),
-        downloadPngBtn: el('downloadPngBtn'),
-        downloadPdfBtn: el('downloadPdfBtn'),
-        imagePickerModal: el('imagePickerModal'),
-        imageQuery: el('imageQuery'),
-        searchImagesBtn: el('searchImagesBtn'),
-        imageBank: el('imageBank'),
-        imageResultsCount: el('imageResultsCount'),
-        imagePickerCloseBtn: el('imagePickerCloseBtn'),
-        imagePickerCancelBtn: el('imagePickerCancelBtn'),
-        selectImageBtn: el('selectImageBtn'),
-        searchTabBtn: el('searchTabBtn'),
-        uploadTabBtn: el('uploadTabBtn'),
-        searchPane: el('searchPane'),
-        uploadPane: el('uploadPane'),
-        imageUploadInput: el('imageUploadInput'),
-        uploadPreview: el('uploadPreview'),
-        fieldEditModal: el('fieldEditModal'),
-        fieldEditError: el('fieldEditError'),
-        fieldEditCancelBtn: el('fieldEditCancelBtn'),
-        aiFieldsList: el('aiFieldsList'),
-        regenQuery: el('regenQuery'),
-        regenWorksheetBtn: el('regenWorksheetBtn'),
-        singleFieldModal: el('singleFieldModal'),
-        singleFieldTitle: el('singleFieldTitle'),
-        singleFieldCurrent: el('singleFieldCurrent'),
-        singleFieldPrompt: el('singleFieldPrompt'),
-        singleFieldError: el('singleFieldError'),
-        singleFieldCloseBtn: el('singleFieldCloseBtn'),
-        singleFieldCancelBtn: el('singleFieldCancelBtn'),
-        singleFieldRewriteBtn: el('singleFieldRewriteBtn'),
-        singleFieldSaveBtn: el('singleFieldSaveBtn'),
-      };
+    function toast(html, ms = 2600) {
+      const node = el('toast');
+      node.innerHTML = html;
+      node.classList.add('show');
+      clearTimeout(node._t);
+      node._t = setTimeout(() => node._t && node.classList.remove('show'), ms);
+    }
 
-      function favorites() {
-        try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch { return []; }
+    function escapeHtml(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[ch]);
+    }
+
+    function extractErrorText(source) {
+      if (source == null) return '';
+      if (typeof source === 'string') return source;
+      if (source instanceof Error) return source.message || String(source);
+      if (source.message && typeof source.message === 'string') return source.message;
+      const nested = source.error;
+      if (nested && typeof nested === 'object' && nested.message) return String(nested.message);
+      if (typeof nested === 'string') return nested;
+      if (source.errorMessage && typeof source.errorMessage === 'string') return source.errorMessage;
+      return '';
+    }
+
+    function friendlyError(source, fallback) {
+      const fallbackText = fallback || 'Something went wrong. Please try again.';
+      const raw = extractErrorText(source).trim();
+      const lower = raw.toLowerCase();
+      if (!raw) return fallbackText;
+      if (/failed to fetch|networkerror|load failed|err_connection|err_name_not_resolved/.test(lower)) {
+        return 'Could not reach the server. Check your connection and try again.';
       }
-
-      function setFavorites(ids) {
-        localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+      if (/timeout|etimedout|timed out/.test(lower)) {
+        return 'The request took too long. Please try again.';
       }
-
-      function defaultApiBase() {
-        return location.protocol.startsWith('http') ? location.origin : 'http://localhost:3000';
+      if (/too large|file too large|payload too large|413/.test(lower)) {
+        return 'That image is too large. Please choose a smaller file.';
       }
-
-      function configuredApiBase() {
-        const env = window.__ENV__ || {};
-        const url = env.WORKSHEETS_API_URL || env.API_URL || '';
-        return String(url).trim().replace(/\/+$/, '');
+      if (/cors/.test(lower)) {
+        return 'Could not reach the API from this page. Check the API URL and try again.';
       }
+      return raw;
+    }
 
-      function publicAsset(path) {
-        if (typeof window.publicAssetUrl === 'function') return window.publicAssetUrl(path);
-        if (!path) return path;
-        if (/^(https?:|data:|blob:)/i.test(path)) return path;
-        return path.charAt(0) === '/' ? path.slice(1) : path;
-      }
+    function errorBannerHtml(source, fallback, title) {
+      return (
+        '<div><div class="banner-title">' +
+        escapeHtml(title || 'Something went wrong') +
+        '</div><div class="banner-body">' +
+        escapeHtml(friendlyError(source, fallback)) +
+        '</div></div>'
+      );
+    }
 
-      function apiBase() {
-        return (el('apiBase').value || configuredApiBase() || defaultApiBase()).replace(/\/+$/, '');
-      }
+    function showBanner(which, html) {
+      const node = el(which === 'error' ? 'errorBanner' : 'warnBanner');
+      node.innerHTML = html;
+      node.classList.add('show');
+    }
 
-      function apiUrl(path) {
-        const base = apiBase();
-        const prefix = (state.apiPrefix || '/worksheets').replace(/\/$/, '');
-        if (!path) return `${base}${prefix}`;
-        if (path.startsWith('?')) return `${base}${prefix}${path}`;
-        const suffix = path.startsWith('/') ? path : `/${path}`;
-        return `${base}${prefix}${suffix}`;
-      }
+    function clearBanners() {
+      el('errorBanner').classList.remove('show');
+      el('warnBanner').classList.remove('show');
+    }
 
-      function resolveUrl(path) {
-        if (!path || /^(https?:|data:|blob:)/i.test(path)) return path;
-        if (/^\/(fonts|logos)\//.test(path) || /\.(png|css|ttf|woff2?)$/i.test(path)) {
-          return publicAsset(path);
-        }
-        const base = apiBase();
-        return `${base}${path.startsWith('/') ? path : `/${path}`}`;
-      }
+    function setBusy(busy) {
+      state.busy = busy;
+      els.generateBtn.disabled = busy;
+      els.cancelBtn.disabled = busy;
+    }
 
-      function uuid() {
-        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-          const r = (Math.random() * 16) | 0;
-          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-        });
-      }
-
-      function withRestrictionHeaders(headers) {
-        const next = Object.assign(
-          {
-            'x-trace-id': uuid(),
-            'x-correlation-id': uuid(),
-          },
-          headers || {},
-        );
-        if (state.countryCode) next['x-country-code'] = state.countryCode;
-        return next;
-      }
-
-      function apiFetch(path, options = {}) {
-        const opts = {
-          ...options,
-          headers: withRestrictionHeaders(options.headers),
-        };
-        return fetch(apiUrl(path), opts);
-      }
-
-      function toast(html, ms = 2600) {
-        const node = el('toast');
-        node.innerHTML = html;
-        node.classList.add('show');
-        clearTimeout(node._t);
-        node._t = setTimeout(() => node._t && node.classList.remove('show'), ms);
-      }
-
-      function escapeHtml(value) {
-        return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#39;',
-        })[ch]);
-      }
-
-      function extractErrorText(source) {
-        if (source == null) return '';
-        if (typeof source === 'string') return source;
-        if (source instanceof Error) return source.message || String(source);
-        if (source.message && typeof source.message === 'string') return source.message;
-        const nested = source.error;
-        if (nested && typeof nested === 'object' && nested.message) return String(nested.message);
-        if (typeof nested === 'string') return nested;
-        if (source.errorMessage && typeof source.errorMessage === 'string') return source.errorMessage;
-        return '';
-      }
-
-      function friendlyError(source, fallback) {
-        const fallbackText = fallback || 'Something went wrong. Please try again.';
-        const raw = extractErrorText(source).trim();
-        const lower = raw.toLowerCase();
-        if (!raw) return fallbackText;
-        if (/failed to fetch|networkerror|load failed|err_connection|err_name_not_resolved/.test(lower)) {
-          return 'Could not reach the server. Check your connection and try again.';
-        }
-        if (/timeout|etimedout|timed out/.test(lower)) {
-          return 'The request took too long. Please try again.';
-        }
-        if (/too large|file too large|payload too large|413/.test(lower)) {
-          return 'That image is too large. Please choose a smaller file.';
-        }
-        if (/cors/.test(lower)) {
-          return 'Could not reach the API from this page. Check the API URL and try again.';
-        }
-        return raw;
-      }
-
-      function errorBannerHtml(source, fallback, title) {
-        return (
-          '<div><div class="banner-title">' +
-          escapeHtml(title || 'Something went wrong') +
-          '</div><div class="banner-body">' +
-          escapeHtml(friendlyError(source, fallback)) +
-          '</div></div>'
-        );
-      }
-
-      function showBanner(which, html) {
-        const node = el(which === 'error' ? 'errorBanner' : 'warnBanner');
-        node.innerHTML = html;
-        node.classList.add('show');
-      }
-
-      function clearBanners() {
-        el('errorBanner').classList.remove('show');
-        el('warnBanner').classList.remove('show');
-      }
-
-      function setBusy(busy) {
-        state.busy = busy;
-        els.generateBtn.disabled = busy;
-        els.cancelBtn.disabled = busy;
-      }
-
-      function renderAges() {
-        els.ageGroup.innerHTML = '';
-        state.ages.forEach((age) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'age-pill';
-          btn.setAttribute('role', 'radio');
-          const isSelected = age.id === state.ageGroup;
-          btn.setAttribute('aria-checked', isSelected ? 'true' : 'false');
-          btn.dataset.age = age.id;
-          btn.innerHTML = `
+    function renderAges() {
+      els.ageGroup.innerHTML = '';
+      state.ages.forEach((age) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'age-pill';
+        btn.setAttribute('role', 'radio');
+        const isSelected = age.id === state.ageGroup;
+        btn.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+        btn.dataset.age = age.id;
+        btn.innerHTML = `
             <span class="radio" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
             </span>
             ${escapeHtml(age.label || age.id)}`;
-          btn.addEventListener('click', () => {
-            state.ageGroup = age.id;
-            renderAges();
-          });
-          els.ageGroup.appendChild(btn);
+        btn.addEventListener('click', () => {
+          state.ageGroup = age.id;
+          renderAges();
         });
+        els.ageGroup.appendChild(btn);
+      });
+    }
+
+    function selectedAge() {
+      return state.ages.find((item) => item.id === state.ageGroup) || state.ages[0];
+    }
+
+    function showGrid() {
+      els.formSection.classList.remove('hidden');
+      els.gridSection.classList.remove('hidden');
+      els.previewSection.classList.add('hidden');
+      state.worksheetId = null;
+      state.preview = null;
+      state.editMode = false;
+      state.pendingImageReplacements = {};
+      els.editBtn.textContent = 'Edit';
+    }
+
+    function scaleThumb(iframe, canvas) {
+      const width = canvas?.width || state.canvas.width;
+      const height = canvas?.height || state.canvas.height;
+      iframe.style.width = width + 'px';
+      iframe.style.height = height + 'px';
+      const parent = iframe.parentElement;
+      if (!parent) return;
+      const scale = parent.clientWidth / width;
+      iframe.style.transform = 'scale(' + scale + ')';
+      parent.style.height = Math.round(height * scale) + 'px';
+    }
+
+    function appendCard(item) {
+      const loved = favorites().includes(item.id);
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+
+      const card = document.createElement('div');
+      card.className = 'tile-card';
+
+      const frameWrap = document.createElement('div');
+      frameWrap.className = 'thumb-frame';
+      if (item.html) {
+        const iframe = document.createElement('iframe');
+        iframe.title = item.template?.name || 'Worksheet';
+        iframe.srcdoc = item.html;
+        iframe.addEventListener('load', () => scaleThumb(iframe, item.canvas));
+        frameWrap.appendChild(iframe);
+      } else if (item.thumbnailUrl) {
+        frameWrap.style.background = `center/cover url('${resolveUrl(item.thumbnailUrl)}')`;
       }
+      card.appendChild(frameWrap);
 
-      function selectedAge() {
-        return state.ages.find((item) => item.id === state.ageGroup) || state.ages[0];
-      }
-
-      function showGrid() {
-        els.formSection.classList.remove('hidden');
-        els.gridSection.classList.remove('hidden');
-        els.previewSection.classList.add('hidden');
-        state.worksheetId = null;
-        state.preview = null;
-        state.editMode = false;
-        state.pendingImageReplacements = {};
-        els.editBtn.textContent = 'Edit';
-      }
-
-      function scaleThumb(iframe, canvas) {
-        const width = canvas?.width || state.canvas.width;
-        const height = canvas?.height || state.canvas.height;
-        iframe.style.width = width + 'px';
-        iframe.style.height = height + 'px';
-        const parent = iframe.parentElement;
-        if (!parent) return;
-        const scale = parent.clientWidth / width;
-        iframe.style.transform = 'scale(' + scale + ')';
-        parent.style.height = Math.round(height * scale) + 'px';
-      }
-
-      function appendCard(item) {
-        const loved = favorites().includes(item.id);
-        const tile = document.createElement('div');
-        tile.className = 'tile';
-
-        const card = document.createElement('div');
-        card.className = 'tile-card';
-
-        const frameWrap = document.createElement('div');
-        frameWrap.className = 'thumb-frame';
-        if (item.html) {
-          const iframe = document.createElement('iframe');
-          iframe.title = item.template?.name || 'Worksheet';
-          iframe.srcdoc = item.html;
-          iframe.addEventListener('load', () => scaleThumb(iframe, item.canvas));
-          frameWrap.appendChild(iframe);
-        } else if (item.thumbnailUrl) {
-          frameWrap.style.background = `center/cover url('${resolveUrl(item.thumbnailUrl)}')`;
-        }
-        card.appendChild(frameWrap);
-
-        const actions = document.createElement('div');
-        actions.className = 'tile-actions';
-        actions.innerHTML = `
+      const actions = document.createElement('div');
+      actions.className = 'tile-actions';
+      actions.innerHTML = `
           <button class="icon-btn fav ${loved ? 'loved' : ''}" data-act="fav" data-id="${item.id}" aria-pressed="${loved ? 'true' : 'false'}" title="Favourite">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="${loved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.9"><path d="M12 20s-7-4.4-7-9.3A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.7c0 4.9-7 9.3-7 9.3Z" /></svg>
           </button>
@@ -1487,533 +1503,533 @@
           <button class="btn-soft" data-act="download-pdf" data-id="${item.id}" style="padding:6px 10px; font-size:12px;">PDF</button>
         `;
 
-        card.addEventListener('click', () => openPreview(item.id, item.html));
+      card.addEventListener('click', () => openPreview(item.id, item.html));
 
-        actions.addEventListener('click', (event) => {
-          const btn = event.target.closest('[data-act]');
-          if (!btn) return;
-          event.stopPropagation();
-          const act = btn.dataset.act;
-          if (act === 'fav') {
-            toggleFav(item.id, btn);
-          } else if (act === 'preview') {
-            openPreview(item.id, item.html);
-          } else if (act === 'download-png') {
-            download(item.id, 'png');
-          } else if (act === 'download-pdf' || act === 'download') {
-            download(item.id, 'pdf');
-          }
+      actions.addEventListener('click', (event) => {
+        const btn = event.target.closest('[data-act]');
+        if (!btn) return;
+        event.stopPropagation();
+        const act = btn.dataset.act;
+        if (act === 'fav') {
+          toggleFav(item.id, btn);
+        } else if (act === 'preview') {
+          openPreview(item.id, item.html);
+        } else if (act === 'download-png') {
+          download(item.id, 'png');
+        } else if (act === 'download-pdf' || act === 'download') {
+          download(item.id, 'pdf');
+        }
+      });
+
+      tile.appendChild(card);
+      tile.appendChild(actions);
+      els.worksheetGrid.appendChild(tile);
+    }
+
+    function renderSkeletons(count) {
+      els.empty.style.display = 'none';
+      const hasExisting = els.worksheetGrid.querySelectorAll('.tile').length > 0;
+      if (!hasExisting) {
+        els.worksheetGrid.innerHTML = '';
+      }
+      for (let i = 0; i < count; i += 1) {
+        const sk = document.createElement('div');
+        sk.className = 'skeleton';
+        sk.dataset.loadingSkeleton = 'true';
+        if (hasExisting && els.worksheetGrid.firstChild) {
+          els.worksheetGrid.insertBefore(sk, els.worksheetGrid.firstChild);
+        } else {
+          els.worksheetGrid.appendChild(sk);
+        }
+      }
+    }
+
+    function removeSkeletons() {
+      els.worksheetGrid.querySelectorAll('[data-loading-skeleton="true"]').forEach((node) => node.remove());
+      if (!els.worksheetGrid.querySelectorAll('.tile').length) {
+        els.empty.style.display = 'block';
+      }
+    }
+
+
+    function renderPager() {
+      const effectiveSize = Math.max(state.pageSize, Number(els.countSelect.value) || 10);
+      const pages = Math.max(1, Math.ceil(state.total / effectiveSize));
+      els.pager.innerHTML = '';
+      for (let i = 1; i <= Math.min(pages, state.pagerMaxButtons); i += 1) {
+        const btn = document.createElement('button');
+        btn.className = 'page-num';
+        if (i === state.page) btn.setAttribute('aria-current', 'true');
+        btn.textContent = String(i);
+        btn.addEventListener('click', () => { state.page = i; loadGrid(); });
+        els.pager.appendChild(btn);
+      }
+    }
+
+    function toggleFav(id, btn) {
+      const ids = favorites();
+      const isFav = ids.includes(id);
+      const next = isFav ? ids.filter((item) => item !== id) : ids.concat(id);
+      setFavorites(next);
+      btn.classList.toggle('loved', !isFav);
+      btn.setAttribute('aria-pressed', !isFav ? 'true' : 'false');
+      const svg = btn.querySelector('svg');
+      if (svg) svg.setAttribute('fill', !isFav ? 'currentColor' : 'none');
+    }
+
+    async function generateSet() {
+      const topic = els.topicInput.value.trim();
+      if (!topic) {
+        showBanner('error', '<div>A learning topic is required.</div>');
+        return;
+      }
+      const age = selectedAge();
+      if (!age) {
+        showBanner('error', '<div>No age group selected.</div>');
+        return;
+      }
+
+      const count = Number(els.countSelect.value) || state.defaultCount;
+      clearBanners();
+      setBusy(true);
+      renderSkeletons(count);
+
+      try {
+        const res = await apiFetch('/generate-set', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: topic,
+            topic,
+            age: age.age,
+            ageGroup: age.id,
+            grade: age.grade,
+            count,
+            templateId: els.templateSelect.value || undefined,
+          }),
         });
-
-        tile.appendChild(card);
-        tile.appendChild(actions);
-        els.worksheetGrid.appendChild(tile);
-      }
-
-      function renderSkeletons(count) {
-        els.empty.style.display = 'none';
-        const hasExisting = els.worksheetGrid.querySelectorAll('.tile').length > 0;
-        if (!hasExisting) {
-          els.worksheetGrid.innerHTML = '';
-        }
-        for (let i = 0; i < count; i += 1) {
-          const sk = document.createElement('div');
-          sk.className = 'skeleton';
-          sk.dataset.loadingSkeleton = 'true';
-          if (hasExisting && els.worksheetGrid.firstChild) {
-            els.worksheetGrid.insertBefore(sk, els.worksheetGrid.firstChild);
-          } else {
-            els.worksheetGrid.appendChild(sk);
-          }
-        }
-      }
-
-      function removeSkeletons() {
-        els.worksheetGrid.querySelectorAll('[data-loading-skeleton="true"]').forEach((node) => node.remove());
-        if (!els.worksheetGrid.querySelectorAll('.tile').length) {
-          els.empty.style.display = 'block';
-        }
-      }
-
-
-      function renderPager() {
-        const effectiveSize = Math.max(state.pageSize, Number(els.countSelect.value) || 10);
-        const pages = Math.max(1, Math.ceil(state.total / effectiveSize));
-        els.pager.innerHTML = '';
-        for (let i = 1; i <= Math.min(pages, state.pagerMaxButtons); i += 1) {
-          const btn = document.createElement('button');
-          btn.className = 'page-num';
-          if (i === state.page) btn.setAttribute('aria-current', 'true');
-          btn.textContent = String(i);
-          btn.addEventListener('click', () => { state.page = i; loadGrid(); });
-          els.pager.appendChild(btn);
-        }
-      }
-
-      function toggleFav(id, btn) {
-        const ids = favorites();
-        const isFav = ids.includes(id);
-        const next = isFav ? ids.filter((item) => item !== id) : ids.concat(id);
-        setFavorites(next);
-        btn.classList.toggle('loved', !isFav);
-        btn.setAttribute('aria-pressed', !isFav ? 'true' : 'false');
-        const svg = btn.querySelector('svg');
-        if (svg) svg.setAttribute('fill', !isFav ? 'currentColor' : 'none');
-      }
-
-      async function generateSet() {
-        const topic = els.topicInput.value.trim();
-        if (!topic) {
-          showBanner('error', '<div>A learning topic is required.</div>');
-          return;
-        }
-        const age = selectedAge();
-        if (!age) {
-          showBanner('error', '<div>No age group selected.</div>');
-          return;
-        }
-
-        const count = Number(els.countSelect.value) || state.defaultCount;
-        clearBanners();
-        setBusy(true);
-        renderSkeletons(count);
-
-        try {
-          const res = await apiFetch('/generate-set', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              query: topic,
-              topic,
-              age: age.age,
-              ageGroup: age.id,
-              grade: age.grade,
-              count,
-              templateId: els.templateSelect.value || undefined,
-            }),
-          });
-          const body = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            removeSkeletons();
-            showBanner(
-              'error',
-              errorBannerHtml(body, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
-            );
-            return;
-          }
-
-          toast(`Created ${(body.items || []).length} worksheet(s)`);
-          
-          els.worksheetGrid.innerHTML = '';
-          if (!body.items?.length) {
-            els.empty.style.display = 'block';
-            els.summary.classList.remove('show');
-          } else {
-            els.empty.style.display = 'none';
-            els.summary.classList.add('show');
-            els.metaPills.innerHTML = `
-              <span class="pill">Generated: <b>${body.items.length}</b></span>
-            `;
-            body.items.forEach(appendCard);
-          }
-          els.pager.innerHTML = '';
-        } catch (error) {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
           removeSkeletons();
           showBanner(
             'error',
-            errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
+            errorBannerHtml(body, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
           );
-        } finally {
-          setBusy(false);
+          return;
         }
-      }
 
-      function scaleFrame() {
-        const iframe = els.worksheetFrame;
-        const container = els.frameContainer || iframe.parentElement;
-        const shell = els.frameShell || container.parentElement;
-        const canvas = state.preview?.canvas || state.canvas;
-        const canvasW = canvas.width || 1016;
-        const canvasH = canvas.height || 1316;
+        toast(`Created ${(body.items || []).length} worksheet(s)`);
 
-        iframe.style.width = canvasW + 'px';
-        iframe.style.height = canvasH + 'px';
-
-        const availW = Math.max(280, (shell ? shell.clientWidth : container.parentElement.clientWidth) - 36);
-        const availH = Math.max(360, (window.innerHeight * 0.76));
-        const scaleW = availW / canvasW;
-        const scaleH = availH / canvasH;
-        const scale = Math.min(1, scaleW, scaleH);
-
-        if (container && container !== iframe) {
-          container.style.transform = `scale(${scale})`;
-          container.style.width = canvasW + 'px';
-          container.style.height = canvasH + 'px';
-          if (shell) {
-            shell.style.height = Math.round(canvasH * scale + 36) + 'px';
-          }
+        els.worksheetGrid.innerHTML = '';
+        if (!body.items?.length) {
+          els.empty.style.display = 'block';
+          els.summary.classList.remove('show');
         } else {
-          iframe.style.transform = `scale(${scale})`;
-          if (shell) {
-            shell.style.height = Math.round(canvasH * scale + 36) + 'px';
-          }
+          els.empty.style.display = 'none';
+          els.summary.classList.add('show');
+          els.metaPills.innerHTML = `
+              <span class="pill">Generated: <b>${body.items.length}</b></span>
+            `;
+          body.items.forEach(appendCard);
+        }
+        els.pager.innerHTML = '';
+      } catch (error) {
+        removeSkeletons();
+        showBanner(
+          'error',
+          errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
+        );
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function scaleFrame() {
+      const iframe = els.worksheetFrame;
+      const container = els.frameContainer || iframe.parentElement;
+      const shell = els.frameShell || container.parentElement;
+      const canvas = state.preview?.canvas || state.canvas;
+      const canvasW = canvas.width || 1016;
+      const canvasH = canvas.height || 1316;
+
+      iframe.style.width = canvasW + 'px';
+      iframe.style.height = canvasH + 'px';
+
+      const availW = Math.max(280, (shell ? shell.clientWidth : container.parentElement.clientWidth) - 36);
+      const availH = Math.max(360, (window.innerHeight * 0.76));
+      const scaleW = availW / canvasW;
+      const scaleH = availH / canvasH;
+      const scale = Math.min(1, scaleW, scaleH);
+
+      if (container && container !== iframe) {
+        container.style.transform = `scale(${scale})`;
+        container.style.width = canvasW + 'px';
+        container.style.height = canvasH + 'px';
+        if (shell) {
+          shell.style.height = Math.round(canvasH * scale + 36) + 'px';
+        }
+      } else {
+        iframe.style.transform = `scale(${scale})`;
+        if (shell) {
+          shell.style.height = Math.round(canvasH * scale + 36) + 'px';
         }
       }
+    }
 
-      async function openPreview(id, html) {
-        if (!id || id === 'null' || id === 'undefined') {
-          toast('Worksheet ID is missing');
-          return;
-        }
-        state.worksheetId = id;
-        state.editMode = false;
-        els.editBtn.textContent = 'Edit';
-        els.formSection.classList.add('hidden');
-        els.gridSection.classList.add('hidden');
-        els.previewSection.classList.remove('hidden');
+    async function openPreview(id, html) {
+      if (!id || id === 'null' || id === 'undefined') {
+        toast('Worksheet ID is missing');
+        return;
+      }
+      state.worksheetId = id;
+      state.editMode = false;
+      els.editBtn.textContent = 'Edit';
+      els.formSection.classList.add('hidden');
+      els.gridSection.classList.add('hidden');
+      els.previewSection.classList.remove('hidden');
 
-        const apply = (preview) => {
-          state.preview = preview;
-          els.worksheetTitle.textContent = preview.template?.name || 'Worksheet';
-          const iframe = els.worksheetFrame;
-          const onReady = () => {
-            scaleFrame();
-            wireFrame();
-          };
-          iframe.onload = onReady;
-          iframe.srcdoc = preview.html || html || '';
-          requestAnimationFrame(onReady);
+      const apply = (preview) => {
+        state.preview = preview;
+        els.worksheetTitle.textContent = preview.template?.name || 'Worksheet';
+        const iframe = els.worksheetFrame;
+        const onReady = () => {
+          scaleFrame();
+          wireFrame();
         };
+        iframe.onload = onReady;
+        iframe.srcdoc = preview.html || html || '';
+        requestAnimationFrame(onReady);
+      };
 
-        if (html) {
-          apply({ html, template: { name: 'Worksheet' }, canvas: state.canvas, structure: {}, editableFields: [], fieldPrompts: {} });
-        }
-        try {
-          const res = await apiFetch(`/${encodeURIComponent(id)}/preview?mode=editor`);
-          const preview = await res.json();
-          if (res.ok) apply(preview);
-        } catch (error) {
-          console.warn('Preview fetch error:', error);
-        }
+      if (html) {
+        apply({ html, template: { name: 'Worksheet' }, canvas: state.canvas, structure: {}, editableFields: [], fieldPrompts: {} });
       }
+      try {
+        const res = await apiFetch(`/${encodeURIComponent(id)}/preview?mode=editor`);
+        const preview = await res.json();
+        if (res.ok) apply(preview);
+      } catch (error) {
+        console.warn('Preview fetch error:', error);
+      }
+    }
 
-      function wireFrame() {
-        const doc = els.worksheetFrame.contentDocument;
-        if (!doc) return;
-        doc.querySelectorAll('[data-pencil-for]').forEach((btn) => {
-          btn.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (!state.editMode) return;
-            openFieldEditor(btn.getAttribute('data-pencil-for'));
-          });
+    function wireFrame() {
+      const doc = els.worksheetFrame.contentDocument;
+      if (!doc) return;
+      doc.querySelectorAll('[data-pencil-for]').forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!state.editMode) return;
+          openFieldEditor(btn.getAttribute('data-pencil-for'));
         });
-        doc.querySelectorAll('[data-editable]').forEach((el) => {
-          el.addEventListener('click', () => {
-            if (!state.editMode) return;
-            state.selectedFieldPath = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
-          });
+      });
+      doc.querySelectorAll('[data-editable]').forEach((el) => {
+        el.addEventListener('click', () => {
+          if (!state.editMode) return;
+          state.selectedFieldPath = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
         });
-        enableInlineEditing(state.editMode);
-        applyPendingImages(doc);
-      }
+      });
+      enableInlineEditing(state.editMode);
+      applyPendingImages(doc);
+    }
 
-      function openImagePicker(path, slotId, fromAi) {
-        if (!state.editMode && !fromAi && !state.imagePickFromAi) return;
-        state.imagePickFromAi = Boolean(fromAi || state.imagePickFromAi);
-        state.selectedImageSlotId = slotId || state.selectedImageSlotId;
-        state.selectedImagePath = resolveImagePath(path, slotId);
-        state.selectedSearchItem = null;
-        setImagePickerTab('search');
-        els.imagePickerModal.classList.add('show');
-        const cached = state.lastImageSearch;
-        if (cached.results?.length) {
-          els.imageQuery.value = cached.query || '';
-          renderImageResults(cached.results, cached.query);
-          return;
-        }
-        els.imageQuery.value = '';
-        renderImageResults([], '');
+    function openImagePicker(path, slotId, fromAi) {
+      if (!state.editMode && !fromAi && !state.imagePickFromAi) return;
+      state.imagePickFromAi = Boolean(fromAi || state.imagePickFromAi);
+      state.selectedImageSlotId = slotId || state.selectedImageSlotId;
+      state.selectedImagePath = resolveImagePath(path, slotId);
+      state.selectedSearchItem = null;
+      setImagePickerTab('search');
+      els.imagePickerModal.classList.add('show');
+      const cached = state.lastImageSearch;
+      if (cached.results?.length) {
+        els.imageQuery.value = cached.query || '';
+        renderImageResults(cached.results, cached.query);
+        return;
       }
+      els.imageQuery.value = '';
+      renderImageResults([], '');
+    }
 
-      function resolveImagePath(path, slotId) {
-        if (path && path !== 'undefined' && path !== 'null') return path;
-        const structure = state.preview?.structure;
-        if (slotId && structure) {
-          const found = findStructurePathBySlotId(structure, slotId);
-          if (found) return found;
-        }
-        return slotId || state.selectedImagePath || '';
+    function resolveImagePath(path, slotId) {
+      if (path && path !== 'undefined' && path !== 'null') return path;
+      const structure = state.preview?.structure;
+      if (slotId && structure) {
+        const found = findStructurePathBySlotId(structure, slotId);
+        if (found) return found;
       }
+      return slotId || state.selectedImagePath || '';
+    }
 
-      function findStructurePathBySlotId(node, slotId, prefix) {
-        if (Array.isArray(node)) {
-          for (let i = 0; i < node.length; i += 1) {
-            const found = findStructurePathBySlotId(node[i], slotId, `${prefix}[${i}]`);
-            if (found) return found;
-          }
-          return null;
-        }
-        if (!node || typeof node !== 'object') return null;
-        if (node.id === slotId && prefix) return prefix;
-        for (const [key, child] of Object.entries(node)) {
-          const childPath = prefix ? `${prefix}.${key}` : key;
-          if (key === slotId && child && typeof child === 'object' && !Array.isArray(child)) {
-            return childPath;
-          }
-          const found = findStructurePathBySlotId(child, slotId, childPath);
+    function findStructurePathBySlotId(node, slotId, prefix) {
+      if (Array.isArray(node)) {
+        for (let i = 0; i < node.length; i += 1) {
+          const found = findStructurePathBySlotId(node[i], slotId, `${prefix}[${i}]`);
           if (found) return found;
         }
         return null;
       }
-
-      function cssAttr(name, value) {
-        return `[${name}="${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`;
-      }
-
-      function closeImagePicker() {
-        els.imagePickerModal.classList.remove('show');
-        state.selectedSearchItem = null;
-      }
-
-      function setImagePickerTab(tab) {
-        state.imagePickerTab = tab;
-        els.searchTabBtn.classList.toggle('active', tab === 'search');
-        els.uploadTabBtn.classList.toggle('active', tab === 'upload');
-        els.searchPane.classList.toggle('hidden', tab !== 'search');
-        els.uploadPane.classList.toggle('hidden', tab !== 'upload');
-      }
-
-      function cacheKey(query, path) {
-        return `${(query || '').trim().toLowerCase()}::${path || ''}`;
-      }
-
-      async function cachedImageSrc(url) {
-        const resolved = resolveUrl(url);
-        if (!resolved) return '';
-        if (state.imageBlobCache.has(resolved)) return state.imageBlobCache.get(resolved);
-        try {
-          const res = await fetch(resolved);
-          if (!res.ok) throw new Error(String(res.status));
-          const blob = await res.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          state.imageBlobCache.set(resolved, objectUrl);
-          return objectUrl;
-        } catch {
-          state.imageBlobCache.set(resolved, resolved);
-          return resolved;
+      if (!node || typeof node !== 'object') return null;
+      if (node.id === slotId && prefix) return prefix;
+      for (const [key, child] of Object.entries(node)) {
+        const childPath = prefix ? `${prefix}.${key}` : key;
+        if (key === slotId && child && typeof child === 'object' && !Array.isArray(child)) {
+          return childPath;
         }
+        const found = findStructurePathBySlotId(child, slotId, childPath);
+        if (found) return found;
       }
+      return null;
+    }
 
-      function renderImageResults(results, query) {
-        const items = Array.isArray(results) ? results.filter((item) => item?.imageUrl && item.imageUrl !== 'null') : [];
-        els.imageBank.innerHTML = '';
-        if (!items.length) {
-          els.imageResultsCount.textContent = query ? 'Showing 0 results' : 'No search yet';
-          els.imageBank.innerHTML = '<div class="empty">Search for images to see results here.</div>';
-          return;
-        }
-        els.imageResultsCount.textContent = `Showing ${items.length} result${items.length === 1 ? '' : 's'}`;
-        items.forEach((item) => {
-          const tile = document.createElement('button');
-          tile.type = 'button';
-          tile.className = 'image-tile' + (state.selectedSearchItem?.assetId === item.assetId ? ' selected' : '');
-          tile.title = item.caption || item.searchDescription || '';
-          const img = document.createElement('img');
-          img.alt = item.caption || item.searchDescription || 'Search result';
-          const resolved = resolveUrl(item.imageUrl);
-          img.src = state.imageBlobCache.get(resolved) || resolved;
-          cachedImageSrc(item.imageUrl).then((src) => {
-            if (img.isConnected) img.src = src;
-          });
-          const pick = document.createElement('span');
-          pick.className = 'pick';
-          tile.appendChild(img);
-          tile.appendChild(pick);
-          tile.dataset.assetId = item.assetId || '';
-          tile.dataset.imageUrl = resolved || '';
-          tile.addEventListener('click', () => {
-            state.selectedSearchItem = { ...item, imageUrl: resolved };
-            els.imageBank.querySelectorAll('.image-tile').forEach((node) => node.classList.remove('selected'));
-            tile.classList.add('selected');
-          });
-          tile.addEventListener('dblclick', () => {
-            state.selectedSearchItem = { ...item, imageUrl: resolveUrl(item.imageUrl) };
-            if (applySelectedImageToPreview()) {
-              closeImagePicker();
-              toast('Image updated');
-            }
-          });
-          els.imageBank.appendChild(tile);
+    function cssAttr(name, value) {
+      return `[${name}="${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`;
+    }
+
+    function closeImagePicker() {
+      els.imagePickerModal.classList.remove('show');
+      state.selectedSearchItem = null;
+    }
+
+    function setImagePickerTab(tab) {
+      state.imagePickerTab = tab;
+      els.searchTabBtn.classList.toggle('active', tab === 'search');
+      els.uploadTabBtn.classList.toggle('active', tab === 'upload');
+      els.searchPane.classList.toggle('hidden', tab !== 'search');
+      els.uploadPane.classList.toggle('hidden', tab !== 'upload');
+    }
+
+    function cacheKey(query, path) {
+      return `${(query || '').trim().toLowerCase()}::${path || ''}`;
+    }
+
+    async function cachedImageSrc(url) {
+      const resolved = resolveUrl(url);
+      if (!resolved) return '';
+      if (state.imageBlobCache.has(resolved)) return state.imageBlobCache.get(resolved);
+      try {
+        const res = await fetch(resolved);
+        if (!res.ok) throw new Error(String(res.status));
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        state.imageBlobCache.set(resolved, objectUrl);
+        return objectUrl;
+      } catch {
+        state.imageBlobCache.set(resolved, resolved);
+        return resolved;
+      }
+    }
+
+    function renderImageResults(results, query) {
+      const items = Array.isArray(results) ? results.filter((item) => item?.imageUrl && item.imageUrl !== 'null') : [];
+      els.imageBank.innerHTML = '';
+      if (!items.length) {
+        els.imageResultsCount.textContent = query ? 'Showing 0 results' : 'No search yet';
+        els.imageBank.innerHTML = '<div class="empty">Search for images to see results here.</div>';
+        return;
+      }
+      els.imageResultsCount.textContent = `Showing ${items.length} result${items.length === 1 ? '' : 's'}`;
+      items.forEach((item) => {
+        const tile = document.createElement('button');
+        tile.type = 'button';
+        tile.className = 'image-tile' + (state.selectedSearchItem?.assetId === item.assetId ? ' selected' : '');
+        tile.title = item.caption || item.searchDescription || '';
+        const img = document.createElement('img');
+        img.alt = item.caption || item.searchDescription || 'Search result';
+        const resolved = resolveUrl(item.imageUrl);
+        img.src = state.imageBlobCache.get(resolved) || resolved;
+        cachedImageSrc(item.imageUrl).then((src) => {
+          if (img.isConnected) img.src = src;
         });
-      }
-
-      function previewImageSrc(url) {
-        if (!url) return '';
-        if (url.startsWith('blob:') || url.startsWith('data:')) return url;
-        const resolved = resolveUrl(url);
-        return state.imageBlobCache.get(resolved) || resolved;
-      }
-
-      function applyImageInFrame(src, path, slotId) {
-        const doc = els.worksheetFrame.contentDocument;
-        const abs = previewImageSrc(src);
-        if (doc) {
-          const slots = [];
-          doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
-          if (path) doc.querySelectorAll(cssAttr('data-field-path', path)).forEach((n) => slots.push(n));
-          if (slotId) doc.querySelectorAll(cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
-          if (!slots.length) {
-            doc.querySelectorAll('img[data-image-slot], img.worksheet-image').forEach((n) => slots.push(n));
+        const pick = document.createElement('span');
+        pick.className = 'pick';
+        tile.appendChild(img);
+        tile.appendChild(pick);
+        tile.dataset.assetId = item.assetId || '';
+        tile.dataset.imageUrl = resolved || '';
+        tile.addEventListener('click', () => {
+          state.selectedSearchItem = { ...item, imageUrl: resolved };
+          els.imageBank.querySelectorAll('.image-tile').forEach((node) => node.classList.remove('selected'));
+          tile.classList.add('selected');
+        });
+        tile.addEventListener('dblclick', () => {
+          state.selectedSearchItem = { ...item, imageUrl: resolveUrl(item.imageUrl) };
+          if (applySelectedImageToPreview()) {
+            closeImagePicker();
+            toast('Image updated');
           }
-          if (!slots.length) {
-            doc.querySelectorAll('img').forEach((n) => {
-              if (n.classList.contains('worksheet-bg')) return;
-              if (n.closest('.ai-pencil, .img-camera-btn')) return;
-              const srcAttr = n.getAttribute('src') || '';
-              if (/pencil/i.test(srcAttr)) return;
-              slots.push(n);
-            });
-          }
-          slots.forEach((el) => {
-            if (el.tagName === 'IMG') {
-              el.removeAttribute('srcset');
-              el.setAttribute('src', abs);
-              el.src = abs;
-            } else {
-              const nested = el.querySelector('img');
-              if (nested) {
-                nested.removeAttribute('srcset');
-                nested.setAttribute('src', abs);
-                nested.src = abs;
-              }
-              el.style.backgroundImage = 'url("' + abs.replace(/"/g, '\\"') + '")';
+        });
+        els.imageBank.appendChild(tile);
+      });
+    }
+
+    function previewImageSrc(url) {
+      if (!url) return '';
+      if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+      const resolved = resolveUrl(url);
+      return state.imageBlobCache.get(resolved) || resolved;
+    }
+
+    function applyImageInFrame(src, path, slotId) {
+      const doc = els.worksheetFrame.contentDocument;
+      const abs = previewImageSrc(src);
+      if (doc) {
+        const slots = [];
+        doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
+        if (path) doc.querySelectorAll(cssAttr('data-field-path', path)).forEach((n) => slots.push(n));
+        if (slotId) doc.querySelectorAll(cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
+        if (!slots.length) {
+          doc.querySelectorAll('img[data-image-slot], img.worksheet-image').forEach((n) => slots.push(n));
+        }
+        if (!slots.length) {
+          doc.querySelectorAll('img').forEach((n) => {
+            if (n.classList.contains('worksheet-bg')) return;
+            if (n.closest('.ai-pencil, .img-camera-btn')) return;
+            const srcAttr = n.getAttribute('src') || '';
+            if (/pencil/i.test(srcAttr)) return;
+            slots.push(n);
+          });
+        }
+        slots.forEach((el) => {
+          if (el.tagName === 'IMG') {
+            el.removeAttribute('srcset');
+            el.setAttribute('src', abs);
+            el.src = abs;
+          } else {
+            const nested = el.querySelector('img');
+            if (nested) {
+              nested.removeAttribute('srcset');
+              nested.setAttribute('src', abs);
+              nested.src = abs;
             }
-          });
-        }
-        try {
-          els.worksheetFrame.contentWindow.postMessage({
-            type: 'worksheet-set-image',
-            src: abs,
-            path: path || undefined,
-            slotId: slotId || undefined,
-          }, '*');
-        } catch {}
-      }
-
-      function selectedLibraryItem() {
-        if (state.selectedSearchItem?.imageUrl || state.selectedSearchItem?.assetId) {
-          return state.selectedSearchItem;
-        }
-        const tile = els.imageBank.querySelector('.image-tile.selected');
-        if (!tile) return null;
-        return {
-          assetId: tile.dataset.assetId || null,
-          imageUrl: tile.dataset.imageUrl || '',
-          caption: tile.title,
-        };
-      }
-
-      function applyPendingImages(doc) {
-        Object.entries(state.pendingImageReplacements).forEach(([path, item]) => {
-          if (!item?.imageUrl) return;
-          applyImageInFrame(item.imageUrl, path, item.slotId || state.selectedImageSlotId);
+            el.style.backgroundImage = 'url("' + abs.replace(/"/g, '\\"') + '")';
+          }
         });
       }
+      try {
+        els.worksheetFrame.contentWindow.postMessage({
+          type: 'worksheet-set-image',
+          src: abs,
+          path: path || undefined,
+          slotId: slotId || undefined,
+        }, '*');
+      } catch { }
+    }
 
-      function applySelectedImageToPreview() {
-        const item = selectedLibraryItem();
-        const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId) || 'image';
-        if (!item || (!item.assetId && !item.file && !item.imageUrl)) {
-          toast('Select an image first');
-          return false;
-        }
-        state.selectedSearchItem = item;
-        state.selectedImagePath = path;
-        const imageUrl = item.file
-          ? (item.imageUrl || URL.createObjectURL(item.file))
-          : previewImageSrc(item.imageUrl);
-        state.pendingImageReplacements[path] = {
-          assetId: item.assetId || null,
-          userUploadedKey: item.userUploadedKey || null,
-          imageUrl,
-          slotId: state.selectedImageSlotId,
-          file: item.file || null,
-        };
-        applyImageInFrame(imageUrl, path, state.selectedImageSlotId);
-        return true;
+    function selectedLibraryItem() {
+      if (state.selectedSearchItem?.imageUrl || state.selectedSearchItem?.assetId) {
+        return state.selectedSearchItem;
       }
+      const tile = els.imageBank.querySelector('.image-tile.selected');
+      if (!tile) return null;
+      return {
+        assetId: tile.dataset.assetId || null,
+        imageUrl: tile.dataset.imageUrl || '',
+        caption: tile.title,
+      };
+    }
 
-      function fieldValueAt(path) {
-        const structure = state.preview?.structure;
-        if (!path || !structure) return '';
-        const node = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], structure);
-        if (node == null) return '';
-        if (typeof node === 'string' || typeof node === 'number') return String(node);
-        return '';
+    function applyPendingImages(doc) {
+      Object.entries(state.pendingImageReplacements).forEach(([path, item]) => {
+        if (!item?.imageUrl) return;
+        applyImageInFrame(item.imageUrl, path, item.slotId || state.selectedImageSlotId);
+      });
+    }
+
+    function applySelectedImageToPreview() {
+      const item = selectedLibraryItem();
+      const path = resolveImagePath(state.selectedImagePath, state.selectedImageSlotId) || 'image';
+      if (!item || (!item.assetId && !item.file && !item.imageUrl)) {
+        toast('Select an image first');
+        return false;
       }
+      state.selectedSearchItem = item;
+      state.selectedImagePath = path;
+      const imageUrl = item.file
+        ? (item.imageUrl || URL.createObjectURL(item.file))
+        : previewImageSrc(item.imageUrl);
+      state.pendingImageReplacements[path] = {
+        assetId: item.assetId || null,
+        userUploadedKey: item.userUploadedKey || null,
+        imageUrl,
+        slotId: state.selectedImageSlotId,
+        file: item.file || null,
+      };
+      applyImageInFrame(imageUrl, path, state.selectedImageSlotId);
+      return true;
+    }
 
-      function collectPanelFields() {
-        const seen = new Set();
-        const fields = [];
-        const doc = els.worksheetFrame.contentDocument;
-        if (!doc) return fields;
-        doc.querySelectorAll('[data-editable]').forEach((el) => {
-          const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
-          if (!path || seen.has(path)) return;
-          seen.add(path);
-          fields.push({
-            path,
-            type: 'text',
-            label: humanFieldLabel(path, el),
-            value: el.innerText.trim() || fieldValueAt(path),
-          });
+    function fieldValueAt(path) {
+      const structure = state.preview?.structure;
+      if (!path || !structure) return '';
+      const node = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], structure);
+      if (node == null) return '';
+      if (typeof node === 'string' || typeof node === 'number') return String(node);
+      return '';
+    }
+
+    function collectPanelFields() {
+      const seen = new Set();
+      const fields = [];
+      const doc = els.worksheetFrame.contentDocument;
+      if (!doc) return fields;
+      doc.querySelectorAll('[data-editable]').forEach((el) => {
+        const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
+        if (!path || seen.has(path)) return;
+        seen.add(path);
+        fields.push({
+          path,
+          type: 'text',
+          label: humanFieldLabel(path, el),
+          value: el.innerText.trim() || fieldValueAt(path),
         });
-        doc.querySelectorAll('[data-image-slot], img.worksheet-image').forEach((el) => {
-          const img = el.tagName === 'IMG' ? el : el.querySelector('img');
-          const path = el.getAttribute('data-field-path') || el.getAttribute('data-image-slot') || 'image';
-          const slotId = el.getAttribute('data-image-slot') || '';
-          const key = 'img:' + path + ':' + slotId;
-          if (seen.has(key)) return;
-          seen.add(key);
-          fields.push({
-            path,
-            type: 'image',
-            label: 'Image',
-            slotId,
-            src: img?.getAttribute('src') || '',
-          });
+      });
+      doc.querySelectorAll('[data-image-slot], img.worksheet-image').forEach((el) => {
+        const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+        const path = el.getAttribute('data-field-path') || el.getAttribute('data-image-slot') || 'image';
+        const slotId = el.getAttribute('data-image-slot') || '';
+        const key = 'img:' + path + ':' + slotId;
+        if (seen.has(key)) return;
+        seen.add(key);
+        fields.push({
+          path,
+          type: 'image',
+          label: 'Image',
+          slotId,
+          src: img?.getAttribute('src') || '',
         });
-        return fields;
-      }
+      });
+      return fields;
+    }
 
-      function humanFieldLabel(path, el) {
-        const cls = String(el?.className || '');
-        const raw = String(path || '');
-        if (/topic/i.test(raw) || /topic/i.test(cls)) return 'Heading / topic';
-        if (/instruction/i.test(raw) || /instruction/i.test(cls)) return 'Instruction';
-        if (/question/i.test(raw) || /question/i.test(cls)) return 'Question';
-        if (/option/i.test(raw) || /option/i.test(cls)) return 'Option';
-        if (/badge/i.test(raw) || /badge/i.test(cls)) return 'Badge';
-        const visible = (el?.innerText || '').trim();
-        if (visible) return visible.slice(0, 48);
-        return raw.replace(/[_[\]]+/g, ' ').trim();
-      }
+    function humanFieldLabel(path, el) {
+      const cls = String(el?.className || '');
+      const raw = String(path || '');
+      if (/topic/i.test(raw) || /topic/i.test(cls)) return 'Heading / topic';
+      if (/instruction/i.test(raw) || /instruction/i.test(cls)) return 'Instruction';
+      if (/question/i.test(raw) || /question/i.test(cls)) return 'Question';
+      if (/option/i.test(raw) || /option/i.test(cls)) return 'Option';
+      if (/badge/i.test(raw) || /badge/i.test(cls)) return 'Badge';
+      const visible = (el?.innerText || '').trim();
+      if (visible) return visible.slice(0, 48);
+      return raw.replace(/[_[\]]+/g, ' ').trim();
+    }
 
-      function renderAiPanel() {
-        const fields = collectPanelFields();
-        els.aiFieldsList.innerHTML = fields.map((field) => {
-          if (field.type === 'image') {
-            const src = previewImageSrc(field.src) || '';
-            return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
+    function renderAiPanel() {
+      const fields = collectPanelFields();
+      els.aiFieldsList.innerHTML = fields.map((field) => {
+        if (field.type === 'image') {
+          const src = previewImageSrc(field.src) || '';
+          return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
               <h3>${escapeHtml(field.label)} · image</h3>
               ${src ? `<img class="ai-thumb" src="${escapeHtml(src)}" alt="">` : '<div class="ai-thumb"></div>'}
               <div class="row">
                 <button class="btn-search" type="button" data-ai-replace="${escapeHtml(field.path)}" data-slot="${escapeHtml(field.slotId || '')}">Replace image</button>
               </div>
             </div>`;
-          }
-          return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
+        }
+        return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
             <h3>${escapeHtml(field.label)}</h3>
             <label class="field-label" style="font-size:13px; margin-bottom:4px;">Current text</label>
             <textarea data-ai-current="${escapeHtml(field.path)}" rows="3">${escapeHtml(field.value || '')}</textarea>
@@ -2024,276 +2040,333 @@
               <button class="btn-primary" type="button" data-ai-rewrite="${escapeHtml(field.path)}" style="padding:8px 16px; font-size:13px;">✦ AI rewrite</button>
             </div>
           </div>`;
-        }).join('') || '<p class="image-tip">No editable fields found on this worksheet.</p>';
-      }
+      }).join('') || '<p class="image-tip">No editable fields found on this worksheet.</p>';
+    }
 
-      function applyTextInFrame(path, value) {
-        const doc = els.worksheetFrame.contentDocument;
-        if (!doc) return;
-        doc.querySelectorAll(`[data-editable='${path}'], [data-field-path='${path}']`).forEach((el) => {
-          if (el.tagName === 'IMG') return;
-          el.textContent = value;
-        });
-      }
+    function applyTextInFrame(path, value) {
+      const doc = els.worksheetFrame.contentDocument;
+      if (!doc) return;
+      doc.querySelectorAll(`[data-editable='${path}'], [data-field-path='${path}']`).forEach((el) => {
+        if (el.tagName === 'IMG') return;
+        el.textContent = value;
+      });
+    }
 
-      function openAiPanel() {
-        if (!state.worksheetId) {
-          toast('Open a worksheet first');
-          return;
-        }
-        els.fieldEditError.style.display = 'none';
-        els.fieldEditError.textContent = '';
-        els.regenQuery.value = '';
-        renderAiPanel();
-        els.fieldEditModal.classList.add('show');
+    function openAiPanel() {
+      if (!state.worksheetId) {
+        toast('Open a worksheet first');
+        return;
       }
+      els.fieldEditError.style.display = 'none';
+      els.fieldEditError.textContent = '';
+      els.regenQuery.value = '';
+      renderAiPanel();
+      els.fieldEditModal.classList.add('show');
+    }
 
-      function openFieldEditor(path) {
+    function openFieldEditor(path) {
+      if (!state.editMode) return;
+      if (!path) {
+        toast('That text field could not be identified');
+        return;
+      }
+      state.selectedFieldPath = path;
+      const doc = els.worksheetFrame.contentDocument;
+      const live = doc?.querySelector(`[data-editable='${path}'], [data-field-path='${path}']`);
+      els.singleFieldTitle.textContent = humanFieldLabel(path, live);
+      els.singleFieldCurrent.value = live?.innerText?.trim() || fieldValueAt(path);
+      els.singleFieldPrompt.value = '';
+      els.singleFieldError.style.display = 'none';
+      els.singleFieldError.textContent = '';
+      els.singleFieldModal.classList.add('show');
+    }
+
+    window.addEventListener('message', (event) => {
+      const data = event.data || {};
+      if (data.type === 'worksheet-replace-image') {
+        if (!state.editMode && !state.imagePickFromAi) return;
+        openImagePicker(data.path, data.slotId, state.imagePickFromAi);
+      }
+      if (data.type === 'worksheet-select-field') {
         if (!state.editMode) return;
-        if (!path) {
-          toast('That text field could not be identified');
-          return;
-        }
-        state.selectedFieldPath = path;
-        const doc = els.worksheetFrame.contentDocument;
-        const live = doc?.querySelector(`[data-editable='${path}'], [data-field-path='${path}']`);
-        els.singleFieldTitle.textContent = humanFieldLabel(path, live);
-        els.singleFieldCurrent.value = live?.innerText?.trim() || fieldValueAt(path);
-        els.singleFieldPrompt.value = '';
-        els.singleFieldError.style.display = 'none';
-        els.singleFieldError.textContent = '';
-        els.singleFieldModal.classList.add('show');
+        state.selectedFieldPath = data.path;
       }
+      if (data.type === 'worksheet-ai-field') {
+        if (!state.editMode) return;
+        openFieldEditor(data.path);
+      }
+    });
 
-      window.addEventListener('message', (event) => {
-        const data = event.data || {};
-        if (data.type === 'worksheet-replace-image') {
-          if (!state.editMode && !state.imagePickFromAi) return;
-          openImagePicker(data.path, data.slotId, state.imagePickFromAi);
-        }
-        if (data.type === 'worksheet-select-field') {
-          if (!state.editMode) return;
-          state.selectedFieldPath = data.path;
-        }
-        if (data.type === 'worksheet-ai-field') {
-          if (!state.editMode) return;
-          openFieldEditor(data.path);
-        }
+    function enableInlineEditing(on) {
+      const doc = els.worksheetFrame.contentDocument;
+      if (!doc) return;
+      doc.body.classList.toggle('edit-mode', on);
+      doc.querySelectorAll('[data-editable]').forEach((el) => {
+        if (on) el.setAttribute('contenteditable', 'true');
+        else el.removeAttribute('contenteditable');
       });
+    }
 
-      function enableInlineEditing(on) {
-        const doc = els.worksheetFrame.contentDocument;
-        if (!doc) return;
-        doc.body.classList.toggle('edit-mode', on);
-        doc.querySelectorAll('[data-editable]').forEach((el) => {
-          if (on) el.setAttribute('contenteditable', 'true');
-          else el.removeAttribute('contenteditable');
-        });
-      }
-
-      async function saveInlineEdits() {
-        const doc = els.worksheetFrame.contentDocument;
-        const fields = [];
-        doc?.querySelectorAll('[data-editable]').forEach((el) => {
-          const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
-          if (!path) return;
-          fields.push({ path, value: el.innerText.trim() });
-        });
-        const images = [];
-        for (const [path, item] of Object.entries(state.pendingImageReplacements)) {
-          if (item?.file) {
-            const form = new FormData();
-            form.append('file', item.file);
-            form.append('path', path);
-            const uploaded = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/upload`, {
-              method: 'POST',
-              body: form,
-            });
-            const body = await uploaded.json().catch(() => ({}));
-            if (!uploaded.ok) {
-              throw new Error(friendlyError(body, 'Image upload failed'));
-            }
-            images.push({
-              path,
-              assetId: null,
-              userUploadedKey: body.userUploadedKey,
-            });
-            continue;
-          }
-          if (item?.userUploadedKey) {
-            images.push({ path, assetId: null, userUploadedKey: item.userUploadedKey });
-            continue;
-          }
-          if (item?.assetId) {
-            images.push({ path, assetId: item.assetId });
-          }
-        }
-        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/save`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fields, images }),
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(friendlyError(body, 'Could not save worksheet edits'));
-        }
-        state.pendingImageReplacements = {};
-        await openPreview(state.worksheetId);
-      }
-
-      async function download(id, format) {
-        toast('Preparing download…');
-        const res = await apiFetch(`/${encodeURIComponent(id)}/download`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ format, mode: 'export' }),
-        });
-        const contentType = res.headers.get('content-type') || '';
-        if (!res.ok || contentType.includes('application/json')) {
-          const body = await res.json().catch(() => ({}));
-          toast(friendlyError(body, 'Download failed'));
-          return;
-        }
-        const blob = await res.blob();
-        let filename = format === 'pdf' ? 'worksheet.pdf' : (format === 'png' ? 'worksheet.png' : 'worksheet.webp');
-        const disposition = res.headers.get('content-disposition') || '';
-        const named = /filename="?([^"]+)"?/i.exec(disposition);
-        if (named?.[1]) filename = named[1];
-        const href = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = href;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(href);
-      }
-
-      async function searchImages() {
-        if (!state.worksheetId) return;
-        const query = els.imageQuery.value.trim();
-        const path = state.selectedImagePath;
-        const key = cacheKey(query, query ? '' : path);
-        if (state.imageSearchCache.has(key)) {
-          const cached = state.imageSearchCache.get(key);
-          state.lastImageSearch = cached;
-          renderImageResults(cached.results, cached.query);
-          return;
-        }
-        els.searchImagesBtn.disabled = true;
-        els.imageResultsCount.textContent = 'Searching…';
-        const params = new URLSearchParams();
-        if (query) params.set('query', query);
-        if (path) params.set('path', path);
-        params.set('limit', String(state.imagePickerLimit || 10));
-        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/search?${params}`);
-        const body = await res.json().catch(() => ({}));
-        els.searchImagesBtn.disabled = false;
-        if (!res.ok) {
-          toast(friendlyError(body, 'Image search failed'));
-          els.imageResultsCount.textContent = 'Search failed';
-          return;
-        }
-        const payload = {
-          query: body.query || query,
-          results: body.results || [],
-          path,
-        };
-        state.imageSearchCache.set(key, payload);
-        if (payload.query) state.imageSearchCache.set(cacheKey(payload.query, ''), payload);
-        state.lastImageSearch = payload;
-        renderImageResults(payload.results, payload.query);
-        payload.results.forEach((item) => {
-          if (item?.imageUrl) cachedImageSrc(item.imageUrl);
-        });
-      }
-
-      els.generateBtn.addEventListener('click', generateSet);
-      els.cancelBtn.addEventListener('click', () => { els.topicInput.value = ''; clearBanners(); });
-      els.backBtn.addEventListener('click', () => { showGrid(); });
-      els.editBtn.addEventListener('click', async () => {
-        if (!state.editMode) {
-          state.editMode = true;
-          enableInlineEditing(true);
-          els.editBtn.textContent = 'Save';
-          toast('Click on text elements or pencil icons to edit');
-          return;
-        }
-        els.editBtn.disabled = true;
-        toast('Saving worksheet…');
-        try {
-          await saveInlineEdits();
-          state.editMode = false;
-          els.editBtn.textContent = 'Edit';
-          toast('Worksheet saved');
-        } catch (error) {
-          toast(error.message || 'Could not save worksheet edits');
-        } finally {
-          els.editBtn.disabled = false;
-        }
+    async function saveInlineEdits() {
+      const doc = els.worksheetFrame.contentDocument;
+      const fields = [];
+      doc?.querySelectorAll('[data-editable]').forEach((el) => {
+        const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
+        if (!path) return;
+        fields.push({ path, value: el.innerText.trim() });
       });
-      els.aiEditBtn.addEventListener('click', () => openAiPanel());
-      els.downloadPngBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'png'));
-      els.downloadPdfBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'pdf'));
-      els.imagePickerCloseBtn.addEventListener('click', closeImagePicker);
-      els.imagePickerCancelBtn.addEventListener('click', closeImagePicker);
-      els.searchTabBtn.addEventListener('click', () => setImagePickerTab('search'));
-      els.uploadTabBtn.addEventListener('click', () => setImagePickerTab('upload'));
-      els.imageUploadInput.addEventListener('change', () => {
+      const images = [];
+      for (const [path, item] of Object.entries(state.pendingImageReplacements)) {
+        if (item?.file) {
+          const form = new FormData();
+          form.append('file', item.file);
+          form.append('path', path);
+          const uploaded = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/upload`, {
+            method: 'POST',
+            body: form,
+          });
+          const body = await uploaded.json().catch(() => ({}));
+          if (!uploaded.ok) {
+            throw new Error(friendlyError(body, 'Image upload failed'));
+          }
+          images.push({
+            path,
+            assetId: null,
+            userUploadedKey: body.userUploadedKey,
+          });
+          continue;
+        }
+        if (item?.userUploadedKey) {
+          images.push({ path, assetId: null, userUploadedKey: item.userUploadedKey });
+          continue;
+        }
+        if (item?.assetId) {
+          images.push({ path, assetId: item.assetId });
+        }
+      }
+      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields, images }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(friendlyError(body, 'Could not save worksheet edits'));
+      }
+      state.pendingImageReplacements = {};
+      await openPreview(state.worksheetId);
+    }
+
+    async function download(id, format) {
+      toast('Preparing download…');
+      const res = await apiFetch(`/${encodeURIComponent(id)}/download`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format, mode: 'export' }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || contentType.includes('application/json')) {
+        const body = await res.json().catch(() => ({}));
+        toast(friendlyError(body, 'Download failed'));
+        return;
+      }
+      const blob = await res.blob();
+      let filename = format === 'pdf' ? 'worksheet.pdf' : (format === 'png' ? 'worksheet.png' : 'worksheet.webp');
+      const disposition = res.headers.get('content-disposition') || '';
+      const named = /filename="?([^"]+)"?/i.exec(disposition);
+      if (named?.[1]) filename = named[1];
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+    }
+
+    async function searchImages() {
+      if (!state.worksheetId) return;
+      const query = els.imageQuery.value.trim();
+      const path = state.selectedImagePath;
+      const key = cacheKey(query, query ? '' : path);
+      if (state.imageSearchCache.has(key)) {
+        const cached = state.imageSearchCache.get(key);
+        state.lastImageSearch = cached;
+        renderImageResults(cached.results, cached.query);
+        return;
+      }
+      els.searchImagesBtn.disabled = true;
+      els.imageResultsCount.textContent = 'Searching…';
+      const params = new URLSearchParams();
+      if (query) params.set('query', query);
+      if (path) params.set('path', path);
+      params.set('limit', String(state.imagePickerLimit || 10));
+      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/search?${params}`);
+      const body = await res.json().catch(() => ({}));
+      els.searchImagesBtn.disabled = false;
+      if (!res.ok) {
+        toast(friendlyError(body, 'Image search failed'));
+        els.imageResultsCount.textContent = 'Search failed';
+        return;
+      }
+      const payload = {
+        query: body.query || query,
+        results: body.results || [],
+        path,
+      };
+      state.imageSearchCache.set(key, payload);
+      if (payload.query) state.imageSearchCache.set(cacheKey(payload.query, ''), payload);
+      state.lastImageSearch = payload;
+      renderImageResults(payload.results, payload.query);
+      payload.results.forEach((item) => {
+        if (item?.imageUrl) cachedImageSrc(item.imageUrl);
+      });
+    }
+
+    els.generateBtn.addEventListener('click', generateSet);
+    els.cancelBtn.addEventListener('click', () => { els.topicInput.value = ''; clearBanners(); });
+    els.backBtn.addEventListener('click', () => { showGrid(); });
+    els.editBtn.addEventListener('click', async () => {
+      if (!state.editMode) {
+        state.editMode = true;
+        enableInlineEditing(true);
+        els.editBtn.textContent = 'Save';
+        toast('Click on text elements or pencil icons to edit');
+        return;
+      }
+      els.editBtn.disabled = true;
+      toast('Saving worksheet…');
+      try {
+        await saveInlineEdits();
+        state.editMode = false;
+        els.editBtn.textContent = 'Edit';
+        toast('Worksheet saved');
+      } catch (error) {
+        toast(error.message || 'Could not save worksheet edits');
+      } finally {
+        els.editBtn.disabled = false;
+      }
+    });
+    els.aiEditBtn.addEventListener('click', () => openAiPanel());
+    els.downloadPngBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'png'));
+    els.downloadPdfBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'pdf'));
+    els.imagePickerCloseBtn.addEventListener('click', closeImagePicker);
+    els.imagePickerCancelBtn.addEventListener('click', closeImagePicker);
+    els.searchTabBtn.addEventListener('click', () => setImagePickerTab('search'));
+    els.uploadTabBtn.addEventListener('click', () => setImagePickerTab('upload'));
+    els.imageUploadInput.addEventListener('change', () => {
+      const file = els.imageUploadInput.files?.[0];
+      if (!file) {
+        els.uploadPreview.classList.add('hidden');
+        els.uploadPreview.removeAttribute('src');
+        return;
+      }
+      const previewUrl = URL.createObjectURL(file);
+      state.imageBlobCache.set(previewUrl, previewUrl);
+      els.uploadPreview.src = previewUrl;
+      els.uploadPreview.classList.remove('hidden');
+      state.selectedSearchItem = {
+        assetId: null,
+        imageUrl: previewUrl,
+        file,
+        caption: file.name,
+      };
+    });
+    els.searchImagesBtn.addEventListener('click', searchImages);
+    els.imageQuery.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        searchImages();
+      }
+    });
+    els.selectImageBtn.addEventListener('click', async () => {
+      if (state.imagePickerTab === 'upload') {
         const file = els.imageUploadInput.files?.[0];
         if (!file) {
-          els.uploadPreview.classList.add('hidden');
-          els.uploadPreview.removeAttribute('src');
+          toast('Choose an image to upload');
           return;
         }
-        const previewUrl = URL.createObjectURL(file);
-        state.imageBlobCache.set(previewUrl, previewUrl);
-        els.uploadPreview.src = previewUrl;
-        els.uploadPreview.classList.remove('hidden');
+        const previewUrl = els.uploadPreview.src || URL.createObjectURL(file);
         state.selectedSearchItem = {
           assetId: null,
           imageUrl: previewUrl,
           file,
           caption: file.name,
         };
-      });
-      els.searchImagesBtn.addEventListener('click', searchImages);
-      els.imageQuery.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          searchImages();
-        }
-      });
-      els.selectImageBtn.addEventListener('click', async () => {
-        if (state.imagePickerTab === 'upload') {
-          const file = els.imageUploadInput.files?.[0];
-          if (!file) {
-            toast('Choose an image to upload');
-            return;
-          }
-          const previewUrl = els.uploadPreview.src || URL.createObjectURL(file);
-          state.selectedSearchItem = {
-            assetId: null,
-            imageUrl: previewUrl,
-            file,
-            caption: file.name,
-          };
-        }
-        if (!applySelectedImageToPreview()) return;
-        closeImagePicker();
-        toast('Image updated. Click Save to keep the change.');
-        if (els.fieldEditModal.classList.contains('show')) renderAiPanel();
-      });
-
-      function closeSingleField() {
-        els.singleFieldModal.classList.remove('show');
       }
-      els.singleFieldCloseBtn.addEventListener('click', closeSingleField);
-      els.singleFieldCancelBtn.addEventListener('click', closeSingleField);
-      els.singleFieldSaveBtn.addEventListener('click', async () => {
-        const path = state.selectedFieldPath;
-        const value = els.singleFieldCurrent.value;
-        els.singleFieldError.style.display = 'none';
+      if (!applySelectedImageToPreview()) return;
+      closeImagePicker();
+      toast('Image updated. Click Save to keep the change.');
+      if (els.fieldEditModal.classList.contains('show')) renderAiPanel();
+    });
+
+    function closeSingleField() {
+      els.singleFieldModal.classList.remove('show');
+    }
+    els.singleFieldCloseBtn.addEventListener('click', closeSingleField);
+    els.singleFieldCancelBtn.addEventListener('click', closeSingleField);
+    els.singleFieldSaveBtn.addEventListener('click', async () => {
+      const path = state.selectedFieldPath;
+      const value = els.singleFieldCurrent.value;
+      els.singleFieldError.style.display = 'none';
+      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        els.singleFieldError.textContent = friendlyError(body, 'Could not save field');
+        els.singleFieldError.style.display = 'block';
+        return;
+      }
+      applyTextInFrame(path, value);
+      closeSingleField();
+      toast('Text updated');
+    });
+
+    els.singleFieldRewriteBtn.addEventListener('click', async () => {
+      const path = state.selectedFieldPath;
+      const instruction = els.singleFieldPrompt.value.trim() || 'Rewrite this field for the same age group.';
+      els.singleFieldError.style.display = 'none';
+      els.singleFieldRewriteBtn.disabled = true;
+      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fieldPath: path, instruction }),
+      });
+      const body = await res.json().catch(() => ({}));
+      els.singleFieldRewriteBtn.disabled = false;
+      if (!res.ok) {
+        els.singleFieldError.textContent = friendlyError(body, 'AI edit failed');
+        els.singleFieldError.style.display = 'block';
+        return;
+      }
+      const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
+      const text = typeof next === 'string' || typeof next === 'number' ? String(next) : els.singleFieldCurrent.value;
+      els.singleFieldCurrent.value = text;
+      applyTextInFrame(path, text);
+      toast('Text rewritten');
+    });
+
+    els.fieldEditCancelBtn.addEventListener('click', () => {
+      state.imagePickFromAi = false;
+      els.fieldEditModal.classList.remove('show');
+    });
+
+    els.aiFieldsList.addEventListener('click', async (event) => {
+      const replaceBtn = event.target.closest('[data-ai-replace]');
+      if (replaceBtn) {
+        state.imagePickFromAi = true;
+        openImagePicker(replaceBtn.getAttribute('data-ai-replace'), replaceBtn.getAttribute('data-slot'), true);
+        return;
+      }
+      const applyBtn = event.target.closest('[data-ai-apply]');
+      if (applyBtn) {
+        const path = applyBtn.getAttribute('data-ai-apply');
+        const value = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`)?.value ?? '';
+        els.fieldEditError.style.display = 'none';
         const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2301,213 +2374,157 @@
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-          els.singleFieldError.textContent = friendlyError(body, 'Could not save field');
-          els.singleFieldError.style.display = 'block';
+          els.fieldEditError.textContent = friendlyError(body, 'Could not save field');
+          els.fieldEditError.style.display = 'block';
           return;
         }
         applyTextInFrame(path, value);
-        closeSingleField();
-        toast('Text updated');
-      });
-
-      els.singleFieldRewriteBtn.addEventListener('click', async () => {
-        const path = state.selectedFieldPath;
-        const instruction = els.singleFieldPrompt.value.trim() || 'Rewrite this field for the same age group.';
-        els.singleFieldError.style.display = 'none';
-        els.singleFieldRewriteBtn.disabled = true;
+        if (body.structure) state.preview = { ...state.preview, structure: body.structure, html: body.html || state.preview.html };
+        toast('Field updated');
+        return;
+      }
+      const rewriteBtn = event.target.closest('[data-ai-rewrite]');
+      if (rewriteBtn) {
+        const path = rewriteBtn.getAttribute('data-ai-rewrite');
+        const instruction = els.aiFieldsList.querySelector(`[data-ai-prompt="${path}"]`)?.value
+          || 'Rewrite this field for the same age group.';
+        els.fieldEditError.style.display = 'none';
+        rewriteBtn.disabled = true;
         const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fieldPath: path, instruction }),
         });
         const body = await res.json().catch(() => ({}));
-        els.singleFieldRewriteBtn.disabled = false;
+        rewriteBtn.disabled = false;
         if (!res.ok) {
-          els.singleFieldError.textContent = friendlyError(body, 'AI edit failed');
-          els.singleFieldError.style.display = 'block';
+          els.fieldEditError.textContent = friendlyError(body, 'AI edit failed');
+          els.fieldEditError.style.display = 'block';
           return;
         }
         const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
-        const text = typeof next === 'string' || typeof next === 'number' ? String(next) : els.singleFieldCurrent.value;
-        els.singleFieldCurrent.value = text;
+        const text = typeof next === 'string' || typeof next === 'number' ? String(next) : '';
+        const box = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`);
+        if (box) box.value = text;
         applyTextInFrame(path, text);
-        toast('Text rewritten');
-      });
-
-      els.fieldEditCancelBtn.addEventListener('click', () => {
-        state.imagePickFromAi = false;
-        els.fieldEditModal.classList.remove('show');
-      });
-
-      els.aiFieldsList.addEventListener('click', async (event) => {
-        const replaceBtn = event.target.closest('[data-ai-replace]');
-        if (replaceBtn) {
-          state.imagePickFromAi = true;
-          openImagePicker(replaceBtn.getAttribute('data-ai-replace'), replaceBtn.getAttribute('data-slot'), true);
-          return;
+        if (body.html) {
+          const keepEdit = state.editMode;
+          await openPreview(state.worksheetId);
+          state.editMode = keepEdit;
+          enableInlineEditing(keepEdit);
+          renderAiPanel();
         }
-        const applyBtn = event.target.closest('[data-ai-apply]');
-        if (applyBtn) {
-          const path = applyBtn.getAttribute('data-ai-apply');
-          const value = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`)?.value ?? '';
-          els.fieldEditError.style.display = 'none';
-          const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path, value }),
+        toast('Field rewritten');
+      }
+    });
+
+    els.regenWorksheetBtn.addEventListener('click', async () => {
+      const query = els.regenQuery.value.trim();
+      if (!query) {
+        els.fieldEditError.textContent = 'Enter requirements to regenerate this worksheet';
+        els.fieldEditError.style.display = 'block';
+        return;
+      }
+      els.fieldEditError.style.display = 'none';
+      els.regenWorksheetBtn.disabled = true;
+      els.regenWorksheetBtn.textContent = 'Generating…';
+      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+      const body = await res.json().catch(() => ({}));
+      els.regenWorksheetBtn.disabled = false;
+      els.regenWorksheetBtn.textContent = '✦ Regenerate worksheet';
+      if (!res.ok) {
+        els.fieldEditError.textContent = friendlyError(body, 'Regenerate failed');
+        els.fieldEditError.style.display = 'block';
+        return;
+      }
+      const keepEdit = state.editMode;
+      await openPreview(state.worksheetId);
+      state.editMode = keepEdit;
+      enableInlineEditing(keepEdit);
+      renderAiPanel();
+      toast('Worksheet regenerated');
+    });
+
+    window.addEventListener('resize', scaleFrame);
+
+    function fillCountOptions(defaultCount, maxCount) {
+      state.defaultCount = defaultCount;
+      state.maxCount = maxCount;
+      const options = [1, 3, 5, 8, 10];
+      els.countSelect.innerHTML = options.map((n) => `<option value="${n}">${n}</option>`).join('');
+      els.countSelect.value = String(defaultCount || 1);
+    }
+
+    function applySettings(settings) {
+      if (!settings || typeof settings !== 'object') return;
+      if (settings.pageSize) state.pageSize = Number(settings.pageSize) || state.pageSize;
+      if (settings.pagerMaxButtons) state.pagerMaxButtons = Number(settings.pagerMaxButtons) || state.pagerMaxButtons;
+      if (settings.canvas?.width && settings.canvas?.height) state.canvas = settings.canvas;
+      if (settings.imagePickerLimit) state.imagePickerLimit = Number(settings.imagePickerLimit) || 10;
+      if (Array.isArray(settings.ageGroups) && settings.ageGroups.length) {
+        state.ages = settings.ageGroups;
+        state.ageGroup = settings.defaultAgeGroup && state.ages.some((age) => age.id === settings.defaultAgeGroup)
+          ? settings.defaultAgeGroup
+          : state.ages[0].id;
+      }
+      fillCountOptions(settings.defaultCount || state.defaultCount, settings.maxCount || state.maxCount);
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await apiFetch('/settings');
+        const settings = await res.json();
+        if (res.ok) applySettings(settings);
+      } catch (error) {
+        console.warn('Could not load settings:', error);
+      }
+    }
+
+    async function loadTemplates() {
+      try {
+        const res = await apiFetch('/templates');
+        const templates = await res.json();
+        if (res.ok && Array.isArray(templates)) {
+          const options = ['<option value="">Auto — no template selected</option>'];
+          templates.forEach((t) => {
+            options.push(`<option value="${t.id}">${escapeHtml(t.name)}</option>`);
           });
-          const body = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            els.fieldEditError.textContent = friendlyError(body, 'Could not save field');
-            els.fieldEditError.style.display = 'block';
-            return;
-          }
-          applyTextInFrame(path, value);
-          if (body.structure) state.preview = { ...state.preview, structure: body.structure, html: body.html || state.preview.html };
-          toast('Field updated');
-          return;
+          els.templateSelect.innerHTML = options.join('');
         }
-        const rewriteBtn = event.target.closest('[data-ai-rewrite]');
-        if (rewriteBtn) {
-          const path = rewriteBtn.getAttribute('data-ai-rewrite');
-          const instruction = els.aiFieldsList.querySelector(`[data-ai-prompt="${path}"]`)?.value
-            || 'Rewrite this field for the same age group.';
-          els.fieldEditError.style.display = 'none';
-          rewriteBtn.disabled = true;
-          const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fieldPath: path, instruction }),
-          });
-          const body = await res.json().catch(() => ({}));
-          rewriteBtn.disabled = false;
-          if (!res.ok) {
-            els.fieldEditError.textContent = friendlyError(body, 'AI edit failed');
-            els.fieldEditError.style.display = 'block';
-            return;
-          }
-          const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
-          const text = typeof next === 'string' || typeof next === 'number' ? String(next) : '';
-          const box = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`);
-          if (box) box.value = text;
-          applyTextInFrame(path, text);
-          if (body.html) {
-            const keepEdit = state.editMode;
-            await openPreview(state.worksheetId);
-            state.editMode = keepEdit;
-            enableInlineEditing(keepEdit);
-            renderAiPanel();
-          }
-          toast('Field rewritten');
-        }
-      });
-
-      els.regenWorksheetBtn.addEventListener('click', async () => {
-        const query = els.regenQuery.value.trim();
-        if (!query) {
-          els.fieldEditError.textContent = 'Enter requirements to regenerate this worksheet';
-          els.fieldEditError.style.display = 'block';
-          return;
-        }
-        els.fieldEditError.style.display = 'none';
-        els.regenWorksheetBtn.disabled = true;
-        els.regenWorksheetBtn.textContent = 'Generating…';
-        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/regenerate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query }),
-        });
-        const body = await res.json().catch(() => ({}));
-        els.regenWorksheetBtn.disabled = false;
-        els.regenWorksheetBtn.textContent = '✦ Regenerate worksheet';
-        if (!res.ok) {
-          els.fieldEditError.textContent = friendlyError(body, 'Regenerate failed');
-          els.fieldEditError.style.display = 'block';
-          return;
-        }
-        const keepEdit = state.editMode;
-        await openPreview(state.worksheetId);
-        state.editMode = keepEdit;
-        enableInlineEditing(keepEdit);
-        renderAiPanel();
-        toast('Worksheet regenerated');
-      });
-
-      window.addEventListener('resize', scaleFrame);
-
-      function fillCountOptions(defaultCount, maxCount) {
-        state.defaultCount = defaultCount;
-        state.maxCount = maxCount;
-        const options = [1, 3, 5, 8, 10];
-        els.countSelect.innerHTML = options.map((n) => `<option value="${n}">${n}</option>`).join('');
-        els.countSelect.value = String(defaultCount || 1);
+      } catch (error) {
+        console.warn('Could not load templates', error);
       }
+    }
 
-      function applySettings(settings) {
-        if (!settings || typeof settings !== 'object') return;
-        if (settings.pageSize) state.pageSize = Number(settings.pageSize) || state.pageSize;
-        if (settings.pagerMaxButtons) state.pagerMaxButtons = Number(settings.pagerMaxButtons) || state.pagerMaxButtons;
-        if (settings.canvas?.width && settings.canvas?.height) state.canvas = settings.canvas;
-        if (settings.imagePickerLimit) state.imagePickerLimit = Number(settings.imagePickerLimit) || 10;
-        if (Array.isArray(settings.ageGroups) && settings.ageGroups.length) {
-          state.ages = settings.ageGroups;
-          state.ageGroup = settings.defaultAgeGroup && state.ages.some((age) => age.id === settings.defaultAgeGroup)
-            ? settings.defaultAgeGroup
-            : state.ages[0].id;
-        }
-        fillCountOptions(settings.defaultCount || state.defaultCount, settings.maxCount || state.maxCount);
-      }
-
-      async function loadSettings() {
-        try {
-          const res = await apiFetch('/settings');
-          const settings = await res.json();
-          if (res.ok) applySettings(settings);
-        } catch (error) {
-          console.warn('Could not load settings:', error);
-        }
-      }
-
-      async function loadTemplates() {
-        try {
-          const res = await apiFetch('/templates');
-          const templates = await res.json();
-          if (res.ok && Array.isArray(templates)) {
-            const options = ['<option value="">Auto — no template selected</option>'];
-            templates.forEach((t) => {
-              options.push(`<option value="${t.id}">${escapeHtml(t.name)}</option>`);
-            });
-            els.templateSelect.innerHTML = options.join('');
-          }
-        } catch (error) {
-          console.warn('Could not load templates', error);
-        }
-      }
-
-      document.querySelectorAll('.chip').forEach((chip) => {
-        chip.addEventListener('click', () => {
-          const q = chip.getAttribute('data-q');
-          const a = chip.getAttribute('data-a');
-          if (q) els.topicInput.value = q;
-          if (a) {
-            state.ageGroup = a;
-            renderAges();
-          }
-        });
-      });
-
-      renderAges();
-      fillCountOptions(state.defaultCount, state.maxCount);
-      loadSettings()
-        .then(() => {
+    document.querySelectorAll('.chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const q = chip.getAttribute('data-q');
+        const a = chip.getAttribute('data-a');
+        if (q) els.topicInput.value = q;
+        if (a) {
+          state.ageGroup = a;
           renderAges();
-          loadTemplates();
-          const params = new URLSearchParams(location.search);
-          if (params.get('id')) return openPreview(params.get('id'));
-          els.worksheetGrid.innerHTML = '';
-          els.empty.style.display = 'block';
-        })
-        .catch((error) => showBanner('error', errorBannerHtml(error, 'Could not load initial data', 'Initialization Error')));
-    </script>
-  </body>
+        }
+      });
+    });
+
+    renderAges();
+    fillCountOptions(state.defaultCount, state.maxCount);
+    loadSettings()
+      .then(() => {
+        renderAges();
+        loadTemplates();
+        const params = new URLSearchParams(location.search);
+        if (params.get('id')) return openPreview(params.get('id'));
+        els.worksheetGrid.innerHTML = '';
+        els.empty.style.display = 'block';
+      })
+      .catch((error) => showBanner('error', errorBannerHtml(error, 'Could not load initial data', 'Initialization Error')));
+  </script>
+</body>
+
 </html>
