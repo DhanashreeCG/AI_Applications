@@ -5,6 +5,7 @@ import {
   Header,
   Headers,
   HttpCode,
+  HttpException,
   HttpStatus,
   Param,
   Post,
@@ -19,6 +20,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import { ApiConsumes, ApiOperation, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { FLASHCARD_USER_UPLOAD_MAX_BYTES } from './constants/flashcard.constants';
 import { DownloadFlashcardDto, EditFlashcardDto, SearchFlashcardImagesQueryDto } from './dto/edit-flashcard.dto';
@@ -29,6 +31,7 @@ import {
   SaveFlashcardEditsDto,
   SaveGeneratedFlashcardsDto,
 } from './dto/save-flashcards.dto';
+import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-storage.service';
 import { UploadFlashcardTemplatesDto } from './dto/upload-flashcard-template.dto';
 import { FlashcardException } from './errors/flashcard.exception';
 import { GenerateFlashcardsResponse } from './interfaces/flashcard.interfaces';
@@ -51,6 +54,7 @@ export class FlashcardsController {
     private readonly persistence: FlashcardPersistenceService,
     private readonly editService: FlashcardEditService,
     private readonly downloadService: FlashcardDownloadService,
+    private readonly storageService: FlashcardStorageService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -225,6 +229,115 @@ export class FlashcardsController {
       );
     }
     return this.rendererService.render(dto);
+  }
+
+  @Post('render-and-notify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Render selected flashcard cards to PNG, upload to S3, and return structured resource list for postMessage',
+  })
+  async renderAndNotify(
+    @Body() body: SaveGeneratedFlashcardsDto & { grade?: { id?: string; name?: string }; auth?: string },
+  ) {
+    const parentOrigin = this.configService.get<string>('flashcards.parentOrigin') ?? '*';
+    const grade = body.grade ?? null;
+
+    const cards = body.cards ?? [];
+    if (!cards.length) {
+      throw new HttpException('No cards provided', HttpStatus.BAD_REQUEST);
+    }
+
+    const resources: { url: string; signedUrl: string; s3Key: string; folder: string; fileName: string; mediaId?: string }[] = [];
+
+    const uploadApiUrl = this.configService.get<string>('flashcards.upload.apiUrl') || 'https://gyan-dev-api.creativegalileo.com/api/gyan/V1/media/upload-media';
+    const entityName = this.configService.get<string>('flashcards.upload.entityName') || 'flashcards';
+    const entityType = this.configService.get<string>('flashcards.upload.entityType') || 'flashcards';
+    const folderName = this.configService.get<string>('flashcards.upload.folderName') || 'flashcards';
+
+    for (let i = 0; i < cards.length; i++) {
+      const cardPayload = { ...body, cards: [cards[i]] };
+      const result = await this.downloadService.downloadFromPayload(
+        cardPayload as unknown as import('./interfaces/flashcard.interfaces').GenerateFlashcardsResponse,
+        'png',
+        0,
+      );
+
+      const fileName = result.fileName;
+
+      const formData = new FormData();
+      formData.append('files', new Blob([result.buffer as any], { type: 'image/png' }), fileName);
+      formData.append('entityName', entityName);
+      formData.append('entityType', entityType);
+      formData.append('folderName', folderName);
+
+      const uploadResponse = await fetch(uploadApiUrl, {
+        method: 'POST',
+        headers: {
+          ...(body.auth ? { 'Authorization': `Bearer ${body.auth}` } : {}),
+        },
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        throw new HttpException(`Failed to upload media: ${errorText}`, HttpStatus.BAD_GATEWAY);
+      }
+
+      const uploadResult = await uploadResponse.json();
+      if (!uploadResult.success || !uploadResult.data || !uploadResult.data[0]) {
+        throw new HttpException(`Invalid response from upload media API: ${JSON.stringify(uploadResult)}`, HttpStatus.BAD_GATEWAY);
+      }
+
+      const mediaData = uploadResult.data[0];
+
+      resources.push({
+        url: mediaData.Location,
+        signedUrl: mediaData.Location,
+        s3Key: mediaData.key || mediaData.Key,
+        folder: folderName,
+        fileName: fileName,
+        mediaId: mediaData.mediaId,
+      });
+    }
+
+    return {
+      type: 'flashcards:saved',
+      grade,
+      resources: resources.map((r) => r.url),
+      cards: resources,
+      parentOrigin,
+    };
+  }
+
+  @Get('grades')
+  @ApiOperation({
+    summary: 'Proxy request to fetch grades from Gyan API',
+  })
+  async getGrades(
+    @Query('schoolId') schoolId: string,
+    @Query('pageSize') pageSize: string,
+    @Query('paginated') paginated: string,
+    @Query('pageNo') pageNo: string,
+    @Headers('authorization') authorization: string,
+  ) {
+    const baseUrl = this.configService.get<string>('flashcards.gyanApiBaseUrl');
+    const url = `${baseUrl}/api/gyan/V1/grade?pageSize=${pageSize || 50}&paginated=${paginated || 'true'}&pageNo=${pageNo || 1}&schoolId=${schoolId}`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'accept': 'application/json, text/plain, */*',
+        'accept-language': 'en-US,en;q=0.9',
+        'authorization': authorization,
+      },
+    });
+
+    if (!response.ok) {
+      throw new HttpException('Failed to fetch grades from Gyan API', response.status);
+    }
+    
+    const data = await response.json();
+    return data;
   }
 
   @Get('templates')
