@@ -1,5 +1,6 @@
-import { collectImageSlots } from './structure.util';
+import { collectImageSlots, visualQueryFromImageRecord } from './structure.util';
 import { ImageSlotRef } from '../types/worksheet.types';
+import { generateScatterPositions } from './scatter-layout.util';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -95,6 +96,37 @@ function pairField(item: unknown, key: string): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
 }
 
+function looksLikeMatchingPair(item: unknown): boolean {
+  if (!isRecord(item)) {
+    return false;
+  }
+  return ['number', 'name', 'left', 'right', 'match'].some((key) => key in item);
+}
+
+export function getMatchingPairs(structure: Record<string, unknown>): unknown[] {
+  if (Array.isArray(structure.pairs) && structure.pairs.length > 0) {
+    return structure.pairs;
+  }
+  if (Array.isArray(structure.items) && structure.items.length > 0 && looksLikeMatchingPair(structure.items[0])) {
+    return structure.items.map((item, index) => {
+      if (!isRecord(item)) {
+        return item;
+      }
+      return {
+        ...item,
+        id: item.id ?? `pair_${index + 1}`,
+        number: item.number ?? item.left ?? item.label ?? '',
+        name: item.name ?? item.right ?? item.match ?? '',
+      };
+    });
+  }
+  return [];
+}
+
+function isNumberNamesTemplate(structure: Record<string, unknown>): boolean {
+  return String(structure.worksheet_type ?? '').toLowerCase() === 'number_names';
+}
+
 export function matchingPairLayout(
   structure: Record<string, unknown>,
   pairCount: number,
@@ -156,7 +188,7 @@ export function positionMatchingPairItems(
   html: string,
   structure: Record<string, unknown>,
 ): string {
-  const pairs = Array.isArray(structure.pairs) ? structure.pairs : [];
+  const pairs = getMatchingPairs(structure);
   if (pairs.length === 0 || !/number-item|name-item/.test(html)) {
     return html;
   }
@@ -176,7 +208,9 @@ export function positionMatchingPairItems(
       const renderIndex = isNumber ? index : nameIndices.indexOf(index);
       const top = startTop + renderIndex * rowHeight;
       const left = isNumber ? numberLeft : nameLeft;
-      const color = !isNumber ? (pairs[index] as any)?.color : undefined;
+      const color = !isNumber && !isNumberNamesTemplate(structure)
+        ? pairField(pairs[index], 'color') || undefined
+        : undefined;
       return `<${tag}${upsertStylePosition(attrs, top, left, color)}>`;
     },
   );
@@ -191,10 +225,11 @@ export function buildMatchingPairMarkup(
   structure: Record<string, unknown>,
   pencilIconUrl = '',
 ): { numbers: string; names: string } {
-  const pairs = Array.isArray(structure.pairs) ? structure.pairs : [];
+  const pairs = getMatchingPairs(structure);
   if (pairs.length === 0) {
     return { numbers: '', names: '' };
   }
+  const nameFontSize = isNumberNamesTemplate(structure) ? 28 : 32;
   const { startTop, numberLeft, nameLeft, rowHeight } = matchingPairLayout(
     structure,
     pairs.length,
@@ -225,7 +260,7 @@ export function buildMatchingPairMarkup(
       const top = startTop + renderIndex * rowHeight;
       const path = `pairs[${originalIndex}].name`;
       const value = escapeHtml(pairField(item, 'name'));
-      return `<div class="name-item" style="top:${top}px;left:${nameLeft}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
+      return `<div class="name-item" style="top:${top}px;left:${nameLeft}px;font-size:${nameFontSize}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
     })
     .join('');
 
@@ -252,7 +287,9 @@ export function injectMatchingPairMarkup(
     return html;
   }
 
-  let next = html.replace(/\{\{\s*NUMBERS\s*\}\}/gi, numbers).replace(/\{\{\s*NAMES\s*\}\}/gi, names);
+  let next = html
+    .replace(/\{\{\s*NUMBERS\s*\}\}/gi, numbers)
+    .replace(/\{\{\s*NAMES\s*\}\}/gi, names);
 
   const replaceIfEmptyLoop = (match: string, inner: string) => {
     const hasItemTokens = /\{\{\s*(number|name|color|@index|this)\s*\}\}/i.test(inner);
@@ -261,7 +298,76 @@ export function injectMatchingPairMarkup(
 
   next = next.replace(/\{\{#each\s+pairs\}\}([\s\S]*?)\{\{\/each\}\}/gi, replaceIfEmptyLoop);
   next = next.replace(/\{\{#pairs\}\}([\s\S]*?)\{\{\/pairs\}\}/gi, replaceIfEmptyLoop);
+
+  if (
+    isNumberNamesTemplate(structure) &&
+    !/class=["'][^"']*\bnumber-item\b/i.test(next)
+  ) {
+    next = next.replace(/<\/body>/i, `${numbers}${names}</body>`);
+  }
   return next;
+}
+
+export function injectWorksheetItemsMarkup(
+  html: string,
+  structure: Record<string, unknown>,
+  pencilIconUrl = '',
+): string {
+  const itemsHtml = buildScatterItemsMarkup(structure, pencilIconUrl);
+  if (!itemsHtml) {
+    return html;
+  }
+
+  let next = html
+    .replace(/\{\{\s*ITEMS_PLACEHOLDER\s*\}\}/g, itemsHtml)
+    .replace(/\{\{\s*ITEMS\s*\}\}/gi, itemsHtml);
+
+  if (!/data-item-id=/i.test(next) && /class=["'][^"']*\bactivity-box\b/i.test(next)) {
+    next = next.replace(
+      /(<(?:[a-z0-9-]+)[^>]*class=["'][^"']*\bactivity-box\b[^"']*["'][^>]*>)/i,
+      `$1\n${itemsHtml}\n`,
+    );
+  }
+  return next;
+}
+
+export function buildScatterItemsMarkup(
+  structure: Record<string, unknown>,
+  pencilIconUrl = '',
+): string {
+  const items = Array.isArray(structure.items) ? structure.items : [];
+  if (items.length === 0 || looksLikeMatchingPair(items[0])) {
+    return '';
+  }
+
+  const box = { left: 80, top: 330, width: 860, height: 760 };
+  const itemSize = { width: 160, height: 160 };
+  const positions = generateScatterPositions(items.length, box, itemSize);
+  const icon = pencilIconUrl.trim();
+
+  return items
+    .map((item, index) => {
+      if (!isRecord(item)) {
+        return '';
+      }
+      const pos = positions[index] || { top: 0, left: 0 };
+      const label = typeof item.label === 'string' ? item.label : '';
+      const path = `items[${index}]`;
+      const slotMatch = resolveImageSlot(structure, path);
+      const slotId = slotMatch?.slotId || path;
+      const rawSrc =
+        (typeof item.assetUrl === 'string' && item.assetUrl) ||
+        (typeof item.imageUrl === 'string' && item.imageUrl) ||
+        '';
+      const srcAttr = rawSrc ? ` src="${escapeHtml(rawSrc)}"` : '';
+      const alt = slotMatch?.imageQuery || visualQueryFromImageRecord(item) || label || slotId;
+      const isCorrect = item.is_correct === true;
+      const pencil = icon
+        ? `<button class="ai-pencil" data-pencil-for="${escapeHtml(path)}" type="button" title="AI regenerate" style="position:absolute;top:-10px;right:-10px;width:30px;height:30px;z-index:3;"><img src="${escapeHtml(icon)}" width="30" height="30" alt=""></button>`
+        : '';
+      return `<div class="item" style="position:absolute;top:${pos.top}px;left:${pos.left}px;width:${itemSize.width}px;height:${itemSize.height}px;" data-item-id="${escapeHtml(path)}" data-correct="${isCorrect}">${pencil}<div style="width:100%;height:130px;display:flex;justify-content:center;align-items:center;"><img class="worksheet-image"${srcAttr} alt="${escapeHtml(alt)}" data-image-slot="${escapeHtml(slotId)}" data-field-path="${escapeHtml(path)}" style="max-width:130px;max-height:130px;object-fit:contain;" /></div><div class="item-label" data-editable="${escapeHtml(`${path}.label`)}" data-field-path="${escapeHtml(`${path}.label`)}" style="text-align:center;font-size:24px;font-weight:bold;color:#222;margin-top:5px;height:30px;">${escapeHtml(label)}</div></div>`;
+    })
+    .join('');
 }
 
 export function resolveImageSlot(

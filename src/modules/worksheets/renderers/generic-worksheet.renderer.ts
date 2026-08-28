@@ -5,6 +5,7 @@ import { WorksheetRenderInput, WorksheetRenderMode } from '../types/worksheet.ty
 import {
   flattenTemplateTokens,
   injectMatchingPairMarkup,
+  injectWorksheetItemsMarkup,
   positionMatchingPairItems,
   resolveImageSlot,
 } from '../utils/template-tokens.util';
@@ -198,7 +199,7 @@ function stringifyValue(value: unknown): string {
   if (typeof value === 'number' || typeof value === 'boolean') {
     return escapeHtml(String(value));
   }
-  return escapeHtml(JSON.stringify(value));
+  return '';
 }
 
 function isUsableSrc(value: string): boolean {
@@ -392,6 +393,7 @@ export function sanitizeComposedHtml(
     /(\s(?:src|href))\s*=\s*(['"])(?:null|undefined)?\2/gi,
     '',
   );
+  next = next.replace(/<\/body>\s*<\/html>\s*<\/body>\s*<\/html>/gi, '</body></html>');
   return next;
 }
 
@@ -425,6 +427,7 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     const context = flattenTemplateTokens(input.structure, extras);
     let html = restoreNullPlaceholders(input.templateHtml);
     html = injectMatchingPairMarkup(html, input.structure, input.pencilIconUrl);
+    html = injectWorksheetItemsMarkup(html, input.structure, input.pencilIconUrl);
     html = this.renderTemplate(html, context);
     html = positionMatchingPairItems(html, input.structure);
     html = applyImageSlots(html, {

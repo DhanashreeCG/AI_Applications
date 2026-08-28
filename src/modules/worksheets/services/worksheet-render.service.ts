@@ -121,7 +121,10 @@ export class WorksheetRenderService {
     const structure = this.assetService.enrichForRender(
       this.assetService.persistableStructure(input.structure),
     );
-    const renderer = this.rendererRegistry.get(input.template.rendererType);
+    const renderer = this.rendererRegistry.get(
+      input.template.rendererType,
+      input.template.slug,
+    );
     const html = renderer.render({
       templateHtml: input.template.templateHtml,
       structure,

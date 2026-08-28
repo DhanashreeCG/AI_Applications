@@ -68,6 +68,14 @@ export function buildWorksheetContentPrompt(input: {
       '- Mix correct and incorrect items (roughly 3-5 correct, 2-3 incorrect)',
       ''
     ] : []),
+    ...(input.templateSlug === 'number_names' ? [
+      'For number_names matching worksheets:',
+      '- Output pairs[], not items[]. Each pair has number (left column string) and name (right column string).',
+      '- Include exactly 6 pairs unless the structure definition says otherwise.',
+      '- number and name must match (e.g. "20" / "twenty"). Do not put JSON in topic or instruction_text.',
+      '- Keep worksheet_type as "number_names".',
+      ''
+    ] : []),
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',

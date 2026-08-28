@@ -28,6 +28,7 @@ import {
 } from '../telemetry/worksheet-pipeline.events';
 import { WorksheetTemplateRecord } from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
+import { normalizeLlmWorksheetPayload } from '../utils/structure.util';
 
 @Injectable()
 export class WorksheetContentService {
@@ -106,26 +107,7 @@ export class WorksheetContentService {
         telemetry,
       );
 
-      let rawItems: unknown[] = [];
-      if (Array.isArray(parsed)) {
-        rawItems = parsed;
-      } else if (
-        parsed &&
-        typeof parsed === 'object' &&
-        Array.isArray((parsed as Record<string, unknown>).worksheets)
-      ) {
-        rawItems = (parsed as Record<string, unknown>).worksheets as unknown[];
-      } else if (
-        parsed &&
-        typeof parsed === 'object' &&
-        Array.isArray((parsed as Record<string, unknown>).items) &&
-        !((parsed as Record<string, unknown>).instruction || (parsed as Record<string, unknown>).title) &&
-        !((template.structureDefinition as Record<string, any>)?.properties?.items)
-      ) {
-        rawItems = (parsed as Record<string, unknown>).items as unknown[];
-      } else if (parsed && typeof parsed === 'object') {
-        rawItems = [parsed];
-      }
+      let rawItems = normalizeLlmWorksheetPayload(parsed, targetCount);
 
       if (!rawItems.length) {
         throw new WorksheetException(

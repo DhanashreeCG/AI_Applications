@@ -648,3 +648,72 @@ export function setUserUploadedImageIndex(
   }
   return next;
 }
+
+function looksLikeActivityItem(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    Array.isArray(value.items) ||
+    Array.isArray(value.pairs) ||
+    Array.isArray(value.questions)
+  ) {
+    return false;
+  }
+  return (
+    typeof value.label === 'string' ||
+    typeof value.imageQuery === 'string' ||
+    typeof value.is_correct === 'boolean'
+  );
+}
+
+function looksLikeWorksheetStructure(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    Array.isArray(value.items) ||
+    Array.isArray(value.pairs) ||
+    Array.isArray(value.questions)
+  ) {
+    return true;
+  }
+  return (
+    typeof value.instruction === 'string' ||
+    typeof value.instruction_text === 'string' ||
+    typeof value.topic === 'string' ||
+    typeof value.worksheet_type === 'string'
+  );
+}
+
+/**
+ * LLM output for one worksheet often includes items[] (e.g. circle_the_things).
+ * That array is content on a single page — never one worksheet per item.
+ */
+export function normalizeLlmWorksheetPayload(
+  parsed: unknown,
+  targetCount = 1,
+): unknown[] {
+  const limit = Math.max(1, targetCount);
+
+  const takeWorksheets = (candidates: unknown[]): unknown[] => {
+    if (candidates.length > 0 && candidates.every(looksLikeActivityItem)) {
+      return [{ items: candidates }].slice(0, limit);
+    }
+    const worksheets = candidates.filter(looksLikeWorksheetStructure);
+    return (worksheets.length ? worksheets : candidates).slice(0, limit);
+  };
+
+  if (Array.isArray(parsed)) {
+    return takeWorksheets(parsed);
+  }
+  if (!isRecord(parsed)) {
+    return [];
+  }
+
+  if (Array.isArray(parsed.worksheets)) {
+    return takeWorksheets(parsed.worksheets);
+  }
+
+  return [parsed].slice(0, limit);
+}

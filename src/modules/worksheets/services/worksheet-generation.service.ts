@@ -427,9 +427,10 @@ export class WorksheetGenerationService {
   ): Promise<{ items: GenerateWorksheetResponse[]; failed: number }> {
     try {
       const first = await this.generate(dto, options);
-      const items: GenerateWorksheetResponse[] =
-        (first as any)._batchResponses || [first];
       const requestedCount = this.normalizeCount(dto.count);
+      const items: GenerateWorksheetResponse[] = (
+        (first as any)._batchResponses || [first]
+      ).slice(0, requestedCount);
       const failed = Math.max(0, requestedCount - items.length);
       return { items, failed };
     } catch (error) {

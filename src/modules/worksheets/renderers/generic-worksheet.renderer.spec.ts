@@ -271,6 +271,49 @@ NULL
     expect(html).toContain('data-field-path="pairs[0].number"');
     expect(html).toMatch(/style="top:\d+px;left:\d+px"/);
   });
+
+  it('does not dump item JSON into the worksheet canvas', () => {
+    const html = renderer.render({
+      templateHtml:
+        '<div class="activity-box">{{ITEMS}}</div>',
+      structure: {
+        worksheet_type: 'circle_the_things',
+        items: [
+          {
+            id: 'i1',
+            label: 'carrot',
+            imageQuery: 'orange carrot',
+            is_correct: true,
+            assetUrl: '/worksheets/assets/a1/image',
+          },
+        ],
+      },
+    });
+
+    expect(html).not.toContain('"imageQuery"');
+    expect(html).not.toContain('[{');
+    expect(html).toContain('class="item"');
+    expect(html).toContain('carrot');
+    expect(html).toContain('/worksheets/assets/a1/image');
+  });
+
+  it('renders number_names pairs without using pastel colors as text', () => {
+    const html = renderer.render({
+      templateHtml: '<body>{{NUMBERS}}{{NAMES}}</body></html></body></html>',
+      structure: {
+        worksheet_type: 'number_names',
+        pairs: [{ number: '20', name: 'twenty', color: '#f8c8d0' }],
+      },
+    });
+
+    expect(html).toContain('>20<');
+    expect(html).toContain('>twenty<');
+    expect(html).toContain('font-size:28px');
+    expect(html).not.toContain('color:#f8c8d0');
+    expect(html).not.toContain('"pairs"');
+    expect(html).toContain('</body></html>');
+    expect(html).not.toMatch(/<\/body>\s*<\/html>\s*<\/body>/);
+  });
 });
 
 describe('WorksheetRendererRegistry', () => {
@@ -278,6 +321,8 @@ describe('WorksheetRendererRegistry', () => {
     const generic = new GenericWorksheetRenderer();
     const registry = new WorksheetRendererRegistry(generic, new CircleTheThingsRenderer(generic));
     expect(registry.get('generic').type).toBe('generic');
+    expect(registry.get('generic', 'circle_the_things').type).toBe('circle_the_things');
+    expect(registry.get('generic', 'number_names').type).toBe('generic');
   });
 
   it('rejects an unknown renderer type', () => {
