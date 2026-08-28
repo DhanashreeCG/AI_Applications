@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -330,6 +331,21 @@ export class WorksheetGenerationService {
       }),
     );
 
+    this.emitter.emitStageSkipped({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.PERSISTENCE,
+      metadata: { reason: 'DB Persistence disabled as worksheets are saved on explicit action now' },
+    });
+
+    const persistedRows = validatedRows.map(row => ({
+      id: `temp-${randomUUID()}`,
+      templateId: template.id,
+      request: dto as Prisma.InputJsonValue,
+      structure: row.structure as Prisma.InputJsonValue,
+      status: 'DRAFT',
+    }));
+    
+    /*
     const persistedRows = await runTrackedStage(
       this.emitter,
       telemetry,
@@ -354,6 +370,7 @@ export class WorksheetGenerationService {
         }),
       },
     );
+    */
     this.logger.log(`batch worksheets persisted count=${persistedRows.length}`);
 
     const responses = persistedRows.map((worksheet) => {
