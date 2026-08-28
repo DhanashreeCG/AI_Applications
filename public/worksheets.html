@@ -1533,35 +1533,6 @@
         }
       }
 
-      async function loadGrid() {
-        const take = Math.max(state.pageSize, Number(els.countSelect.value) || 10);
-        const skip = (state.page - 1) * take;
-        try {
-          const res = await apiFetch(`?skip=${skip}&take=${take}`);
-          const body = await res.json();
-          if (!res.ok) {
-            showBanner('error', errorBannerHtml(body, 'Could not load worksheets', 'Could not load worksheets'));
-            return;
-          }
-          state.total = body.total || 0;
-          els.worksheetGrid.innerHTML = '';
-          if (!body.items?.length) {
-            els.empty.style.display = 'block';
-            els.summary.classList.remove('show');
-          } else {
-            els.empty.style.display = 'none';
-            els.summary.classList.add('show');
-            els.metaPills.innerHTML = `
-              <span class="pill">Total: <b>${state.total}</b></span>
-              <span class="pill">Showing: <b>${body.items.length}</b></span>
-            `;
-            body.items.forEach(appendCard);
-          }
-          renderPager();
-        } catch (error) {
-          showBanner('error', errorBannerHtml(error, 'Could not load worksheets', 'Could not load worksheets'));
-        }
-      }
 
       function renderPager() {
         const effectiveSize = Math.max(state.pageSize, Number(els.countSelect.value) || 10);
@@ -1630,9 +1601,20 @@
           }
 
           toast(`Created ${(body.items || []).length} worksheet(s)`);
-          state.page = 1;
-          state.pageSize = Math.max(state.pageSize, count);
-          await loadGrid();
+          
+          els.worksheetGrid.innerHTML = '';
+          if (!body.items?.length) {
+            els.empty.style.display = 'block';
+            els.summary.classList.remove('show');
+          } else {
+            els.empty.style.display = 'none';
+            els.summary.classList.add('show');
+            els.metaPills.innerHTML = `
+              <span class="pill">Generated: <b>${body.items.length}</b></span>
+            `;
+            body.items.forEach(appendCard);
+          }
+          els.pager.innerHTML = '';
         } catch (error) {
           removeSkeletons();
           showBanner(
@@ -2226,7 +2208,7 @@
 
       els.generateBtn.addEventListener('click', generateSet);
       els.cancelBtn.addEventListener('click', () => { els.topicInput.value = ''; clearBanners(); });
-      els.backBtn.addEventListener('click', () => { showGrid(); loadGrid(); });
+      els.backBtn.addEventListener('click', () => { showGrid(); });
       els.editBtn.addEventListener('click', async () => {
         if (!state.editMode) {
           state.editMode = true;
@@ -2520,7 +2502,8 @@
           loadTemplates();
           const params = new URLSearchParams(location.search);
           if (params.get('id')) return openPreview(params.get('id'));
-          return loadGrid();
+          els.worksheetGrid.innerHTML = '';
+          els.empty.style.display = 'block';
         })
         .catch((error) => showBanner('error', errorBannerHtml(error, 'Could not load initial data', 'Initialization Error')));
     </script>
