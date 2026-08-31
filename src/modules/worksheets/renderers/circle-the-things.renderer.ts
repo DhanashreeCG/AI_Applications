@@ -11,14 +11,25 @@ export class CircleTheThingsRenderer implements WorksheetRenderer {
   constructor(private readonly genericRenderer: GenericWorksheetRenderer) {}
 
   render(input: WorksheetRenderInput): string {
-    let html = this.genericRenderer.render(input);
+    const genericInput = {
+      ...input,
+      templateHtml: input.templateHtml.replace(/\{\{\{?\s*items\s*\}?\}\}/ig, '{{ITEMS_PLACEHOLDER}}'),
+      structure: { ...input.structure } as Record<string, unknown>,
+    };
+    delete genericInput.structure['items'];
+    
+    let html = this.genericRenderer.render(genericInput);
     if (/data-item-id=/i.test(html)) {
       return html;
     }
-    const itemsHtml = buildScatterItemsMarkup(input.structure, input.pencilIconUrl);
+    const itemsHtml = buildScatterItemsMarkup(input.structure, input.pencilIconUrl, input.templateHtml);
     if (!itemsHtml) {
       return html;
     }
+    
+    // Remove the placeholder if it was injected
+    html = html.replace('{{ITEMS_PLACEHOLDER}}', '');
+    
     if (/class=["'][^"']*\bactivity-box\b/i.test(html)) {
       return html.replace(
         /(<(?:[a-z0-9-]+)[^>]*class=["'][^"']*\bactivity-box\b[^"']*["'][^>]*>)/i,

@@ -295,6 +295,9 @@ NULL
     expect(html).toContain('class="item"');
     expect(html).toContain('carrot');
     expect(html).toContain('/worksheets/assets/a1/image');
+    const tops = [...html.matchAll(/class="item"[^>]*top:(\d+)px/g)].map((m) => Number(m[1]));
+    expect(tops.length).toBe(1);
+    expect(Math.max(...tops) + 180).toBeLessThanOrEqual(760);
   });
 
   it('renders number_names pairs without using pastel colors as text', () => {

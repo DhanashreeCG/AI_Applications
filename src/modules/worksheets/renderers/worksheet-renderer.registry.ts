@@ -30,12 +30,14 @@ export class WorksheetRendererRegistry {
     }
   }
 
-  public get(rendererType: string, slug?: string): WorksheetRenderer {
-    const slugKey = slug?.trim();
-    if (slugKey && slugKey !== GENERIC_RENDERER_TYPE && this.renderers.has(slugKey)) {
-      return this.renderers.get(slugKey)!;
+  public get(rendererType: string, templateSlug?: string): WorksheetRenderer {
+    let type = rendererType?.trim() || GENERIC_RENDERER_TYPE;
+
+    // Fallback: If template is circle_the_things but renderer is generic, force it
+    if (templateSlug === 'circle_the_things' && type === GENERIC_RENDERER_TYPE) {
+      type = 'circle_the_things';
     }
-    const type = rendererType?.trim() || GENERIC_RENDERER_TYPE;
+
     const renderer = this.renderers.get(type);
     if (!renderer) {
       throw new WorksheetException(

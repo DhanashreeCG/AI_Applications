@@ -55,10 +55,20 @@ export function generateScatterPositions(
     const jitterFactorX = Math.abs(Math.sin(i * 12.9898 + 78.233)) % 1;
     const jitterFactorY = Math.abs(Math.cos(i * 4.1414 + 1.414)) % 1;
 
-    const left = baseLeft + jitterFactorX * maxJitterX;
-    const top = baseTop + jitterFactorY * maxJitterY;
+    const left = Math.round(
+      Math.min(
+        box.left + box.width - itemSize.width,
+        Math.max(box.left, baseLeft + jitterFactorX * maxJitterX),
+      ),
+    );
+    const top = Math.round(
+      Math.min(
+        box.top + box.height - itemSize.height,
+        Math.max(box.top, baseTop + jitterFactorY * maxJitterY),
+      ),
+    );
 
-    positions.push({ top: Math.round(top), left: Math.round(left) });
+    positions.push({ top, left });
   }
 
   return positions;
