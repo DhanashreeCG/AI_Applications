@@ -54,7 +54,7 @@ External dependencies (unchanged by this module): Asset Library, Semantic Search
 
 | Component | Role |
 |---|---|
-| `FlashcardsController` | HTTP: generate, generate/stream (NDJSON), list/upload templates, render, asset proxy |
+| `FlashcardsController` | HTTP: generate, generate/stream (NDJSON), list/upload templates, render, render-and-notify, asset proxy |
 | `FlashcardOrchestratorService` | End-to-end stage orchestration + telemetry + per-card progress callbacks |
 | `user-request.resolver` | Deterministic topic / age / grade / subject / difficulty / objective |
 | `TemplateSelectionService` + `template-selection.engine` | Hard filter + rank → one template (deterministic fallback) |
@@ -176,6 +176,8 @@ Merge selected template + validated text + asset references into ordered compone
 
 Output is rendering-ready JSON. Downstream renderer (if enabled) requires zero AI re-processing.
 
+After assemble, the demo UI may swap a slot for a computer-selected **data URL** (not a library asset). **Save all / Save selected** send the payload to `POST /flashcards/render-and-notify`, which Playwright-captures each card and uploads the PNG to Gyan `upload-media`. See [`FLASHCARD_LOCAL_IMAGE_UPLOAD.md`](./FLASHCARD_LOCAL_IMAGE_UPLOAD.md).
+
 ---
 
 ## Separation of concerns
@@ -205,4 +207,5 @@ Assets         → Existing search + library (referenced, not generated)
 | Content | `src/modules/flashcards/services/flashcard-content.service.ts` |
 | Content validation | `src/modules/flashcards/utils/llm-content.validator.ts` |
 | Images | `src/modules/flashcards/services/flashcard-image-retrieval.service.ts` |
+| Local computer image (UI) | [`FLASHCARD_LOCAL_IMAGE_UPLOAD.md`](./FLASHCARD_LOCAL_IMAGE_UPLOAD.md), `public/flashcards.html` |
 | Schema | `prisma/schema.prisma` (`FlashcardTemplate`, `TemplateSelectionRule`) |

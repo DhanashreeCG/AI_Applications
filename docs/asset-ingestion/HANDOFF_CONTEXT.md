@@ -29,6 +29,7 @@ NestJS 11 backend that:
 | Optimization requirements | `docs/optimization.md` |
 | Flashcard design (revised) | `docs/flashcards/FLASH_CARD_REVISED.md` |
 | **Flashcard runtime context (use this)** | **`docs/flashcards/FLASHCARD_SELECTION_AND_GENERATION_CONTEXT.md`** |
+| Flashcard local computer image | `docs/flashcards/FLASHCARD_LOCAL_IMAGE_UPLOAD.md` |
 | Original flashcard design | `docs/flashcards/FLASH_CARD.md` |
 
 **Use `FLASHCARD_SELECTION_AND_GENERATION_CONTEXT.md` as the primary continuation context for flashcard work.** It documents actual selection ranking, the live Gemini prompt, validation, and image retrieval cascade.

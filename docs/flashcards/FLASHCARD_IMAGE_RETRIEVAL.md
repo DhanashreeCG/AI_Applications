@@ -209,6 +209,8 @@ One failed slot never fails the set — the card is returned with an empty refer
 
 `imageUrl` is the same-origin proxy path and is what renderers should prefer; `signedUrl` is a direct S3 URL that expires after `FLASHCARD_SIGNED_URL_TTL_SECONDS`.
 
+After generation, the demo UI can replace a slot with a **computer-selected file** by putting a `data:` URL on `imageUrl` (not a library asset). That path does not use this retrieval service. See [`FLASHCARD_LOCAL_IMAGE_UPLOAD.md`](./FLASHCARD_LOCAL_IMAGE_UPLOAD.md).
+
 ---
 
 ## 7. Telemetry
@@ -253,7 +255,8 @@ Handled by [`flashcard-edit.service.ts`](../../src/modules/flashcards/services/f
 | Regenerate an image from a natural-language instruction | LLM produces a new `ImageSearchQuery` (seeded with the current `queryUsed`) → `retrieveForCard()`. Still one search. |
 | Browse the library | `searchCandidates(query, limit)` → up to `imagePickerLimit` results with caption, `searchDescription`, and colours. |
 | Pick a specific asset | `resolveLibraryAsset(assetId)` — direct DB lookup, no search. |
-| Upload a replacement | `uploadUserImage()` → S3 under the upload prefix; `applyUserUploadedImage()` sets `userUploadedKey` and a proxy `imageUrl`, clearing `assetId`. |
+| API upload a replacement | `uploadUserImage()` → S3 under the upload prefix; `applyUserUploadedImage()` sets `userUploadedKey` and a proxy `imageUrl`, clearing `assetId`. **Not** used by the demo UI “Upload from computer” path. |
+| UI upload from computer | Client-only data URL on `assetReference.imageUrl`; baked into the card PNG on `POST /flashcards/render-and-notify`. See [`FLASHCARD_LOCAL_IMAGE_UPLOAD.md`](./FLASHCARD_LOCAL_IMAGE_UPLOAD.md). |
 
 Note these edit paths pass no `usedAssetIds`, so a manual regenerate may legitimately land on an image already used elsewhere in the set.
 
