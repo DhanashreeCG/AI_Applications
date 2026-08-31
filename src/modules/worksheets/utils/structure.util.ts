@@ -259,6 +259,8 @@ const IMAGE_QUERY_ALIAS_KEYS = [
   'searchDescription',
 ] as const;
 
+const PAIR_IMAGE_KEYS = new Set(['left_image', 'right_image']);
+
 const SKIP_IMAGE_WALK_KEYS = new Set([
   'editable_fields',
   'editableFields',
@@ -325,6 +327,13 @@ export function normalizeImageQueryFields(
     for (const [key, child] of Object.entries(node)) {
       if (SKIP_IMAGE_WALK_KEYS.has(key)) {
         next[key] = child;
+        continue;
+      }
+      if (PAIR_IMAGE_KEYS.has(key) && typeof child === 'string' && child.trim()) {
+        next[key] = {
+          image_name: child.trim(),
+          imageQuery: filenameToSearchQuery(child.trim()),
+        };
         continue;
       }
       next[key] = walk(child);

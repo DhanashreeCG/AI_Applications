@@ -5,6 +5,7 @@ import { WorksheetRenderInput, WorksheetRenderMode } from '../types/worksheet.ty
 import {
   flattenTemplateTokens,
   injectMatchingPairMarkup,
+  injectPairImagesMarkup,
   injectSentenceRowMarkup,
   injectWorksheetItemsMarkup,
   positionMatchingPairItems,
@@ -433,6 +434,7 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     const context = flattenTemplateTokens(input.structure, extras);
     let html = restoreNullPlaceholders(input.templateHtml);
     html = injectMatchingPairMarkup(html, input.structure, input.pencilIconUrl);
+    html = injectPairImagesMarkup(html, input.structure);
     html = injectSentenceRowMarkup(html, input.structure, input.pencilIconUrl);
     html = injectWorksheetItemsMarkup(html, input.structure, input.pencilIconUrl);
     html = this.renderTemplate(html, context);

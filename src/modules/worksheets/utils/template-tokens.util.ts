@@ -1,4 +1,8 @@
-import { collectImageSlots, visualQueryFromImageRecord } from './structure.util';
+import {
+  collectImageSlots,
+  filenameToSearchQuery,
+  visualQueryFromImageRecord,
+} from './structure.util';
 import { ImageSlotRef } from '../types/worksheet.types';
 import { generateScatterPositions } from './scatter-layout.util';
 
@@ -105,6 +109,12 @@ function looksLikeMatchingPair(item: unknown): boolean {
 
 export function getMatchingPairs(structure: Record<string, unknown>): unknown[] {
   if (Array.isArray(structure.pairs) && structure.pairs.length > 0) {
+    const picturePairs = structure.pairs.every(
+      (item) => isRecord(item) && ('left_image' in item || 'right_image' in item),
+    );
+    if (picturePairs) {
+      return [];
+    }
     return structure.pairs;
   }
   if (Array.isArray(structure.items) && structure.items.length > 0 && looksLikeMatchingPair(structure.items[0])) {
@@ -418,6 +428,98 @@ export function buildSentenceRowsMarkup(
       return `<div class="worksheet-row row-${n}"><div class="sentence-col" data-editable="sentence_${n}" data-field-path="${escapeAttr(sentencePath)}" data-row-id="${escapeAttr(String(row.id ?? `row_${n}`))}">${sentence}</div><div class="image-col"><img class="worksheet-image"${srcAttr} alt="${alt}" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(imagePath)}" /></div>${pencil}</div>`;
     })
     .join('\n');
+}
+
+const MATCH_PAIR_LEFT_POSITIONS = [
+  { left: 80, top: 330 },
+  { left: 80, top: 520 },
+  { left: 80, top: 710 },
+  { left: 80, top: 900 },
+  { left: 80, top: 1090 },
+];
+
+const MATCH_PAIR_RIGHT_POSITIONS = [
+  { left: 790, top: 330 },
+  { left: 790, top: 520 },
+  { left: 790, top: 710 },
+  { left: 790, top: 900 },
+  { left: 790, top: 1090 },
+];
+
+const MATCH_PAIR_RIGHT_ORDER = [3, 4, 0, 2, 1];
+
+function pairImageSrc(node: unknown): { src: string; alt: string } {
+  if (typeof node === 'string') {
+    return { src: '', alt: filenameToSearchQuery(node) };
+  }
+  if (!isRecord(node)) {
+    return { src: '', alt: '' };
+  }
+  const src =
+    (typeof node.assetUrl === 'string' && node.assetUrl) ||
+    (typeof node.imageUrl === 'string' && node.imageUrl) ||
+    '';
+  const alt =
+    visualQueryFromImageRecord(node) ||
+    pairField(node, 'image_name') ||
+    pairField(node, 'label') ||
+    '';
+  return { src, alt };
+}
+
+export function buildPairImagesMarkup(structure: Record<string, unknown>): string {
+  const pairs = Array.isArray(structure.pairs) ? structure.pairs : [];
+  if (pairs.length === 0 || !pairs.some((item) => isRecord(item) && ('left_image' in item || 'right_image' in item))) {
+    return '';
+  }
+
+  const tags: string[] = [];
+  pairs.forEach((pair, index) => {
+    if (!isRecord(pair)) {
+      return;
+    }
+    const pos = MATCH_PAIR_LEFT_POSITIONS[index];
+    if (!pos) {
+      return;
+    }
+    const path = `pairs[${index}].left_image`;
+    const resolved = pairImageSrc(pair.left_image);
+    const slotMatch = resolveImageSlot(structure, path);
+    const slotId = slotMatch?.slotId || path;
+    const srcAttr = resolved.src ? ` src="${escapeHtml(resolved.src)}"` : '';
+    tags.push(
+      `<img class="worksheet-image"${srcAttr} alt="${escapeHtml(resolved.alt)}" style="left:${pos.left}px;top:${pos.top}px" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}" data-side="left" />`,
+    );
+  });
+
+  MATCH_PAIR_RIGHT_ORDER.filter((pairIndex) => pairIndex < pairs.length).forEach((pairIndex, slotIndex) => {
+    const pair = pairs[pairIndex];
+    const pos = MATCH_PAIR_RIGHT_POSITIONS[slotIndex];
+    if (!isRecord(pair) || !pos) {
+      return;
+    }
+    const path = `pairs[${pairIndex}].right_image`;
+    const resolved = pairImageSrc(pair.right_image);
+    const slotMatch = resolveImageSlot(structure, path);
+    const slotId = slotMatch?.slotId || path;
+    const srcAttr = resolved.src ? ` src="${escapeHtml(resolved.src)}"` : '';
+    tags.push(
+      `<img class="worksheet-image"${srcAttr} alt="${escapeHtml(resolved.alt)}" style="left:${pos.left}px;top:${pos.top}px" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}" data-side="right" />`,
+    );
+  });
+
+  return tags.join('');
+}
+
+export function injectPairImagesMarkup(
+  html: string,
+  structure: Record<string, unknown>,
+): string {
+  if (!/\{\{\s*PAIR_IMAGES\s*\}\}/i.test(html)) {
+    return html;
+  }
+  const markup = buildPairImagesMarkup(structure);
+  return html.replace(/\{\{\s*PAIR_IMAGES\s*\}\}/gi, markup);
 }
 
 export function injectSentenceRowMarkup(

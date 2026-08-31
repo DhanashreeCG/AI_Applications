@@ -318,6 +318,38 @@ NULL
     expect(html).not.toMatch(/<\/body>\s*<\/html>\s*<\/body>/);
   });
 
+  it('renders match-the-pairs images from {{PAIR_IMAGES}} without touching number-name pairs', () => {
+    const html = renderer.render({
+      templateHtml:
+        '<div class="activity-box">{{PAIR_IMAGES}}</div>',
+      structure: {
+        worksheet_type: 'match_the_pairs',
+        pairs: [
+          {
+            id: 'pair_1',
+            label: 'eye',
+            left_image: { imageQuery: 'eye', assetUrl: '/worksheets/assets/eye/image' },
+            right_image: { imageQuery: 'eye', assetUrl: '/worksheets/assets/eye/image' },
+          },
+          {
+            id: 'pair_2',
+            label: 'ear',
+            left_image: { imageQuery: 'ear', assetUrl: '/worksheets/assets/ear/image' },
+            right_image: { imageQuery: 'ear', assetUrl: '/worksheets/assets/ear/image' },
+          },
+        ],
+      },
+    });
+
+    expect(html).toContain('data-side="left"');
+    expect(html).toContain('data-side="right"');
+    expect(html).toContain('left:80px;top:330px');
+    expect(html).toContain('left:790px');
+    expect(html).toContain('/worksheets/assets/eye/image');
+    expect(html).not.toContain('{{PAIR_IMAGES}}');
+    expect(html).not.toContain('class="number-item"');
+  });
+
   it('renders sight-word rows and word-bank tokens without dumping JSON', () => {
     const html = renderer.render({
       templateHtml:

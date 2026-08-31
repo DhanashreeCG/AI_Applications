@@ -82,6 +82,15 @@ export function buildWorksheetContentPrompt(input: {
           '',
         ]
       : []),
+    ...(input.templateSlug === 'match_the_pairs'
+      ? [
+          'For match-the-pairs picture worksheets:',
+          '- Return one worksheet with pairs[] (typically 5). Do not unwrap pairs into separate worksheets.',
+          '- Each pair needs label plus left_imageQuery and right_imageQuery as visual phrases (e.g. "cartoon eye"), not filenames.',
+          '- left and right images for a pair should match (same body part / object).',
+          '',
+        ]
+      : []),
     ...(input.templateSlug === 'number_names' ? [
       'For number_names matching worksheets:',
       '- Output pairs[], not items[]. Each pair has number (left column string) and name (right column string).',

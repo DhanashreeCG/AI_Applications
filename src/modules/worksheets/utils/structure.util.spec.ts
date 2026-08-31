@@ -1,4 +1,25 @@
-import { normalizeLlmWorksheetPayload } from './structure.util';
+import { collectImageSlots, normalizeImageQueryFields, normalizeLlmWorksheetPayload } from './structure.util';
+
+describe('normalizeImageQueryFields pair images', () => {
+  it('wraps left_image and right_image filenames into searchable slots', () => {
+    const next = normalizeImageQueryFields({
+      pairs: [
+        {
+          id: 'pair_1',
+          label: 'eye',
+          left_image: 'body_parts/eye.png',
+          right_image: 'body_parts/eye.png',
+        },
+      ],
+    });
+    const left = (next.pairs as Array<Record<string, unknown>>)[0].left_image as Record<string, unknown>;
+    expect(left.imageQuery).toBe('eye');
+    expect(left.image_name).toBe('body_parts/eye.png');
+    const slots = collectImageSlots(next);
+    expect(slots.some((slot) => slot.path === 'pairs[0].left_image')).toBe(true);
+    expect(slots.some((slot) => slot.path === 'pairs[0].right_image')).toBe(true);
+  });
+});
 
 describe('normalizeLlmWorksheetPayload', () => {
   const vegetableItems = [

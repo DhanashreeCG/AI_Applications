@@ -18,6 +18,7 @@ export class WorksheetRendererRegistry {
     this.registerAlias('number_names', GENERIC_RENDERER_TYPE);
     this.registerAlias('answer_and_colour', GENERIC_RENDERER_TYPE);
     this.registerAlias('circle_the_words', GENERIC_RENDERER_TYPE);
+    this.registerAlias('match_the_pairs', GENERIC_RENDERER_TYPE);
   }
 
   public register(renderer: WorksheetRenderer): void {
