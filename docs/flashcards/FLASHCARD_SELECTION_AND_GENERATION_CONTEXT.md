@@ -406,6 +406,8 @@ Final validation checks:
 
 Rendering engine should require **zero AI processing** after this JSON.
 
+The demo UI can later replace `imageUrl` with a client `data:` URL (computer file). That is not a retrieval status change; see [`FLASHCARD_LOCAL_IMAGE_UPLOAD.md`](./FLASHCARD_LOCAL_IMAGE_UPLOAD.md).
+
 ---
 
 ## 8. What is config vs engine logic

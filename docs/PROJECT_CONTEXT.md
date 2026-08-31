@@ -244,7 +244,9 @@ Asset states progress through `AssetState` (`DISCOVERED` … `COMPLETED` / `DEAD
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/flashcards/generate` | Generate flashcards |
+| `POST` | `/flashcards/generate/stream` | Same pipeline as NDJSON (`meta` / `card` / `done`) |
 | `POST` | `/flashcards/render` | Render assembled cards (HTML/WebP/PDF) |
+| `POST` | `/flashcards/render-and-notify` | Capture selected cards, upload PNGs to Gyan `upload-media`, return media rows for parent `postMessage` |
 | `GET` | `/flashcards/templates` | List templates |
 | `POST` | `/flashcards/templates` | Upload template(s) |
 | `GET` | `/flashcards/assets/:assetId/image` | Same-origin image proxy for UI/renderer |
@@ -344,6 +346,8 @@ npm run flashcards:emit-diagnostics
 | `docs/flashcards/FLASHCARD_SELECTION_AND_GENERATION_CONTEXT.md` | **Primary** runtime selection / prompt / retrieval reference |
 | `docs/flashcards/TEMPLATE_SELECTION.md` | Template selection design |
 | `docs/flashcards/FLASHCARD_TITLE_FIX.md` | Title-related fix notes |
+| `docs/flashcards/FLASHCARD_IMAGE_RETRIEVAL.md` | Generate-time library image search |
+| `docs/flashcards/FLASHCARD_LOCAL_IMAGE_UPLOAD.md` | UI “upload from computer”: data URLs + render-and-notify |
 
 ---
 
