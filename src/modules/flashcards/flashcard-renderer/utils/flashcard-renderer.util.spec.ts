@@ -37,6 +37,27 @@ describe('image-source.util', () => {
     expect(source).toBe('http://localhost:3000/flashcards/assets/asset-1/image');
   });
 
+  it('does not prefix data or blob image URLs with the api base', () => {
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
+    expect(
+      resolveImageSource(
+        {
+          assetId: null,
+          s3ObjectKey: null,
+          signedUrl: dataUrl,
+          imageUrl: dataUrl,
+          caption: null,
+          similarity: null,
+          mimeType: 'image/png',
+          status: 'found',
+          queryUsed: '',
+          attempts: [],
+        },
+        'http://localhost:3000',
+      ),
+    ).toBe(dataUrl);
+  });
+
   it('falls back to signedUrl when imageUrl is missing', () => {
     const source = resolveImageSource(
       {

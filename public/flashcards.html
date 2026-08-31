@@ -2951,7 +2951,7 @@
     async function generate() {
       const query = el('query').value.trim();
       const ageGroup = state.ageGroup;
-      const count = 5; // Hardcoded default
+      const count = 1; // Hardcoded default
       const templateId = el('templateSelect').value;
 
       if (!query || !ageGroup) {
@@ -3168,14 +3168,30 @@
       el('pager').innerHTML = '';
     }
 
+    const LOCAL_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+    function isAbsoluteImageUrl(url) {
+      return /^(https?:|data:|blob:)/i.test(String(url || ''));
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Could not read that image.'));
+        reader.readAsDataURL(file);
+      });
+    }
+
     /**
      * Prefers the API's same-origin proxy path so neither display nor canvas
      * export depends on an S3 CORS rule. Falls back to the raw signed URL.
+     * data:/blob:/http(s): URLs are already absolute — do not prefix apiBase.
      */
     function imageSourceFor(ref) {
       if (!ref) return null;
       if (ref.imageUrl) {
-        return ref.imageUrl.startsWith('http') ? ref.imageUrl : apiBase() + ref.imageUrl;
+        return isAbsoluteImageUrl(ref.imageUrl) ? ref.imageUrl : apiBase() + ref.imageUrl;
       }
       return ref.signedUrl || ref.url || null;
     }
@@ -3211,6 +3227,10 @@
       await Promise.all(
         Array.from(sources).map(async (source) => {
           if (state.imageCache.has(source)) return;
+          if (/^(data:|blob:)/i.test(source)) {
+            state.imageCache.set(source, source);
+            return;
+          }
           try {
             const response = await fetch(source, { mode: 'cors' });
             if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -5604,7 +5624,7 @@
       }
     }
 
-    function applySelectedImageToCard() {
+    async function applySelectedImageToCard() {
       const index = state.imagePickerCardIndex;
       const card = state.payload && state.payload.cards[index];
       if (!card) return false;
@@ -5615,15 +5635,33 @@
           toast('Choose an image to upload');
           return false;
         }
-        const previewUrl = el('uploadPreview').src || URL.createObjectURL(file);
-        item = { assetId: null, imageUrl: previewUrl, file, caption: file.name };
+        if (file.size > LOCAL_IMAGE_MAX_BYTES) {
+          toast('That image is too large. Please choose a smaller file.');
+          return false;
+        }
+        try {
+          const dataUrl = el('uploadPreview').src && String(el('uploadPreview').src).startsWith('data:')
+            ? el('uploadPreview').src
+            : await readFileAsDataUrl(file);
+          item = {
+            assetId: null,
+            userUploadedKey: null,
+            imageUrl: dataUrl,
+            signedUrl: dataUrl,
+            caption: file.name,
+            mimeType: file.type || 'image/jpeg',
+          };
+        } catch (error) {
+          toast(friendlyError(error, 'Could not read that image. Please try again.'));
+          return false;
+        }
       }
-      if (!item || (!item.assetId && !item.file && !item.imageUrl)) {
+      if (!item || (!item.assetId && !item.imageUrl)) {
         toast('Select an image first');
         return false;
       }
       const componentId = state.selectedImageComponentId || 'image';
-      const imageUrl = item.file ? (item.imageUrl || URL.createObjectURL(item.file)) : item.imageUrl;
+      const imageUrl = item.imageUrl;
       state.pendingImageReplacements[componentId] = { ...item, imageUrl };
       applyImageToCardData(card, componentId, { ...item, imageUrl });
       applyImageToDom(index, componentId, imageUrl);
@@ -5736,6 +5774,9 @@
           assetId: item.assetId || null,
           userUploadedKey: item.userUploadedKey || null,
           imageUrl: item.imageUrl,
+          signedUrl: item.signedUrl || item.imageUrl,
+          caption: item.caption,
+          mimeType: item.mimeType,
         });
       }
 
@@ -6164,25 +6205,39 @@
           searchImages();
         }
       });
-      el('imageUploadInput').addEventListener('change', () => {
+      el('imageUploadInput').addEventListener('change', async () => {
         const file = el('imageUploadInput').files && el('imageUploadInput').files[0];
         if (!file) {
           el('uploadPreview').classList.add('hidden');
           el('uploadPreview').removeAttribute('src');
+          state.selectedSearchItem = null;
           return;
         }
-        const previewUrl = URL.createObjectURL(file);
-        el('uploadPreview').src = previewUrl;
-        el('uploadPreview').classList.remove('hidden');
-        state.selectedSearchItem = {
-          assetId: null,
-          imageUrl: previewUrl,
-          file,
-          caption: file.name,
-        };
+        if (file.size > LOCAL_IMAGE_MAX_BYTES) {
+          el('imageUploadInput').value = '';
+          el('uploadPreview').classList.add('hidden');
+          el('uploadPreview').removeAttribute('src');
+          toast('That image is too large. Please choose a smaller file.');
+          return;
+        }
+        try {
+          const dataUrl = await readFileAsDataUrl(file);
+          el('uploadPreview').src = dataUrl;
+          el('uploadPreview').classList.remove('hidden');
+          state.selectedSearchItem = {
+            assetId: null,
+            userUploadedKey: null,
+            imageUrl: dataUrl,
+            signedUrl: dataUrl,
+            caption: file.name,
+            mimeType: file.type || 'image/jpeg',
+          };
+        } catch (error) {
+          toast(friendlyError(error, 'Could not read that image. Please try again.'));
+        }
       });
-      el('selectImageBtn').addEventListener('click', () => {
-        if (!applySelectedImageToCard()) return;
+      el('selectImageBtn').addEventListener('click', async () => {
+        if (!(await applySelectedImageToCard())) return;
         closeImagePicker();
         toast('Image updated. Click Save to keep the change.');
       });
