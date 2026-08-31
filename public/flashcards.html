@@ -5454,7 +5454,7 @@
         similarity: item.similarity != null ? item.similarity : null,
         mimeType: item.mimeType || null,
         status: 'found',
-        queryUsed: item.caption || item.queryUsed || '',
+        queryUsed: item.queryUsed || item.caption || '',
         attempts: [],
         userUploadedKey: item.userUploadedKey || null,
         colors: item.colors || (previous && previous.colors) || [],
@@ -5510,6 +5510,59 @@
       el('uploadPane').classList.toggle('hidden', tab !== 'upload');
     }
 
+    function isLocalUserImage(ref) {
+      if (!ref) return false;
+      if (ref.userUploadedKey) return true;
+      const url = String(ref.imageUrl || ref.signedUrl || '');
+      return !ref.assetId && /^(data:|blob:)/i.test(url);
+    }
+
+    /** Filenames / camera dumps are not useful asset-search queries. */
+    function isPlainSearchName(value) {
+      const text = String(value || '').trim();
+      if (!text) return false;
+      const stripped = text.replace(/^["']+|["']+$/g, '');
+      if (/\.(jpe?g|png|gif|webp|heic|heif|bmp|svg|tiff?)$/i.test(stripped)) return false;
+      if (/screenshot|screen[\s_-]?shot|untitled|download/i.test(stripped)) return false;
+      if (/^(img|image|dsc|dscn|pict|photo|copy|file)[-_\s.]/i.test(stripped)) return false;
+      if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(stripped)) return false;
+      if (/[/\\]/.test(stripped)) return false;
+      if (/\d{6,}/.test(stripped)) return false;
+      const letters = stripped.replace(/[^a-zA-Z]+/g, '');
+      if (letters.length < 2) return false;
+      if (stripped.split(/\s+/).filter(Boolean).length > 8) return false;
+      return true;
+    }
+
+    function cardTextForImageSearch(card, componentId) {
+      const preferred = ['title', 'word', 'caption', 'heading', 'letter', 'number', 'question', 'count'];
+      const comps = (card && card.components) || [];
+      const id = String(componentId || '');
+      const suffix = id.match(/-(\d+)$/);
+      if (suffix) {
+        for (const key of preferred) {
+          const paired = comps.find(
+            (item) => String(item.componentId || item.id || '').toLowerCase() === key + '-' + suffix[1],
+          );
+          const text = contentFromComponent(paired);
+          if (text && String(text).trim()) return String(text).trim();
+        }
+      }
+      for (const key of preferred) {
+        const comp = comps.find(
+          (item) => String(item.componentId || item.id || '').toLowerCase() === key,
+        );
+        const text = contentFromComponent(comp);
+        if (text && String(text).trim()) return String(text).trim();
+      }
+      for (const item of comps) {
+        if (isImageComponent(item) || isImageCollection(item)) continue;
+        const text = contentFromComponent(item);
+        if (text && String(text).trim()) return String(text).trim();
+      }
+      return (((state.payload || {}).request || {}).topic || '').trim();
+    }
+
     function imageSearchQueryFor(card, componentId) {
       const hit = findComponentById(card, componentId);
       const slot = hit && hit.component;
@@ -5522,17 +5575,11 @@
       ]
         .map((value) => (value == null ? '' : String(value).trim()))
         .find(Boolean);
-      if (fromSlot) return fromSlot;
 
-      const preferred = ['title', 'word', 'caption', 'heading', 'letter', 'number', 'question'];
-      for (const id of preferred) {
-        const comp = ((card && card.components) || []).find(
-          (item) => String(item.componentId || item.id || '').toLowerCase() === id,
-        );
-        const text = contentFromComponent(comp);
-        if (text && String(text).trim()) return String(text).trim();
+      if (fromSlot && !(isLocalUserImage(ref) && !isPlainSearchName(fromSlot))) {
+        return fromSlot;
       }
-      return (((state.payload || {}).request || {}).topic || '').trim();
+      return cardTextForImageSearch(card, componentId);
     }
 
     function openImagePicker(cardIndex, componentId) {
@@ -5643,12 +5690,18 @@
           const dataUrl = el('uploadPreview').src && String(el('uploadPreview').src).startsWith('data:')
             ? el('uploadPreview').src
             : await readFileAsDataUrl(file);
+          const previous = card.components && findComponentById(card, state.selectedImageComponentId || 'image');
+          const prevRef = previous && previous.component && previous.component.assetReference;
+          const cardQuery = cardTextForImageSearch(card, state.selectedImageComponentId || 'image');
+          const keepQuery =
+            (prevRef && isPlainSearchName(prevRef.queryUsed) && prevRef.queryUsed) || cardQuery;
           item = {
             assetId: null,
             userUploadedKey: null,
             imageUrl: dataUrl,
             signedUrl: dataUrl,
-            caption: file.name,
+            caption: keepQuery || file.name,
+            queryUsed: keepQuery,
             mimeType: file.type || 'image/jpeg',
           };
         } catch (error) {

@@ -41,6 +41,7 @@ The user’s file is **not** uploaded to the app asset library or `flashcards/up
    - `status: 'found'`
    - `imageUrl` / `signedUrl`: data URL
    - `assetId: null`, `userUploadedKey: null`
+   - `queryUsed` / search prefill: card title or paired text — **not** the file name when it is a camera dump (`IMG_….jpg`, screenshots, UUIDs). Re-opening the picker searches that card text.
 5. `state.imageCache` maps the data URL to itself so preload does not `fetch()` it.
 6. Card Save reapplies pending replacements and `renderGrid()`. Data URLs survive because `imageSourceFor` does not prefix them.
 7. Cancel / discard restores the pre-edit snapshot (local image dropped if not saved).
