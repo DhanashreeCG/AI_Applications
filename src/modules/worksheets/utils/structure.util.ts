@@ -649,6 +649,10 @@ export function setUserUploadedImageIndex(
   return next;
 }
 
+function looksLikeSentenceRow(value: unknown): boolean {
+  return isRecord(value) && typeof value.sentence === 'string';
+}
+
 function looksLikeActivityItem(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
@@ -699,6 +703,9 @@ export function normalizeLlmWorksheetPayload(
   const takeWorksheets = (candidates: unknown[]): unknown[] => {
     if (candidates.length > 0 && candidates.every(looksLikeActivityItem)) {
       return [{ items: candidates }].slice(0, limit);
+    }
+    if (candidates.length > 0 && candidates.every(looksLikeSentenceRow)) {
+      return [{ rows: candidates }].slice(0, limit);
     }
     const worksheets = candidates.filter(looksLikeWorksheetStructure);
     return (worksheets.length ? worksheets : candidates).slice(0, limit);

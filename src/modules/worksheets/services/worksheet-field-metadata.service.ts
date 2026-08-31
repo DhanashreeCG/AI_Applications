@@ -14,13 +14,27 @@ export class WorksheetFieldMetadataService {
     template: WorksheetTemplateRecord,
     structure: Record<string, unknown>,
   ): EditableField[] {
-    const aiConfig = (parseJsonObject(template.aiConfig) ?? {}) as WorksheetAiConfig;
+    const storedAi = (parseJsonObject(template.aiConfig) ?? {}) as WorksheetAiConfig;
     const schema = parseJsonObject(template.structureDefinition) as JsonSchemaNode | null;
+    const definitionAi = (schema && typeof schema === 'object'
+      ? ((schema as Record<string, unknown>).ai_config as WorksheetAiConfig | undefined)
+      : undefined) ?? {};
+    const definitionEditable = (schema && typeof schema === 'object'
+      ? ((schema as Record<string, unknown>).editable_fields as WorksheetAiConfig['editable_fields'])
+      : undefined) ?? {};
     const fields = new Map<string, EditableField>();
 
-    const declared = aiConfig.editableFields ?? [];
-    const aiEditableList = aiConfig.aiEditable ?? declared;
-    const prototypeMap = aiConfig.editable_fields ?? {};
+    const declared = storedAi.editableFields ?? [];
+    const aiEditableList =
+      storedAi.aiEditable ??
+      (Array.isArray((definitionAi as Record<string, unknown>).ai_editable)
+        ? ((definitionAi as Record<string, unknown>).ai_editable as string[])
+        : definitionAi.aiEditable) ??
+      declared;
+    const prototypeMap = {
+      ...definitionEditable,
+      ...(storedAi.editable_fields ?? {}),
+    };
 
     for (const [id, raw] of Object.entries(prototypeMap)) {
       const path =

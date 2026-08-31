@@ -29,6 +29,14 @@ describe('normalizeLlmWorksheetPayload', () => {
     expect(result[0]).toEqual({ items: vegetableItems });
   });
 
+  it('wraps a top-level array of sentence rows as one worksheet', () => {
+    const rows = [
+      { sentence: 'The toys are in the box.', target_sight_word: 'in' },
+      { sentence: 'She has a doll.', target_sight_word: 'she' },
+    ];
+    expect(normalizeLlmWorksheetPayload(rows, 1)).toEqual([{ rows }]);
+  });
+
   it('honours requested worksheet count for a worksheets[] wrapper', () => {
     const result = normalizeLlmWorksheetPayload(
       {

@@ -317,6 +317,46 @@ NULL
     expect(html).toContain('</body></html>');
     expect(html).not.toMatch(/<\/body>\s*<\/html>\s*<\/body>/);
   });
+
+  it('renders sight-word rows and word-bank tokens without dumping JSON', () => {
+    const html = renderer.render({
+      templateHtml:
+        '<div class="word-bank">{{WORD_BANK_ITEMS}}</div>{{ROWS}}',
+      structure: {
+        worksheet_type: 'circle_the_words',
+        sight_word_bank: ['in', 'she'],
+        rows: [
+          {
+            id: 'row_1',
+            sentence: 'The toys are in the box.',
+            target_sight_word: 'in',
+            imageQuery: 'toy box',
+            assetUrl: '/worksheets/assets/toy/image',
+          },
+          {
+            id: 'row_2',
+            sentence: 'She has a doll.',
+            target_sight_word: 'she',
+            imageQuery: 'doll',
+            assetUrl: '/worksheets/assets/doll/image',
+          },
+        ],
+      },
+      pencilIconUrl: '/pencil.png',
+    });
+
+    expect(html).toContain('data-editable="sight_word_0"');
+    expect(html).toContain('>in<');
+    expect(html).toContain('class="worksheet-row row-1"');
+    expect(html).toContain('The toys are in the box.');
+    expect(html).toContain('data-editable="sentence_1"');
+    expect(html).toContain('data-field-path="rows[0].sentence"');
+    expect(html).toContain('data-pencil-for="sentence_1"');
+    expect(html).toContain('/worksheets/assets/toy/image');
+    expect(html).not.toContain('{{ROWS}}');
+    expect(html).not.toContain('{{WORD_BANK_ITEMS}}');
+    expect(html).not.toContain('"target_sight_word"');
+  });
 });
 
 describe('WorksheetRendererRegistry', () => {

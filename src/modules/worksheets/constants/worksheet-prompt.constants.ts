@@ -68,6 +68,20 @@ export function buildWorksheetContentPrompt(input: {
       '- Mix correct and incorrect items (roughly 3-5 correct, 2-3 incorrect)',
       ''
     ] : []),
+    ...(input.templateSlug === 'circle_the_words' ||
+    (input.structureDefinition &&
+      typeof input.structureDefinition === 'object' &&
+      'sight_word_bank' in (input.structureDefinition as object) &&
+      'rows' in (input.structureDefinition as object))
+      ? [
+          'For sight-word / circle-the-words worksheets:',
+          '- Return one worksheet object with sight_word_bank[] (6 short words) and rows[] (6 objects).',
+          '- Do not unwrap rows into separate worksheets.',
+          '- Each row needs sentence, target_sight_word (that word appears in the sentence), and imageQuery (visual phrase, not a filename).',
+          '- Keep worksheet_type as circle_the_words.',
+          '',
+        ]
+      : []),
     ...(input.templateSlug === 'number_names' ? [
       'For number_names matching worksheets:',
       '- Output pairs[], not items[]. Each pair has number (left column string) and name (right column string).',

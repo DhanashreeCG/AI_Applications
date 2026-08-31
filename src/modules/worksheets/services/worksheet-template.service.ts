@@ -112,6 +112,10 @@ export class WorksheetTemplateService {
     const version = this.parseVersion(dto.version);
     const rendererType =
       this.optionalString(dto.rendererType) || GENERIC_RENDERER_TYPE;
+    const liftedAiConfig = this.liftAiConfigFromStructure(
+      structureDefinition,
+      dto.aiConfig,
+    );
 
     const [backgroundAsset, sampleAsset] = await Promise.all([
       this.uploadTemplateImage(background, 'background'),
@@ -135,7 +139,9 @@ export class WorksheetTemplateService {
           aiSystemPrompt: this.optionalString(dto.aiSystemPrompt) ?? null,
           ...this.optionalJson('meta', dto.meta),
           ...this.optionalJson('rendererConfig', dto.rendererConfig),
-          ...this.optionalJson('aiConfig', dto.aiConfig),
+          ...(liftedAiConfig
+            ? { aiConfig: liftedAiConfig as Prisma.InputJsonValue }
+            : this.optionalJson('aiConfig', dto.aiConfig)),
           ...this.optionalJson('fieldPrompts', dto.fieldPrompts),
         },
       });
@@ -338,6 +344,27 @@ export class WorksheetTemplateService {
     );
 
     return { id: created.id, url };
+  }
+
+  private liftAiConfigFromStructure(
+    structureDefinition: Record<string, unknown>,
+    explicit: unknown,
+  ): Record<string, unknown> | null {
+    const provided = parseJsonField(explicit, 'aiConfig');
+    const nested = parseJsonObject(structureDefinition.ai_config);
+    const editableFields = parseJsonObject(structureDefinition.editable_fields);
+    if (!provided && !nested && !editableFields) {
+      return null;
+    }
+    return {
+      ...(nested ?? {}),
+      ...(editableFields ? { editable_fields: editableFields } : {}),
+      ...(provided ?? {}),
+      aiEditable:
+        (provided as WorksheetAiConfig | null)?.aiEditable ??
+        (Array.isArray(nested?.ai_editable) ? nested.ai_editable : undefined) ??
+        (nested as WorksheetAiConfig | null)?.aiEditable,
+    };
   }
 
   private optionalJson(

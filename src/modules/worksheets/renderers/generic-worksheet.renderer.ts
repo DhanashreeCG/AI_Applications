@@ -5,6 +5,7 @@ import { WorksheetRenderInput, WorksheetRenderMode } from '../types/worksheet.ty
 import {
   flattenTemplateTokens,
   injectMatchingPairMarkup,
+  injectSentenceRowMarkup,
   injectWorksheetItemsMarkup,
   positionMatchingPairItems,
   resolveImageSlot,
@@ -358,6 +359,11 @@ export function restoreNullPlaceholders(html: string): string {
     /(data-editable=["']([A-Za-z0-9_]+)["'][^>]*>)\s*NULL\s*</g,
     '$1{{$2}}<',
   );
+  next = next.replace(
+    /(class=["'][^"']*\bword-bank\b[^"']*["'][^>]*>)\s*NULL\s*</gi,
+    '$1{{WORD_BANK_ITEMS}}<',
+  );
+  next = next.replace(/>\s*NULL\s*(?={{ROWS}}|<div class="worksheet-row)/g, '>{{ROWS}}');
   next = next.replace(/>\s*NULL\s*</g, '>{{GOAT_IMAGE}}<');
   next = next.replace(
     /(<\/div>)\s*NULL\s*(?=<!--|<div|<button|<img)/g,
@@ -427,6 +433,7 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     const context = flattenTemplateTokens(input.structure, extras);
     let html = restoreNullPlaceholders(input.templateHtml);
     html = injectMatchingPairMarkup(html, input.structure, input.pencilIconUrl);
+    html = injectSentenceRowMarkup(html, input.structure, input.pencilIconUrl);
     html = injectWorksheetItemsMarkup(html, input.structure, input.pencilIconUrl);
     html = this.renderTemplate(html, context);
     html = positionMatchingPairItems(html, input.structure);

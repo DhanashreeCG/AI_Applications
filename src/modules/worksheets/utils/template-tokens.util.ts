@@ -365,6 +365,78 @@ export function scatterLayoutForTemplate(html = ''): {
   };
 }
 
+function wordBankWords(structure: Record<string, unknown>): string[] {
+  if (Array.isArray(structure.sight_word_bank)) {
+    return structure.sight_word_bank.map((word) =>
+      typeof word === 'string' || typeof word === 'number' ? String(word) : '',
+    );
+  }
+  const rows = Array.isArray(structure.rows) ? structure.rows : [];
+  return rows.map((row) => pairField(row, 'target_sight_word'));
+}
+
+export function buildWordBankMarkup(structure: Record<string, unknown>): string {
+  return wordBankWords(structure)
+    .map((word, index) => {
+      const path = `sight_word_bank[${index}]`;
+      return `<span class="word-bank-word" data-editable="sight_word_${index}" data-field-path="${escapeAttr(path)}">${escapeHtml(word)}</span>`;
+    })
+    .join('\n');
+}
+
+export function buildSentenceRowsMarkup(
+  structure: Record<string, unknown>,
+  pencilIconUrl = '',
+): string {
+  const rows = Array.isArray(structure.rows) ? structure.rows : [];
+  if (rows.length === 0) {
+    return '';
+  }
+  const icon = pencilIconUrl.trim();
+  return rows
+    .map((row, index) => {
+      if (!isRecord(row)) {
+        return '';
+      }
+      const n = index + 1;
+      const sentencePath = `rows[${index}].sentence`;
+      const imagePath = `rows[${index}]`;
+      const sentence = escapeHtml(pairField(row, 'sentence'));
+      const rawSrc =
+        (typeof row.assetUrl === 'string' && row.assetUrl) ||
+        (typeof row.imageUrl === 'string' && row.imageUrl) ||
+        '';
+      const srcAttr = rawSrc ? ` src="${escapeHtml(rawSrc)}"` : '';
+      const alt = escapeHtml(
+        visualQueryFromImageRecord(row) || pairField(row, 'image_name') || `row ${n}`,
+      );
+      const slotMatch = resolveImageSlot(structure, imagePath);
+      const slotId = slotMatch?.slotId || (typeof row.id === 'string' ? row.id : imagePath);
+      const pencil = icon
+        ? `<button class="ai-pencil" data-pencil-for="sentence_${n}" type="button" title="AI regenerate sentence"><img src="${escapeAttr(icon)}" width="22" height="22" alt=""></button>`
+        : '';
+      return `<div class="worksheet-row row-${n}"><div class="sentence-col" data-editable="sentence_${n}" data-field-path="${escapeAttr(sentencePath)}" data-row-id="${escapeAttr(String(row.id ?? `row_${n}`))}">${sentence}</div><div class="image-col"><img class="worksheet-image"${srcAttr} alt="${alt}" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(imagePath)}" /></div>${pencil}</div>`;
+    })
+    .join('\n');
+}
+
+export function injectSentenceRowMarkup(
+  html: string,
+  structure: Record<string, unknown>,
+  pencilIconUrl = '',
+): string {
+  const wordBank = buildWordBankMarkup(structure);
+  const rows = buildSentenceRowsMarkup(structure, pencilIconUrl);
+  let next = html;
+  if (wordBank) {
+    next = next.replace(/\{\{\s*WORD_BANK_ITEMS\s*\}\}/gi, wordBank);
+  }
+  if (rows) {
+    next = next.replace(/\{\{\s*ROWS\s*\}\}/gi, rows);
+  }
+  return next;
+}
+
 export function injectWorksheetItemsMarkup(
   html: string,
   structure: Record<string, unknown>,
