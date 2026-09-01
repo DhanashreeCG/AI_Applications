@@ -78,25 +78,28 @@ const EDITOR_BRIDGE = `
   window.addEventListener('message', function (event) {
     var data = event.data || {};
     if (data.type !== 'worksheet-set-image') return;
+    function cssAttr(name, value) {
+      return '[' + name + '="' + String(value || '').replace(/"/g, '') + '"]';
+    }
     var nodes = [];
-    document.querySelectorAll('[data-ws-target="active"]').forEach(function (n) { nodes.push(n); });
     if (data.path) {
-      document.querySelectorAll('[data-field-path="' + data.path + '"]').forEach(function (n) { nodes.push(n); });
+      document.querySelectorAll(cssAttr('data-field-path', data.path)).forEach(function (n) { nodes.push(n); });
     }
-    if (data.slotId) {
-      document.querySelectorAll('[data-image-slot="' + data.slotId + '"]').forEach(function (n) { nodes.push(n); });
-    }
-    if (!nodes.length) {
-      document.querySelectorAll('img.worksheet-image, img[data-image-slot]').forEach(function (n) { nodes.push(n); });
+    if (!nodes.length && data.slotId) {
+      document.querySelectorAll(cssAttr('data-image-slot', data.slotId)).forEach(function (n) { nodes.push(n); });
     }
     if (!nodes.length) {
-      document.querySelectorAll('img').forEach(function (n) {
-        if (n.classList.contains('worksheet-bg')) return;
-        if (n.closest && (n.closest('.ai-pencil') || n.closest('.img-camera-btn'))) return;
-        var src = n.getAttribute('src') || '';
-        if (/pencil/i.test(src)) return;
-        nodes.push(n);
+      document.querySelectorAll('[data-ws-target="active"]').forEach(function (n) { nodes.push(n); });
+    }
+    if (nodes.length > 1 && data.path) {
+      nodes = nodes.filter(function (n) {
+        return n.getAttribute('data-field-path') === data.path;
       });
+    }
+    if (nodes.length > 1) {
+      var active = nodes.filter(function (n) { return n.getAttribute('data-ws-target') === 'active'; });
+      if (active.length) nodes = active;
+      else nodes = [nodes[0]];
     }
     nodes.forEach(function (el) { applySrc(el, data.src); });
   });

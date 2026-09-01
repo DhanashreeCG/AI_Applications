@@ -66,6 +66,7 @@ describe('WorksheetEditService', () => {
       }),
     ),
     uploadUserImage: jest.fn(),
+    searchCandidates: jest.fn(),
   };
 
   const eventEmitter = { emit: jest.fn() };
@@ -175,5 +176,47 @@ describe('WorksheetEditService', () => {
     );
     expect(prisma.worksheet.update).toHaveBeenCalled();
     expect(result.structure.instruction).toBe('Count the fruit.');
+  });
+
+  it('searchLibrary returns mapped candidates for a query', async () => {
+    assetService.searchCandidates.mockResolvedValue([
+      {
+        assetId: 'a1',
+        caption: 'apple',
+        searchDescription: 'red apple',
+        imageUrl: '/worksheets/assets/a1/image',
+      },
+    ]);
+
+    const result = await service.searchLibrary({ query: 'red apple', limit: 5 });
+    expect(assetService.searchCandidates).toHaveBeenCalledWith(
+      'red apple',
+      5,
+      undefined,
+    );
+    expect(result.query).toBe('red apple');
+    expect(result.results).toHaveLength(1);
+  });
+
+  it('searchLibrary returns empty results when query is blank', async () => {
+    const result = await service.searchLibrary({ query: '  ' });
+    expect(assetService.searchCandidates).not.toHaveBeenCalled();
+    expect(result).toEqual({ query: '', results: [] });
+  });
+
+  it('searchImages derives query from the slot when query is omitted', async () => {
+    assetService.searchCandidates.mockResolvedValue([]);
+    await service.searchImages('ws-1', { path: 'items[0]' });
+    expect(assetService.searchCandidates).toHaveBeenCalledWith(
+      'red apples',
+      undefined,
+      undefined,
+    );
+  });
+
+  it('searchImages returns empty results when query and slot query are missing', async () => {
+    const result = await service.searchImages('ws-1', { path: 'instruction' });
+    expect(assetService.searchCandidates).not.toHaveBeenCalled();
+    expect(result.results).toEqual([]);
   });
 });

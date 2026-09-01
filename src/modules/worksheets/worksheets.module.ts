@@ -12,6 +12,7 @@ import { WorksheetFieldMetadataService } from './services/worksheet-field-metada
 import { WorksheetContentService } from './services/worksheet-content.service';
 import { WorksheetEditService } from './services/worksheet-edit.service';
 import { WorksheetGenerationService } from './services/worksheet-generation.service';
+import { WorksheetRenderNotifyService } from './services/worksheet-render-notify.service';
 import { WorksheetRenderService } from './services/worksheet-render.service';
 import { WorksheetTemplateSelectionService } from './services/worksheet-template-selection.service';
 import { WorksheetTemplateSelectionAiService } from './services/worksheet-template-selection-ai.service';
@@ -35,6 +36,7 @@ import { WorksheetsController } from './worksheets.controller';
     CircleTheThingsRenderer,
     WorksheetRendererRegistry,
     WorksheetRenderService,
+    WorksheetRenderNotifyService,
     WorksheetFieldMetadataService,
   ],
 })

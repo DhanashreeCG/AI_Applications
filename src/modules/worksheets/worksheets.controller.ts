@@ -5,7 +5,6 @@ import {
   Header,
   Headers,
   HttpCode,
-  HttpException,
   HttpStatus,
   Param,
   Post,
@@ -16,7 +15,6 @@ import {
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
@@ -53,6 +51,7 @@ import { WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES } from './constants/worksheet.consta
 import { WorksheetException } from './errors/worksheet.exception';
 import { WorksheetEditService } from './services/worksheet-edit.service';
 import { WorksheetGenerationService } from './services/worksheet-generation.service';
+import { WorksheetRenderNotifyService } from './services/worksheet-render-notify.service';
 import { WorksheetRenderService } from './services/worksheet-render.service';
 import {
   WorksheetTemplateService,
@@ -66,9 +65,9 @@ export class WorksheetsController {
     private readonly generationService: WorksheetGenerationService,
     private readonly editService: WorksheetEditService,
     private readonly renderService: WorksheetRenderService,
+    private readonly renderNotifyService: WorksheetRenderNotifyService,
     private readonly templateService: WorksheetTemplateService,
     private readonly assetImageService: AssetImageService,
-    private readonly configService: ConfigService,
   ) {}
 
   @Post('generate')
@@ -138,6 +137,21 @@ export class WorksheetsController {
   @ApiOperation({ summary: 'List active worksheet templates for the catalog grid' })
   async listTemplates() {
     return this.templateService.listCatalog();
+  }
+
+  @Get('images/search')
+  @ApiOperation({
+    summary: 'Semantic asset search without a saved worksheet',
+  })
+  async searchLibraryImages(
+    @Query() query: SearchWorksheetImagesQueryDto,
+    @Headers('x-country-code') headerCountryCode?: string,
+  ) {
+    return this.editService.searchLibrary({
+      query: query.query,
+      limit: query.limit != null ? Number(query.limit) : undefined,
+      countryCode: query.countryCode || headerCountryCode,
+    });
   }
 
   @Post('templates')
@@ -305,77 +319,19 @@ export class WorksheetsController {
     summary: 'Render worksheet to PNG, upload to S3, and return structured resource list for postMessage',
   })
   async renderAndNotify(
-    @Body() body: any, // The full in-memory structure + templateId + auth etc
+    @Body() body: {
+      templateId?: string;
+      structure?: Record<string, unknown>;
+      request?: Record<string, unknown>;
+      auth?: string;
+      grade?: unknown;
+    },
     @Headers('x-trace-id') traceId?: string,
     @Headers('x-correlation-id') correlationId?: string,
   ) {
-    const parentOrigin = this.configService.get<string>('worksheets.parentOrigin') ?? '*';
-    const templateId = body.templateId;
-    const structure = body.structure;
-    const request = body.request;
-
-    if (!templateId || !structure) {
-      throw new HttpException('Missing templateId or structure', HttpStatus.BAD_REQUEST);
-    }
-
-    const resources: { url: string; signedUrl: string; s3Key: string; folder: string; fileName: string; mediaId?: string }[] = [];
-    const uploadApiUrl = this.configService.get<string>('worksheets.upload.apiUrl') || 'https://gyan-dev-api.creativegalileo.com/api/gyan/V1/media/upload-media';
-    const entityName = this.configService.get<string>('worksheets.upload.entityName') || 'worksheets';
-    const entityType = this.configService.get<string>('worksheets.upload.entityType') || 'worksheets';
-    const folderName = this.configService.get<string>('worksheets.upload.folderName') || 'worksheets';
-
-    try {
-      const result = await this.renderService.renderFromPayload(
-        { templateId, structure, request },
-        'png',
-        { correlationId: correlationId || traceId, mode: 'export' },
-      );
-
-      if (!result.buffer) {
-        throw new Error('Failed to generate PNG buffer');
-      }
-
-      // Save to S3 via external API (same logic as flashcards)
-      const form = new FormData();
-      const blob = new Blob([result.buffer as any], { type: 'image/png' });
-      const filename = `worksheet-${Date.now()}.png`;
-      form.append('files', blob, filename);
-      form.append('entityName', entityName);
-      form.append('entityType', entityType);
-      form.append('folderName', folderName);
-
-      const headers: Record<string, string> = {};
-      if (body.auth) headers['Authorization'] = `Bearer ${body.auth}`;
-      const uploadRes = await fetch(uploadApiUrl, { method: 'POST', headers, body: form as any });
-      
-      if (!uploadRes.ok) {
-        const errorText = await uploadRes.text();
-        throw new HttpException(`Failed to upload media: ${errorText}`, HttpStatus.BAD_GATEWAY);
-      }
-
-      const uploadResult = await uploadRes.json();
-      if (!uploadResult.success || !uploadResult.data || !uploadResult.data[0]) {
-        throw new HttpException(`Invalid response from upload media API: ${JSON.stringify(uploadResult)}`, HttpStatus.BAD_GATEWAY);
-      }
-
-      const mediaData = uploadResult.data[0];
-
-      resources.push({
-        url: mediaData.Location,
-        signedUrl: mediaData.Location,
-        s3Key: mediaData.key || mediaData.Key,
-        folder: folderName,
-        fileName: filename,
-        mediaId: mediaData.mediaId,
-      });
-
-      return { success: true, resources };
-    } catch (error) {
-      throw new HttpException(
-        error instanceof Error ? error.message : 'Render and notify failed',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return this.renderNotifyService.renderAndNotify(body, {
+      correlationId: correlationId || traceId,
+    });
   }
 
   @Post(':worksheetId/preview')

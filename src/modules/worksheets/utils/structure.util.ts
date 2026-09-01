@@ -469,7 +469,7 @@ export function collectImageSlots(
       typeof value.id === 'string' && value.id.trim() ? value.id.trim() : null;
     const key = path.split(/[.[\]]/).filter(Boolean).pop() ?? 'image';
     found.push({
-      slotId: explicitId || key,
+      slotId: explicitId || (path.includes('[') ? path : key),
       path,
       assetId: typeof value.assetId === 'string' ? value.assetId : null,
       imageQuery,

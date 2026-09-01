@@ -18,6 +18,9 @@ describe('normalizeImageQueryFields pair images', () => {
     const slots = collectImageSlots(next);
     expect(slots.some((slot) => slot.path === 'pairs[0].left_image')).toBe(true);
     expect(slots.some((slot) => slot.path === 'pairs[0].right_image')).toBe(true);
+    expect(slots.find((slot) => slot.path === 'pairs[0].left_image')?.slotId).toBe(
+      'pairs[0].left_image',
+    );
   });
 });
 

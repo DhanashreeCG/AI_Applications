@@ -85,6 +85,14 @@ export class WorksheetAssetService {
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
   }
 
+  private usableRenderSrc(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const src = value.trim();
+    if (!src || src === 'null' || src === 'undefined') return null;
+    if (/^(data:|blob:|https?:|\/)/i.test(src)) return src;
+    return null;
+  }
+
   public persistableStructure(
     structure: Record<string, unknown>,
   ): Record<string, unknown> {
@@ -375,6 +383,7 @@ export class WorksheetAssetService {
           }
           next[key] = walk(child);
         }
+        const replacement = this.usableRenderSrc(record.imageUrl) || this.usableRenderSrc(record.assetUrl);
         if (typeof record.assetId === 'string' && record.assetId.trim()) {
           next.assetUrl = this.assetProxyUrl(record.assetId);
         } else if (
@@ -387,7 +396,13 @@ export class WorksheetAssetService {
               parsed.worksheetId,
               parsed.uploadId,
             );
+          } else if (replacement) {
+            next.assetUrl = replacement;
+            next.imageUrl = replacement;
           }
+        } else if (replacement) {
+          next.assetUrl = replacement;
+          next.imageUrl = replacement;
         }
         return next;
       }

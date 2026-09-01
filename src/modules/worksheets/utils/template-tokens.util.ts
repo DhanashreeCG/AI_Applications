@@ -456,8 +456,8 @@ function pairImageSrc(node: unknown): { src: string; alt: string } {
     return { src: '', alt: '' };
   }
   const src =
-    (typeof node.assetUrl === 'string' && node.assetUrl) ||
     (typeof node.imageUrl === 'string' && node.imageUrl) ||
+    (typeof node.assetUrl === 'string' && node.assetUrl) ||
     '';
   const alt =
     visualQueryFromImageRecord(node) ||
@@ -484,8 +484,7 @@ export function buildPairImagesMarkup(structure: Record<string, unknown>): strin
     }
     const path = `pairs[${index}].left_image`;
     const resolved = pairImageSrc(pair.left_image);
-    const slotMatch = resolveImageSlot(structure, path);
-    const slotId = slotMatch?.slotId || path;
+    const slotId = path;
     const srcAttr = resolved.src ? ` src="${escapeHtml(resolved.src)}"` : '';
     tags.push(
       `<img class="worksheet-image"${srcAttr} alt="${escapeHtml(resolved.alt)}" style="left:${pos.left}px;top:${pos.top}px" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}" data-side="left" />`,
@@ -500,8 +499,7 @@ export function buildPairImagesMarkup(structure: Record<string, unknown>): strin
     }
     const path = `pairs[${pairIndex}].right_image`;
     const resolved = pairImageSrc(pair.right_image);
-    const slotMatch = resolveImageSlot(structure, path);
-    const slotId = slotMatch?.slotId || path;
+    const slotId = path;
     const srcAttr = resolved.src ? ` src="${escapeHtml(resolved.src)}"` : '';
     tags.push(
       `<img class="worksheet-image"${srcAttr} alt="${escapeHtml(resolved.alt)}" style="left:${pos.left}px;top:${pos.top}px" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}" data-side="right" />`,
@@ -585,7 +583,7 @@ export function buildScatterItemsMarkup(
       const label = typeof item.label === 'string' ? item.label : '';
       const path = `items[${index}]`;
       const slotMatch = resolveImageSlot(structure, path);
-      const slotId = slotMatch?.slotId || path;
+      const slotId = path;
       const rawSrc =
         (typeof item.assetUrl === 'string' && item.assetUrl) ||
         (typeof item.imageUrl === 'string' && item.imageUrl) ||

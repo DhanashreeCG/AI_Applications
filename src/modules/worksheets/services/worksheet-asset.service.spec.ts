@@ -128,6 +128,26 @@ describe('WorksheetAssetService', () => {
     expect(s3StorageService.getSignedUrl).toHaveBeenCalled();
   });
 
+  it('keeps a replacement imageUrl when assetId is missing', () => {
+    const enriched = service.enrichForRender({
+      items: [
+        {
+          imageQuery: 'carrot',
+          assetId: null,
+          imageUrl: '/worksheets/assets/new-carrot/image',
+        },
+      ],
+    });
+    expect(enriched.items).toEqual([
+      {
+        imageQuery: 'carrot',
+        assetId: null,
+        assetUrl: '/worksheets/assets/new-carrot/image',
+        imageUrl: '/worksheets/assets/new-carrot/image',
+      },
+    ]);
+  });
+
   it('injects assetUrl for render without persisting it', () => {
     const enriched = service.enrichForRender({
       items: [{ imageQuery: 'apples', assetId: 'asset-123', signedUrl: 'stale' }],

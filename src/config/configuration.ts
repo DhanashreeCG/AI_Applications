@@ -109,6 +109,13 @@ export interface AppConfig {
   worksheets: {
     apiBaseUrl: string;
     apiPrefix: string;
+    parentOrigin: string;
+    upload: {
+      apiUrl: string;
+      entityName: string;
+      entityType: string;
+      folderName: string;
+    };
     assetImagePath: string;
     pencilIconUrl: string;
     imageConcurrency: number;
@@ -427,6 +434,18 @@ export default (): AppConfig => ({
   worksheets: {
     apiBaseUrl: envTrim('WORKSHEET_API_BASE_URL').replace(/\/$/, ''),
     apiPrefix: envTrim('WORKSHEET_API_PREFIX', '/worksheets').replace(/\/$/, '') || '/worksheets',
+    parentOrigin: envTrim('WORKSHEET_PARENT_ORIGIN', '*') || '*',
+    upload: {
+      apiUrl:
+        envTrim('WORKSHEET_UPLOAD_API_URL') ||
+        envTrim('FLASHCARD_UPLOAD_API_URL') ||
+        'https://gyan-dev-api.creativegalileo.com/api/gyan/V1/media/upload-media',
+      entityName: envTrim('WORKSHEET_UPLOAD_ENTITY_NAME', 'GYAN') || 'GYAN',
+      entityType:
+        envTrim('WORKSHEET_UPLOAD_ENTITY_TYPE', 'ai_worksheets') || 'ai_worksheets',
+      folderName:
+        envTrim('WORKSHEET_UPLOAD_FOLDER_NAME', 'ai_worksheets') || 'ai_worksheets',
+    },
     assetImagePath: envTrim('WORKSHEET_ASSET_IMAGE_PATH', '/worksheets/assets').replace(
       /\/$/,
       '',

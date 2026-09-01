@@ -343,6 +343,10 @@ NULL
 
     expect(html).toContain('data-side="left"');
     expect(html).toContain('data-side="right"');
+    expect(html).toContain('data-field-path="pairs[0].left_image"');
+    expect(html).toContain('data-image-slot="pairs[0].left_image"');
+    expect(html).toContain('data-image-slot="pairs[1].left_image"');
+    expect(html).not.toMatch(/data-image-slot="left_image"/);
     expect(html).toContain('left:80px;top:330px');
     expect(html).toContain('left:790px');
     expect(html).toContain('/worksheets/assets/eye/image');

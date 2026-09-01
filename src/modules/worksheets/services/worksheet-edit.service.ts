@@ -290,10 +290,32 @@ export class WorksheetEditService {
       }
     }
     if (!query) {
-      throw new WorksheetException(
-        'INVALID_REQUEST',
-        'Provide query or a path whose slot has imageQuery',
-      );
+      return { query: '', results: [] };
+    }
+    const results = await this.assetService.searchCandidates(
+      query,
+      options.limit,
+      options.countryCode,
+    );
+    return { query, results };
+  }
+
+  public async searchLibrary(options: {
+    query?: string;
+    limit?: number;
+    countryCode?: string;
+  }): Promise<{
+    query: string;
+    results: Array<{
+      assetId: string;
+      caption: string;
+      searchDescription: string;
+      imageUrl: string;
+    }>;
+  }> {
+    const query = options.query?.trim() || '';
+    if (!query) {
+      return { query: '', results: [] };
     }
     const results = await this.assetService.searchCandidates(
       query,

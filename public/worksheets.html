@@ -501,6 +501,47 @@
       color: var(--danger);
     }
 
+    .summary-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .tile-checkbox {
+      display: none;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 26px;
+      height: 26px;
+      background: #fff;
+      border: 2px solid #ccc;
+      border-radius: 6px;
+      z-index: 10;
+      color: white;
+      place-items: center;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+
+    .selection-mode .tile-checkbox {
+      display: grid;
+    }
+
+    .selection-mode .tile-card {
+      cursor: pointer;
+    }
+
+    .selection-mode .tile.selected .tile-card {
+      outline: 3px solid var(--primary);
+      outline-offset: 4px;
+    }
+
+    .selection-mode .tile.selected .tile-checkbox {
+      background: var(--primary);
+      border-color: var(--primary);
+    }
+
     /* ---------- skeleton ---------- */
 
     .skeleton {
@@ -1047,6 +1088,11 @@
     <section class="results" id="gridSection">
       <div class="summary" id="summary">
         <div class="pills" id="metaPills"></div>
+        <div class="summary-actions">
+          <button class="btn-soft" id="toggleSelectMode" type="button">Select Options</button>
+          <button class="btn-soft" id="saveSelectedWorksheets" type="button" style="display:none">Save Selected</button>
+          <button class="btn-soft" id="saveAllWorksheets" type="button">Save all</button>
+        </div>
       </div>
 
       <div class="grid" id="worksheetGrid"></div>
@@ -1210,6 +1256,9 @@
       imagePickerLimit: 10,
       imagePickFromAi: false,
       busy: false,
+      items: [],
+      selectionMode: false,
+      selectedIds: new Set(),
     };
 
     const els = {
@@ -1238,6 +1287,9 @@
       editBtn: el('editBtn'),
       aiEditBtn: el('aiEditBtn'),
       saveWorksheetBtn: el('saveWorksheetBtn'),
+      toggleSelectMode: el('toggleSelectMode'),
+      saveSelectedWorksheets: el('saveSelectedWorksheets'),
+      saveAllWorksheets: el('saveAllWorksheets'),
       downloadPngBtn: el('downloadPngBtn'),
       downloadPdfBtn: el('downloadPdfBtn'),
       imagePickerModal: el('imagePickerModal'),
@@ -1421,6 +1473,9 @@
       state.busy = busy;
       els.generateBtn.disabled = busy;
       els.cancelBtn.disabled = busy;
+      if (els.saveWorksheetBtn) els.saveWorksheetBtn.disabled = busy;
+      if (els.saveAllWorksheets) els.saveAllWorksheets.disabled = busy;
+      if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.disabled = busy;
     }
 
     function renderAges() {
@@ -1450,7 +1505,28 @@
       return state.ages.find((item) => item.id === state.ageGroup) || state.ages[0];
     }
 
+    function snapshotPreviewHtml() {
+      const doc = els.worksheetFrame && els.worksheetFrame.contentDocument;
+      if (!doc || !state.preview) return;
+      const markup = doc.documentElement && doc.documentElement.outerHTML;
+      if (!markup) return;
+      state.preview.html = /<!doctype/i.test(markup) ? markup : '<!DOCTYPE html>' + markup;
+    }
+
+    function persistPreviewToItems() {
+      if (!state.preview || !state.worksheetId) return;
+      snapshotPreviewHtml();
+      const index = state.items.findIndex((item) => item.id === state.worksheetId);
+      const next = { ...state.preview, id: state.worksheetId };
+      if (index >= 0) {
+        state.items[index] = { ...state.items[index], ...next };
+      } else {
+        state.items.push(next);
+      }
+    }
+
     function showGrid() {
+      persistPreviewToItems();
       els.formSection.classList.remove('hidden');
       els.gridSection.classList.remove('hidden');
       els.previewSection.classList.add('hidden');
@@ -1459,6 +1535,7 @@
       state.editMode = false;
       state.pendingImageReplacements = {};
       els.editBtn.textContent = 'Edit';
+      renderGrid();
     }
 
     function scaleThumb(iframe, canvas) {
@@ -1476,7 +1553,12 @@
     function appendCard(item) {
       const loved = favorites().includes(item.id);
       const tile = document.createElement('div');
-      tile.className = 'tile';
+      tile.className = 'tile' + (state.selectedIds.has(item.id) ? ' selected' : '');
+      tile.dataset.id = item.id;
+
+      const checkbox = document.createElement('div');
+      checkbox.className = 'tile-checkbox';
+      checkbox.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
       const card = document.createElement('div');
       card.className = 'tile-card';
@@ -1505,7 +1587,15 @@
           <button class="btn-soft" data-act="download-pdf" data-id="${item.id}" style="padding:6px 10px; font-size:12px;">PDF</button>
         `;
 
-      card.addEventListener('click', () => openPreview(item));
+      card.addEventListener('click', () => {
+        if (state.selectionMode) {
+          if (state.selectedIds.has(item.id)) state.selectedIds.delete(item.id);
+          else state.selectedIds.add(item.id);
+          tile.classList.toggle('selected', state.selectedIds.has(item.id));
+          return;
+        }
+        openPreview(item);
+      });
 
       actions.addEventListener('click', (event) => {
         const btn = event.target.closest('[data-act]');
@@ -1523,9 +1613,27 @@
         }
       });
 
+      tile.appendChild(checkbox);
       tile.appendChild(card);
       tile.appendChild(actions);
       els.worksheetGrid.appendChild(tile);
+    }
+
+    function renderGrid() {
+      const start = (state.page - 1) * state.pageSize;
+      const pageItems = state.items.slice(start, start + state.pageSize);
+      els.worksheetGrid.innerHTML = '';
+      if (!pageItems.length) {
+        els.empty.style.display = state.items.length ? 'none' : 'block';
+        els.summary.classList.toggle('show', state.items.length > 0);
+        renderPager();
+        return;
+      }
+      els.empty.style.display = 'none';
+      els.summary.classList.add('show');
+      els.metaPills.innerHTML = `<span class="pill">Generated: <b>${state.items.length}</b></span>`;
+      pageItems.forEach(appendCard);
+      renderPager();
     }
 
     function renderSkeletons(count) {
@@ -1555,15 +1663,15 @@
 
 
     function renderPager() {
-      const effectiveSize = Math.max(state.pageSize, Number(els.countSelect.value) || 10);
-      const pages = Math.max(1, Math.ceil(state.total / effectiveSize));
+      const effectiveSize = Math.max(1, state.pageSize || 10);
+      const pages = Math.max(1, Math.ceil(state.items.length / effectiveSize));
       els.pager.innerHTML = '';
       for (let i = 1; i <= Math.min(pages, state.pagerMaxButtons); i += 1) {
         const btn = document.createElement('button');
         btn.className = 'page-num';
         if (i === state.page) btn.setAttribute('aria-current', 'true');
         btn.textContent = String(i);
-        btn.addEventListener('click', () => { state.page = i; loadGrid(); });
+        btn.addEventListener('click', () => { state.page = i; renderGrid(); });
         els.pager.appendChild(btn);
       }
     }
@@ -1622,19 +1730,20 @@
 
         toast(`Created ${(body.items || []).length} worksheet(s)`);
 
-        els.worksheetGrid.innerHTML = '';
-        if (!body.items?.length) {
+        state.items = Array.isArray(body.items) ? body.items : [];
+        state.selectedIds.clear();
+        state.selectionMode = false;
+        state.page = 1;
+        els.worksheetGrid.classList.remove('selection-mode');
+        if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.style.display = 'none';
+        if (els.toggleSelectMode) els.toggleSelectMode.textContent = 'Select Options';
+        if (!state.items.length) {
           els.empty.style.display = 'block';
           els.summary.classList.remove('show');
+          els.worksheetGrid.innerHTML = '';
         } else {
-          els.empty.style.display = 'none';
-          els.summary.classList.add('show');
-          els.metaPills.innerHTML = `
-              <span class="pill">Generated: <b>${body.items.length}</b></span>
-            `;
-          body.items.forEach(appendCard);
+          renderGrid();
         }
-        els.pager.innerHTML = '';
       } catch (error) {
         removeSkeletons();
         showBanner(
@@ -1679,10 +1788,14 @@
     }
 
     async function openPreview(item) {
-      if (!item) {
+      if (typeof item === 'string') {
+        item = state.items.find((row) => row.id === item) || null;
+      }
+      if (!item || typeof item !== 'object') {
         toast('Worksheet data is missing');
         return;
       }
+      persistPreviewToItems();
       state.worksheetId = item.id || Date.now().toString();
       state.editMode = false;
       els.editBtn.textContent = 'Edit';
@@ -1727,6 +1840,46 @@
       applyPendingImages(doc);
     }
 
+    function isPlainSearchName(value) {
+      const text = String(value || '').trim();
+      if (!text) return false;
+      const stripped = text.replace(/^["']+|["']+$/g, '');
+      if (/\.(jpe?g|png|gif|webp|heic|heif|bmp|svg|tiff?)$/i.test(stripped)) return false;
+      if (/screenshot|screen[\s_-]?shot|untitled|download/i.test(stripped)) return false;
+      if (/^(img|image|dsc|dscn|pict|photo|copy|file)[-_\s.]/i.test(stripped)) return false;
+      if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(stripped)) return false;
+      if (/[/\\]/.test(stripped)) return false;
+      if (/\d{6,}/.test(stripped)) return false;
+      const letters = stripped.replace(/[^a-zA-Z]+/g, '');
+      if (letters.length < 2) return false;
+      if (stripped.split(/\s+/).filter(Boolean).length > 8) return false;
+      return true;
+    }
+
+    function structureValueAt(structure, path) {
+      if (!structure || !path) return undefined;
+      return String(path).replace(/\]/g, '').split(/[.[]/).filter(Boolean).reduce((cur, key) => cur?.[key], structure);
+    }
+
+    function imageSearchQueryFor(structure, path) {
+      const slot = structureValueAt(structure, path);
+      const fromSlot = [];
+      if (slot && typeof slot === 'object' && !Array.isArray(slot)) {
+        fromSlot.push(slot.imageQuery, slot.queryUsed, slot.caption, slot.alt, slot.label);
+      } else if (typeof slot === 'string') {
+        fromSlot.push(slot);
+      }
+      const chosen = fromSlot.map((value) => (value == null ? '' : String(value).trim())).find(Boolean);
+      if (chosen && isPlainSearchName(chosen)) return chosen;
+      const preferred = ['topic', 'title', 'instruction', 'heading', 'label', 'word'];
+      for (const key of preferred) {
+        const text = structure?.[key];
+        if (typeof text === 'string' && text.trim() && isPlainSearchName(text)) return text.trim();
+      }
+      const request = state.preview?.request || {};
+      return String(request.topic || request.query || els.topicInput.value || '').trim();
+    }
+
     function openImagePicker(path, slotId, fromAi) {
       if (!state.editMode && !fromAi && !state.imagePickFromAi) return;
       state.imagePickFromAi = Boolean(fromAi || state.imagePickFromAi);
@@ -1734,15 +1887,12 @@
       state.selectedImagePath = resolveImagePath(path, slotId);
       state.selectedSearchItem = null;
       setImagePickerTab('search');
+      const query = imageSearchQueryFor(state.preview?.structure, state.selectedImagePath);
+      els.imageQuery.value = query;
+      els.imageBank.innerHTML = '';
+      els.imageResultsCount.textContent = 'Searching…';
       els.imagePickerModal.classList.add('show');
-      const cached = state.lastImageSearch;
-      if (cached.results?.length) {
-        els.imageQuery.value = cached.query || '';
-        renderImageResults(cached.results, cached.query);
-        return;
-      }
-      els.imageQuery.value = '';
-      renderImageResults([], '');
+      searchImages();
     }
 
     function resolveImagePath(path, slotId) {
@@ -1868,21 +2018,20 @@
       const doc = els.worksheetFrame.contentDocument;
       const abs = previewImageSrc(src);
       if (doc) {
-        const slots = [];
-        doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
+        let slots = [];
         if (path) doc.querySelectorAll(cssAttr('data-field-path', path)).forEach((n) => slots.push(n));
-        if (slotId) doc.querySelectorAll(cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
-        if (!slots.length) {
-          doc.querySelectorAll('img[data-image-slot], img.worksheet-image').forEach((n) => slots.push(n));
+        if (!slots.length && slotId) {
+          doc.querySelectorAll(cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
         }
         if (!slots.length) {
-          doc.querySelectorAll('img').forEach((n) => {
-            if (n.classList.contains('worksheet-bg')) return;
-            if (n.closest('.ai-pencil, .img-camera-btn')) return;
-            const srcAttr = n.getAttribute('src') || '';
-            if (/pencil/i.test(srcAttr)) return;
-            slots.push(n);
-          });
+          doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
+        }
+        if (slots.length > 1 && path) {
+          slots = slots.filter((n) => n.getAttribute('data-field-path') === path);
+        }
+        if (slots.length > 1) {
+          const active = slots.filter((n) => n.getAttribute('data-ws-target') === 'active');
+          slots = active.length ? active : [slots[0]];
         }
         slots.forEach((el) => {
           if (el.tagName === 'IMG') {
@@ -1926,7 +2075,7 @@
     function applyPendingImages(doc) {
       Object.entries(state.pendingImageReplacements).forEach(([path, item]) => {
         if (!item?.imageUrl) return;
-        applyImageInFrame(item.imageUrl, path, item.slotId || state.selectedImageSlotId);
+        applyImageInFrame(item.imageUrl, path, item.slotId);
       });
     }
 
@@ -1939,17 +2088,27 @@
       }
       state.selectedSearchItem = item;
       state.selectedImagePath = path;
-      const imageUrl = item.file
+      const displayUrl = item.file
         ? (item.imageUrl || URL.createObjectURL(item.file))
         : previewImageSrc(item.imageUrl);
-      state.pendingImageReplacements[path] = {
+      const storedUrl = item.file
+        ? displayUrl
+        : (item.imageUrl || displayUrl);
+      const replacement = {
         assetId: item.assetId || null,
         userUploadedKey: item.userUploadedKey || null,
-        imageUrl,
+        imageUrl: storedUrl,
+        signedUrl: item.signedUrl || storedUrl,
+        queryUsed: item.queryUsed || item.caption || '',
+        caption: item.caption,
         slotId: state.selectedImageSlotId,
         file: item.file || null,
       };
-      applyImageInFrame(imageUrl, path, state.selectedImageSlotId);
+      state.pendingImageReplacements[path] = replacement;
+      if (state.preview && state.preview.structure) {
+        mergeImageSlot(state.preview.structure, path, replacement);
+      }
+      applyImageInFrame(displayUrl, path, state.selectedImageSlotId);
       return true;
     }
 
@@ -2119,6 +2278,26 @@
       current[parts[parts.length - 1]] = value;
     }
 
+    function mergeImageSlot(structure, path, item) {
+      const current = structureValueAt(structure, path);
+      const next = current && typeof current === 'object' && !Array.isArray(current)
+        ? { ...current }
+        : {};
+      if (item.assetId != null) next.assetId = item.assetId;
+      if (item.userUploadedKey != null) next.userUploadedKey = item.userUploadedKey;
+      if (item.imageUrl) {
+        next.imageUrl = item.imageUrl;
+        next.assetUrl = item.imageUrl;
+        next.signedUrl = item.signedUrl || item.imageUrl;
+      }
+      if (item.assetId) {
+        next.userUploadedKey = null;
+      }
+      if (item.caption && isPlainSearchName(item.caption)) next.caption = item.caption;
+      if (!next.imageQuery && item.queryUsed) next.imageQuery = item.queryUsed;
+      setStructureValue(structure, path, next);
+    }
+
     async function saveInlineEdits() {
       const doc = els.worksheetFrame.contentDocument;
       if (!state.preview || !state.preview.structure) return;
@@ -2131,11 +2310,12 @@
       });
 
       for (const [path, item] of Object.entries(state.pendingImageReplacements)) {
-        if (item?.imageUrl) {
-          setStructureValue(structure, path, item.imageUrl);
+        if (item?.imageUrl || item?.assetId) {
+          mergeImageSlot(structure, path, item);
         }
       }
       state.pendingImageReplacements = {};
+      persistPreviewToItems();
     }
 
     async function download(id, format) {
@@ -2166,8 +2346,11 @@
       URL.revokeObjectURL(href);
     }
 
+    function isTempWorksheetId(id) {
+      return !id || String(id).startsWith('temp-');
+    }
+
     async function searchImages() {
-      if (!state.worksheetId) return;
       const query = els.imageQuery.value.trim();
       const path = state.selectedImagePath;
       const key = cacheKey(query, query ? '' : path);
@@ -2183,30 +2366,115 @@
       if (query) params.set('query', query);
       if (path) params.set('path', path);
       params.set('limit', String(state.imagePickerLimit || 10));
-      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/images/search?${params}`);
-      const body = await res.json().catch(() => ({}));
-      els.searchImagesBtn.disabled = false;
-      if (!res.ok) {
-        toast(friendlyError(body, 'Image search failed'));
+      const searchPath = isTempWorksheetId(state.worksheetId)
+        ? `/images/search?${params}`
+        : `/${encodeURIComponent(state.worksheetId)}/images/search?${params}`;
+      try {
+        const res = await apiFetch(searchPath);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(friendlyError(body, 'Image search failed. Please try a different search.'));
+        }
+        const payload = {
+          query: body.query || query,
+          results: body.results || body.images || [],
+          path,
+        };
+        state.imageSearchCache.set(key, payload);
+        if (payload.query) state.imageSearchCache.set(cacheKey(payload.query, ''), payload);
+        state.lastImageSearch = payload;
+        renderImageResults(payload.results, payload.query);
+        payload.results.forEach((item) => {
+          if (item?.imageUrl) cachedImageSrc(item.imageUrl);
+        });
+      } catch (error) {
+        toast(friendlyError(error, 'Image search failed'));
         els.imageResultsCount.textContent = 'Search failed';
+        els.imageBank.innerHTML = '<div class="empty">' + escapeHtml(error.message || 'Search failed') + '</div>';
+      } finally {
+        els.searchImagesBtn.disabled = false;
+      }
+    }
+
+    function parentOrigin() {
+      return window.__PARENT_ORIGIN__ || new URLSearchParams(window.location.search).get('parentOrigin') || '*';
+    }
+
+    function notifyPayloadFor(item) {
+      return {
+        templateId: item.template?.id || item.templateId,
+        structure: item.structure,
+        request: item.request || { topic: els.topicInput.value },
+        auth: new URLSearchParams(window.location.search).get('auth'),
+        grade: state.ageGroup || null,
+      };
+    }
+
+    async function saveAndNotifyItems(items) {
+      const list = (items || []).filter((item) => item && item.structure && (item.template?.id || item.templateId));
+      if (!list.length) {
+        toast('Please select at least one worksheet.');
         return;
       }
-      const payload = {
-        query: body.query || query,
-        results: body.results || [],
-        path,
-      };
-      state.imageSearchCache.set(key, payload);
-      if (payload.query) state.imageSearchCache.set(cacheKey(payload.query, ''), payload);
-      state.lastImageSearch = payload;
-      renderImageResults(payload.results, payload.query);
-      payload.results.forEach((item) => {
-        if (item?.imageUrl) cachedImageSrc(item.imageUrl);
-      });
+      setBusy(true);
+      toast('<span class="spinner"></span>Saving Worksheets');
+      const cards = [];
+      try {
+        for (const item of list) {
+          const res = await apiFetch('/render-and-notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(notifyPayloadFor(item)),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(friendlyError(body, 'Could not save worksheets. Please try again.'));
+          }
+          const rows = body.cards || body.resources || [];
+          cards.push(...rows);
+        }
+        window.parent.postMessage({
+          grade: state.ageGroup || null,
+          cards,
+          query: els.topicInput.value || '',
+        }, parentOrigin());
+        toast('✓ ' + list.length + ' worksheet(s) saved & sent to platform');
+      } catch (error) {
+        toast(friendlyError(error, 'Could not save worksheets. Please try again.'), 4200);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function selectedItems() {
+      return state.items.filter((item) => state.selectedIds.has(item.id));
+    }
+
+    function saveAllWorksheets() {
+      if (state.selectionMode) {
+        return saveAndNotifyItems(selectedItems());
+      }
+      return saveAndNotifyItems(state.items);
     }
 
     els.generateBtn.addEventListener('click', generateSet);
     els.cancelBtn.addEventListener('click', () => { els.topicInput.value = ''; clearBanners(); });
+    els.toggleSelectMode.addEventListener('click', () => {
+      state.selectionMode = !state.selectionMode;
+      if (!state.selectionMode) state.selectedIds.clear();
+      els.worksheetGrid.classList.toggle('selection-mode', state.selectionMode);
+      els.saveSelectedWorksheets.style.display = state.selectionMode ? '' : 'none';
+      els.toggleSelectMode.textContent = state.selectionMode ? 'Cancel Selection' : 'Select Options';
+      renderGrid();
+    });
+    els.saveAllWorksheets.addEventListener('click', saveAllWorksheets);
+    els.saveSelectedWorksheets.addEventListener('click', () => {
+      if (state.selectedIds.size === 0) {
+        toast('Please select at least one worksheet.');
+        return;
+      }
+      saveAndNotifyItems(selectedItems());
+    });
     els.backBtn.addEventListener('click', () => { showGrid(); });
     els.editBtn.addEventListener('click', async () => {
       if (!state.editMode) {
@@ -2240,43 +2508,8 @@
         enableInlineEditing(false);
         els.editBtn.textContent = 'Edit';
       }
-      
-      els.saveWorksheetBtn.disabled = true;
-      toast('<span class="spinner"></span>Saving Worksheet...');
-      
-      try {
-        const auth = new URLSearchParams(window.location.search).get('auth');
-        const payload = {
-          templateId: state.preview.template?.id || state.preview.templateId,
-          structure: state.preview.structure,
-          request: state.preview.request || { topic: els.topicInput.value },
-          auth
-        };
-        
-        const res = await apiFetch(`/render-and-notify`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(friendlyError(body, 'Could not save worksheet'));
-        }
-        
-        const origin = window.__PARENT_ORIGIN__ || new URLSearchParams(window.location.search).get('parentOrigin') || '*';
-        const message = {
-          grade: state.ageGroup || null,
-          cards: body.resources || [],
-          query: els.topicInput.value || '',
-        };
-        window.parent.postMessage(message, origin);
-        toast('✓ Worksheet saved & sent to platform');
-      } catch (error) {
-        toast(friendlyError(error, 'Could not save worksheet. Please try again.'), 4200);
-      } finally {
-        els.saveWorksheetBtn.disabled = false;
-      }
+      persistPreviewToItems();
+      await saveAndNotifyItems([state.preview]);
     });
     els.downloadPngBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'png'));
     els.downloadPdfBtn.addEventListener('click', () => state.worksheetId && download(state.worksheetId, 'pdf'));
@@ -2284,23 +2517,35 @@
     els.imagePickerCancelBtn.addEventListener('click', closeImagePicker);
     els.searchTabBtn.addEventListener('click', () => setImagePickerTab('search'));
     els.uploadTabBtn.addEventListener('click', () => setImagePickerTab('upload'));
-    els.imageUploadInput.addEventListener('change', () => {
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Could not read that image. Please try again.'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    els.imageUploadInput.addEventListener('change', async () => {
       const file = els.imageUploadInput.files?.[0];
       if (!file) {
         els.uploadPreview.classList.add('hidden');
         els.uploadPreview.removeAttribute('src');
         return;
       }
-      const previewUrl = URL.createObjectURL(file);
-      state.imageBlobCache.set(previewUrl, previewUrl);
-      els.uploadPreview.src = previewUrl;
-      els.uploadPreview.classList.remove('hidden');
-      state.selectedSearchItem = {
-        assetId: null,
-        imageUrl: previewUrl,
-        file,
-        caption: file.name,
-      };
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        els.uploadPreview.src = dataUrl;
+        els.uploadPreview.classList.remove('hidden');
+        state.selectedSearchItem = {
+          assetId: null,
+          imageUrl: dataUrl,
+          file,
+          caption: file.name,
+        };
+      } catch (error) {
+        toast(friendlyError(error, 'Could not read that image. Please try again.'));
+      }
     });
     els.searchImagesBtn.addEventListener('click', searchImages);
     els.imageQuery.addEventListener('keydown', (event) => {
@@ -2316,12 +2561,16 @@
           toast('Choose an image to upload');
           return;
         }
-        const previewUrl = els.uploadPreview.src || URL.createObjectURL(file);
+        const previewUrl = (els.uploadPreview.src && String(els.uploadPreview.src).startsWith('data:'))
+          ? els.uploadPreview.src
+          : await readFileAsDataUrl(file);
+        const keepQuery = imageSearchQueryFor(state.preview?.structure, state.selectedImagePath);
         state.selectedSearchItem = {
           assetId: null,
           imageUrl: previewUrl,
           file,
-          caption: file.name,
+          caption: keepQuery || file.name,
+          queryUsed: keepQuery,
         };
       }
       if (!applySelectedImageToPreview()) return;
@@ -2339,6 +2588,14 @@
       const path = state.selectedFieldPath;
       const value = els.singleFieldCurrent.value;
       els.singleFieldError.style.display = 'none';
+      if (isTempWorksheetId(state.worksheetId) && state.preview?.structure) {
+        setStructureValue(state.preview.structure, path, value);
+        applyTextInFrame(path, value);
+        persistPreviewToItems();
+        closeSingleField();
+        toast('Text updated locally');
+        return;
+      }
       const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2351,6 +2608,8 @@
         return;
       }
       applyTextInFrame(path, value);
+      if (body.structure) state.preview = { ...state.preview, structure: body.structure };
+      persistPreviewToItems();
       closeSingleField();
       toast('Text updated');
     });
@@ -2396,6 +2655,13 @@
         const path = applyBtn.getAttribute('data-ai-apply');
         const value = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`)?.value ?? '';
         els.fieldEditError.style.display = 'none';
+        if (isTempWorksheetId(state.worksheetId) && state.preview?.structure) {
+          setStructureValue(state.preview.structure, path, value);
+          applyTextInFrame(path, value);
+          persistPreviewToItems();
+          toast('Field updated locally');
+          return;
+        }
         const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2409,6 +2675,7 @@
         }
         applyTextInFrame(path, value);
         if (body.structure) state.preview = { ...state.preview, structure: body.structure, html: body.html || state.preview.html };
+        persistPreviewToItems();
         toast('Field updated');
         return;
       }
@@ -2436,9 +2703,13 @@
         const box = els.aiFieldsList.querySelector(`[data-ai-current="${path}"]`);
         if (box) box.value = text;
         applyTextInFrame(path, text);
+        if (body.structure) {
+          state.preview = { ...state.preview, ...body, id: state.worksheetId };
+          persistPreviewToItems();
+        }
         if (body.html) {
           const keepEdit = state.editMode;
-          await openPreview(state.worksheetId);
+          await openPreview(state.preview);
           state.editMode = keepEdit;
           enableInlineEditing(keepEdit);
           renderAiPanel();
@@ -2470,8 +2741,12 @@
         els.fieldEditError.style.display = 'block';
         return;
       }
+      if (body.structure || body.html) {
+        state.preview = { ...state.preview, ...body, id: body.id || state.worksheetId };
+        persistPreviewToItems();
+      }
       const keepEdit = state.editMode;
-      await openPreview(state.worksheetId);
+      await openPreview(state.preview);
       state.editMode = keepEdit;
       enableInlineEditing(keepEdit);
       renderAiPanel();
@@ -2541,6 +2816,7 @@
       });
     });
 
+    el('apiBase').value = configuredApiBase() || defaultApiBase();
     renderAges();
     fillCountOptions(state.defaultCount, state.maxCount);
     loadSettings()

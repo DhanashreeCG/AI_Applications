@@ -118,9 +118,7 @@ export class WorksheetRenderService {
       width: rendererConfig.width ?? this.defaultWidth,
       height: rendererConfig.height ?? this.defaultHeight,
     };
-    const structure = this.assetService.enrichForRender(
-      this.assetService.persistableStructure(input.structure),
-    );
+    const structure = this.assetService.enrichForRender(input.structure);
     const renderer = this.rendererRegistry.get(
       input.template.rendererType,
       input.template.slug,
