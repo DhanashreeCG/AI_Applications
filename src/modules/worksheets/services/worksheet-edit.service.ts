@@ -2,7 +2,11 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
 import { getErrorMessage } from '../../../common/utils/error-message';
 import { PrismaService } from '../../database/prisma.service';
-import { assertGenerationRequestAllowed } from '../../../common/content-safety/assert-user-query';
+import {
+  assertGenerationRequestAllowed,
+  throwContentNotAllowed,
+} from '../../../common/content-safety/assert-user-query';
+import { containsForbiddenContent } from '../../flashcards/utils/content-restriction.registry';
 import { EditWorksheetDto } from '../dto/edit-worksheet.dto';
 import { GenerateWorksheetDto } from '../dto/generate-worksheet.dto';
 import { SaveWorksheetDto } from '../dto/save-worksheet.dto';
@@ -453,41 +457,98 @@ export class WorksheetEditService {
     worksheetId: string,
     dto: RegenerateWorksheetDto,
   ): Promise<GenerateWorksheetResponse> {
-    const query = dto.query?.trim();
+    const fields = this.normalizeFields(dto.fields);
+    const query =
+      dto.query?.trim() ||
+      this.instructionFromFields(fields);
     if (!query) {
       throw new WorksheetException(
         'INVALID_REQUEST',
         'Provide requirements to regenerate this worksheet',
       );
     }
+    const topic = dto.topic?.trim() || fields.topic || undefined;
+    this.assertSafeUserText(query, 'query', dto.countryCode);
+    this.assertSafeUserText(topic, 'topic', dto.countryCode);
+    for (const [key, value] of Object.entries(fields)) {
+      this.assertSafeUserText(value, `fields.${key}`, dto.countryCode);
+    }
     assertGenerationRequestAllowed({
       query,
-      topic: dto.topic,
+      topic,
       countryCode: dto.countryCode,
     });
-    const worksheet = await this.requireWorksheet(worksheetId);
-    const template = await this.templateService.getById(worksheet.templateId);
-    const previousRequest = asStructureRecord(worksheet.request);
+
+    const worksheet = await this.prisma.worksheet.findUnique({
+      where: { id: worksheetId },
+    });
+    const inMemory =
+      !worksheet &&
+      worksheetId.startsWith('temp-') &&
+      Boolean(dto.templateId);
+    if (!worksheet && !inMemory) {
+      throw new WorksheetException(
+        'WORKSHEET_NOT_FOUND',
+        `Worksheet "${worksheetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const template = worksheet
+      ? await this.templateService.getById(worksheet.templateId)
+      : await this.templateService.getActiveByIdOrSlug(String(dto.templateId));
+
+    const previousRequest = asStructureRecord(
+      worksheet?.request ?? dto.request ?? {},
+    );
+    const currentStructure = asStructureRecord(
+      dto.structure ?? worksheet?.structure ?? {},
+    );
     const generateDto = {
       ...previousRequest,
       query,
-      topic: dto.topic?.trim() || previousRequest.topic || query,
+      topic: topic || previousRequest.topic || query,
+      ageGroup: dto.ageGroup?.trim() || previousRequest.ageGroup,
+      age: dto.age ?? previousRequest.age,
+      countryCode: dto.countryCode || previousRequest.countryCode,
       templateId: template.id,
-    } as GenerateWorksheetDto;
+      fields,
+    } as GenerateWorksheetDto & { fields?: Record<string, string> };
 
     const generated = await this.contentService.generateStructure(
       template,
       generateDto,
+      undefined,
+      {
+        currentStructure,
+        systemPrompt: template.aiSystemPrompt,
+      },
     );
+    const leaked = this.findForbiddenTerm(generated, generateDto.countryCode);
+    if (leaked) {
+      throwContentNotAllowed(leaked, 'generated content', generateDto.countryCode);
+    }
     const meta = this.templateService.parseMeta(template);
     const attached = await this.assetService.attachAssets(generated, {
-      grades: generateDto.grade ? [generateDto.grade] : meta.grades,
+      grades: generateDto.grade ? [String(generateDto.grade)] : meta.grades,
+      ageGroups: generateDto.ageGroup ? [String(generateDto.ageGroup)] : undefined,
     });
     const validated = this.validationService.validateGeneratedStructure(
       this.assetService.persistableStructure(attached.structure),
       template,
       { allowEnrichmentKeys: true },
     );
+    if (!worksheet) {
+      return this.toResponse(
+        {
+          id: worksheetId,
+          status: 'GENERATED',
+          request: generateDto,
+          structure: validated,
+        },
+        template,
+      );
+    }
     const updated = await this.prisma.worksheet.update({
       where: { id: worksheet.id },
       data: {
@@ -566,5 +627,58 @@ export class WorksheetEditService {
       }
     }
     return values;
+  }
+
+  private normalizeFields(fields?: Record<string, string>): Record<string, string> {
+    if (!fields || typeof fields !== 'object') return {};
+    const next: Record<string, string> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      if (typeof value === 'string' && value.trim()) {
+        next[key] = value.trim();
+      }
+    }
+    return next;
+  }
+
+  private instructionFromFields(fields: Record<string, string>): string {
+    const parts = Object.entries(fields).map(([key, value]) =>
+      key === 'topic' ? `Change the topic to "${value}".` : `For ${key}: ${value}.`,
+    );
+    return parts.join(' ');
+  }
+
+  private assertSafeUserText(
+    value: string | undefined,
+    field: string,
+    countryCode?: string,
+  ): void {
+    if (!value?.trim()) return;
+    const matched = containsForbiddenContent(value, countryCode);
+    if (matched) {
+      throwContentNotAllowed(matched, field, countryCode);
+    }
+  }
+
+  private findForbiddenTerm(
+    value: unknown,
+    countryCode?: string,
+  ): string | undefined {
+    if (typeof value === 'string') {
+      return containsForbiddenContent(value, countryCode);
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const matched = this.findForbiddenTerm(item, countryCode);
+        if (matched) return matched;
+      }
+      return undefined;
+    }
+    if (value && typeof value === 'object') {
+      for (const item of Object.values(value)) {
+        const matched = this.findForbiddenTerm(item, countryCode);
+        if (matched) return matched;
+      }
+    }
+    return undefined;
   }
 }

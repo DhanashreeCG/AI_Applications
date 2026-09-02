@@ -1,6 +1,29 @@
 import { buildCountryForbiddenPromptClause } from '../../flashcards/utils/content-restriction.registry';
 import { GenerateWorksheetRequest } from '../types/worksheet.types';
 
+export function buildAgeGroupSafetyClause(
+  ageGroup?: string | null,
+  age?: number | null,
+): string {
+  const band = (ageGroup || (age != null ? String(age) : '')).trim();
+  const years = age ?? Number((band.match(/\d+/) || [])[0]);
+  const earlyYears = !years || years <= 6 || /2-3|3-4|4-5|FS|Pre-K|LKG|UKG/i.test(band);
+  if (!earlyYears) {
+    return [
+      `AGE GROUP: ${band || 'primary'}.`,
+      'Keep vocabulary, examples, and themes appropriate for this age.',
+      'No adult themes, weapons, gore, self-harm, or sexual content.',
+    ].join(' ');
+  }
+  return [
+    `AGE GROUP: ${band || 'early years'} (young children).`,
+    'Use very simple words a teacher can read aloud.',
+    'Keep sentences short. No scary, violent, or adult themes.',
+    'No weapons, blood, death, alcohol, drugs, romance, or political content.',
+    'Characters should be kind, familiar, and reassuring.',
+  ].join(' ');
+}
+
 export function buildWorksheetContentPrompt(input: {
   request: GenerateWorksheetRequest;
   templateName: string;
@@ -9,6 +32,8 @@ export function buildWorksheetContentPrompt(input: {
   structureDefinition: unknown;
   meta: unknown;
   count?: number;
+  systemPrompt?: string | null;
+  currentStructure?: Record<string, unknown> | null;
 }): string {
   const request = input.request;
   const count = Math.max(1, input.count ?? (request.count ? Number(request.count) : 1));
@@ -42,8 +67,27 @@ export function buildWorksheetContentPrompt(input: {
           'Return a JSON object matching the template structure definition (either directly as the structure or wrapped as { "worksheets": [ ... ] }).',
         ].join('\n');
 
+  const fieldEntries = Object.entries(request.fields ?? {}).filter(
+    ([, value]) => typeof value === 'string' && value.trim(),
+  );
+  const fieldBlock =
+    fieldEntries.length > 0
+      ? [
+          'User field entries (these are mandatory directives — apply each one):',
+          ...fieldEntries.map(([key, value]) => `- ${key}: ${value}`),
+        ].join('\n')
+      : '';
+
+  const contextBlock = input.currentStructure
+    ? [
+        'Current worksheet JSON (keep the same layout/template; replace text and imageQuery values):',
+        JSON.stringify(input.currentStructure, null, 2),
+        'Do not copy the previous wording. Produce a clearly new variation that still matches the template.',
+      ].join('\n')
+    : '';
+
   return [
-    'You generate educational worksheet CONTENT only.',
+    input.systemPrompt?.trim() || 'You generate educational worksheet CONTENT only.',
     formatInstruction,
     'Do not generate HTML, CSS, JavaScript, layout, positions, or asset IDs.',
     'Do not invent image file names. Describe needed images with imageQuery strings.',
@@ -53,6 +97,11 @@ export function buildWorksheetContentPrompt(input: {
     '',
     'CONTENT SAFETY & RESTRICTIONS:',
     countrySafetyClause,
+    buildAgeGroupSafetyClause(request.ageGroup, request.age),
+    'Never use any forbidden or restricted term from the country list, including close spellings or plurals.',
+    '',
+    fieldBlock,
+    contextBlock,
     '',
     `Template: ${input.templateName} (${input.templateSlug})`,
     input.templateDescription ? `Description: ${input.templateDescription}` : '',

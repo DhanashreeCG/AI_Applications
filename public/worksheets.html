@@ -3140,6 +3140,7 @@
 
     els.regenWorksheetBtn.addEventListener('click', async () => {
       let query = '';
+      let fields = {};
       if (templateAiPopupHtml()) {
         const built = structuredAiInstruction();
         if (built.error) {
@@ -3148,6 +3149,7 @@
           return;
         }
         query = built.query;
+        fields = collectStructuredAiValues();
       } else {
         query = els.regenQuery.value.trim();
       }
@@ -3159,10 +3161,21 @@
       els.fieldEditError.style.display = 'none';
       els.regenWorksheetBtn.disabled = true;
       els.regenWorksheetBtn.textContent = 'Generating…';
+      const age = state.ages.find((item) => item.id === state.ageGroup);
       const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/regenerate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({
+          query,
+          topic: fields.topic || state.preview?.structure?.topic || state.preview?.request?.topic,
+          fields,
+          ageGroup: state.ageGroup || state.preview?.request?.ageGroup,
+          age: age?.age,
+          countryCode: state.countryCode || state.preview?.request?.countryCode,
+          templateId: state.preview?.template?.id || state.preview?.template?.slug,
+          structure: state.preview?.structure,
+          request: state.preview?.request,
+        }),
       });
       const body = await res.json().catch(() => ({}));
       els.regenWorksheetBtn.disabled = false;

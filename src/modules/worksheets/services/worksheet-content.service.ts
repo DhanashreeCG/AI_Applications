@@ -75,6 +75,10 @@ export class WorksheetContentService {
     request: GenerateWorksheetRequest,
     count: number = 1,
     telemetry?: PipelineTelemetryContext,
+    extras?: {
+      currentStructure?: Record<string, unknown> | null;
+      systemPrompt?: string | null;
+    },
   ): Promise<Array<Record<string, unknown>>> {
     const targetCount = Math.max(1, count);
     const run = async () => {
@@ -91,6 +95,8 @@ export class WorksheetContentService {
             structureDefinition: template.structureDefinition,
             meta: template.meta,
             count: targetCount,
+            systemPrompt: extras?.systemPrompt,
+            currentStructure: extras?.currentStructure,
           }),
         {
           completeMetadata: {
@@ -182,8 +188,18 @@ export class WorksheetContentService {
     template: WorksheetTemplateRecord,
     request: GenerateWorksheetRequest,
     telemetry?: PipelineTelemetryContext,
+    extras?: {
+      currentStructure?: Record<string, unknown> | null;
+      systemPrompt?: string | null;
+    },
   ): Promise<Record<string, unknown>> {
-    const items = await this.generateStructures(template, request, 1, telemetry);
+    const items = await this.generateStructures(
+      template,
+      request,
+      1,
+      telemetry,
+      extras,
+    );
     return items[0];
   }
 

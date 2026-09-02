@@ -92,6 +92,7 @@ export interface GenerateWorksheetRequest {
   templateId?: string;
   countryCode?: string;
   count?: number;
+  fields?: Record<string, string>;
 }
 
 export interface GenerateWorksheetResponse {

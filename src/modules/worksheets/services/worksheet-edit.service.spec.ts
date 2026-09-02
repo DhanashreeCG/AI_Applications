@@ -20,6 +20,12 @@ describe('WorksheetEditService', () => {
     parseAiConfig: jest.fn(),
     parseFieldPrompts: jest.fn(),
     parseMeta: jest.fn(),
+    parseAiEditUi: jest.fn(() => ({
+      aiEditPopupHtml: null,
+      aiEditConfigJs: null,
+      aiEditPanelJs: null,
+    })),
+    getActiveByIdOrSlug: jest.fn(),
   };
   const contentService = {
     generateFieldReplacement: jest.fn(),
