@@ -1898,11 +1898,27 @@
     function resolveImagePath(path, slotId) {
       if (path && path !== 'undefined' && path !== 'null') return path;
       const structure = state.preview?.structure;
-      if (slotId && structure) {
-        const found = findStructurePathBySlotId(structure, slotId);
-        if (found) return found;
+      const needle = slotId || '';
+      if (/^[a-zA-Z_][\w]*(\[\d+\](\.[a-zA-Z_][\w]*)*)+$/.test(needle) || /^\w+\[\d+\]/.test(needle)) {
+        return needle;
       }
-      return slotId || state.selectedImagePath || '';
+      if (needle && structure) {
+        const found = findStructurePathBySlotId(structure, needle);
+        if (found) return found;
+        if (structure[needle] && typeof structure[needle] === 'object') return needle;
+        if (needle === 'main_image' || needle === 'goat' || needle === 'hero') {
+          if (structure.image) return 'image';
+        }
+        const itemIndex = needle.match(/^(?:item|image|img|slot)[_-]?(\d+)$/i);
+        if (itemIndex && Array.isArray(structure.items)) {
+          return `items[${Number(itemIndex[1]) - 1}]`;
+        }
+      }
+      if (needle === 'main_image' || needle === 'goat' || needle === 'hero' || needle === 'primary') {
+        return (structure && structure.image) ? 'image' : (needle || 'image');
+      }
+      if (structure && structure.image) return 'image';
+      return needle || state.selectedImagePath || 'image';
     }
 
     function findStructurePathBySlotId(node, slotId, prefix) {
@@ -2016,39 +2032,43 @@
 
     function applyImageInFrame(src, path, slotId) {
       const doc = els.worksheetFrame.contentDocument;
-      const abs = previewImageSrc(src);
-      if (doc) {
-        let slots = [];
-        if (path) doc.querySelectorAll(cssAttr('data-field-path', path)).forEach((n) => slots.push(n));
-        if (!slots.length && slotId) {
-          doc.querySelectorAll(cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
-        }
-        if (!slots.length) {
-          doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
-        }
-        if (slots.length > 1 && path) {
-          slots = slots.filter((n) => n.getAttribute('data-field-path') === path);
-        }
-        if (slots.length > 1) {
-          const active = slots.filter((n) => n.getAttribute('data-ws-target') === 'active');
-          slots = active.length ? active : [slots[0]];
-        }
-        slots.forEach((el) => {
-          if (el.tagName === 'IMG') {
-            el.removeAttribute('srcset');
-            el.setAttribute('src', abs);
-            el.src = abs;
-          } else {
-            const nested = el.querySelector('img');
-            if (nested) {
-              nested.removeAttribute('srcset');
-              nested.setAttribute('src', abs);
-              nested.src = abs;
-            }
-            el.style.backgroundImage = 'url("' + abs.replace(/"/g, '\\"') + '")';
-          }
-        });
+      const abs = previewImageSrc(src) || src;
+      if (!doc || !abs) return;
+      const slots = [];
+      doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
+      if (!slots.length && path) {
+        doc.querySelectorAll('img' + cssAttr('data-field-path', path)).forEach((n) => slots.push(n));
       }
+      if (!slots.length && slotId) {
+        doc.querySelectorAll('img' + cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
+      }
+      if (!slots.length && (path === 'image' || slotId === 'image' || slotId === 'main_image' || slotId === 'goat')) {
+        doc.querySelectorAll('.image-wrap img, .img-zone-box img, img[data-field-path="image"]').forEach((n) => {
+          if (!n.classList.contains('worksheet-bg')) slots.push(n);
+        });
+        if (slots.length > 1) slots.length = 1;
+      }
+      const unique = [];
+      slots.forEach((el) => {
+        if (!unique.includes(el)) unique.push(el);
+      });
+      const targets = unique.length > 1
+        ? unique.filter((n) => n.getAttribute('data-ws-target') === 'active').slice(0, 1)
+        : unique;
+      targets.forEach((el) => {
+        if (el.tagName === 'IMG') {
+          el.removeAttribute('srcset');
+          el.setAttribute('src', abs);
+          el.src = abs;
+        } else {
+          const img = el.querySelector('img');
+          if (img) {
+            img.removeAttribute('srcset');
+            img.setAttribute('src', abs);
+            img.src = abs;
+          }
+        }
+      });
       try {
         els.worksheetFrame.contentWindow.postMessage({
           type: 'worksheet-set-image',
@@ -2088,12 +2108,13 @@
       }
       state.selectedSearchItem = item;
       state.selectedImagePath = path;
-      const displayUrl = item.file
-        ? (item.imageUrl || URL.createObjectURL(item.file))
-        : previewImageSrc(item.imageUrl);
       const storedUrl = item.file
-        ? displayUrl
-        : (item.imageUrl || displayUrl);
+        ? (item.imageUrl && String(item.imageUrl).startsWith('data:') ? item.imageUrl : '')
+        : resolveUrl(item.imageUrl || '');
+      if (!storedUrl) {
+        toast('Select an image first');
+        return false;
+      }
       const replacement = {
         assetId: item.assetId || null,
         userUploadedKey: item.userUploadedKey || null,
@@ -2101,14 +2122,15 @@
         signedUrl: item.signedUrl || storedUrl,
         queryUsed: item.queryUsed || item.caption || '',
         caption: item.caption,
-        slotId: state.selectedImageSlotId,
+        slotId: state.selectedImageSlotId || path,
         file: item.file || null,
       };
       state.pendingImageReplacements[path] = replacement;
       if (state.preview && state.preview.structure) {
         mergeImageSlot(state.preview.structure, path, replacement);
       }
-      applyImageInFrame(displayUrl, path, state.selectedImageSlotId);
+      applyImageInFrame(storedUrl, path, replacement.slotId);
+      persistPreviewToItems();
       return true;
     }
 
@@ -2575,7 +2597,7 @@
       }
       if (!applySelectedImageToPreview()) return;
       closeImagePicker();
-      toast('Image updated. Click Save to keep the change.');
+      toast('Image updated and saved locally');
       if (els.fieldEditModal.classList.contains('show')) renderAiPanel();
     });
 

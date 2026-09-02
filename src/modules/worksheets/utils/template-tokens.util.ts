@@ -619,10 +619,17 @@ export function resolveImageSlot(
           slot.slotId === 'main_image' ||
           slot.path === 'image' ||
           slot.path.endsWith('.image'),
-      ) ||
-      slots[0] ||
+      ) || null
+    );
+  }
+  const indexMatch = needle.match(/^(?:item|image|img|slot)[_-]?(\d+)$/);
+  if (indexMatch) {
+    const index = Number(indexMatch[1]) - 1;
+    return (
+      slots.find((slot) => slot.path === `items[${index}]`) ||
+      slots.find((slot) => slot.path.endsWith(`[${index}]`)) ||
       null
     );
   }
-  return slots[0] ?? null;
+  return null;
 }

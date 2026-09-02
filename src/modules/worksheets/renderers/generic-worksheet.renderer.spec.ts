@@ -63,6 +63,25 @@ describe('GenericWorksheetRenderer', () => {
     expect(html).toContain('data-field-path="image"');
   });
 
+  it('does not inject a second GOAT_IMAGE when the template already has the image box', () => {
+    const html = renderer.render({
+      templateHtml:
+        '<img class="colour-box" data-image-slot="main_image" width="200" height="200" alt="" />{{GOAT_IMAGE}}',
+      structure: {
+        image: {
+          id: 'main_image',
+          imageQuery: 'vegetables',
+          assetId: 'asset-9',
+          assetUrl: '/worksheets/assets/asset-9/image',
+        },
+      },
+    });
+    expect(html).toContain('data-image-slot="main_image"');
+    expect(html).toContain('src="/worksheets/assets/asset-9/image"');
+    expect(html.match(/class="worksheet-image"/g) || []).toHaveLength(0);
+    expect(html).not.toContain('left:70px;top:300px');
+  });
+
   it('fills prototype-style numbered fields and named image tokens', () => {
     const html = renderer.render({
       templateHtml:

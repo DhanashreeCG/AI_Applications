@@ -81,27 +81,24 @@ const EDITOR_BRIDGE = `
     function cssAttr(name, value) {
       return '[' + name + '="' + String(value || '').replace(/"/g, '') + '"]';
     }
-    var nodes = [];
-    if (data.path) {
-      document.querySelectorAll(cssAttr('data-field-path', data.path)).forEach(function (n) { nodes.push(n); });
+    function asImg(el) {
+      if (!el) return null;
+      return el.tagName === 'IMG' ? el : (el.querySelector && el.querySelector('img'));
     }
-    if (!nodes.length && data.slotId) {
-      document.querySelectorAll(cssAttr('data-image-slot', data.slotId)).forEach(function (n) { nodes.push(n); });
+    var node = asImg(document.querySelector('[data-ws-target="active"]'));
+    if (!node && data.path) {
+      var byPath = document.querySelectorAll('img' + cssAttr('data-field-path', data.path));
+      node = byPath.length === 1 ? byPath[0] : asImg(document.querySelector('[data-ws-target="active"]'));
+      if (!node && byPath.length) node = byPath[0];
     }
-    if (!nodes.length) {
-      document.querySelectorAll('[data-ws-target="active"]').forEach(function (n) { nodes.push(n); });
+    if (!node && data.slotId) {
+      var bySlot = document.querySelectorAll('img' + cssAttr('data-image-slot', data.slotId));
+      if (bySlot.length === 1) node = bySlot[0];
     }
-    if (nodes.length > 1 && data.path) {
-      nodes = nodes.filter(function (n) {
-        return n.getAttribute('data-field-path') === data.path;
-      });
+    if (!node && (data.path === 'image' || data.slotId === 'image' || data.slotId === 'main_image' || data.slotId === 'goat')) {
+      node = asImg(document.querySelector('.image-wrap img:not(.worksheet-bg), .img-zone-box img, img[data-field-path="image"]'));
     }
-    if (nodes.length > 1) {
-      var active = nodes.filter(function (n) { return n.getAttribute('data-ws-target') === 'active'; });
-      if (active.length) nodes = active;
-      else nodes = [nodes[0]];
-    }
-    nodes.forEach(function (el) { applySrc(el, data.src); });
+    if (node) applySrc(node, data.src);
   });
   document.addEventListener('click', function (event) {
     var target = event.target;
@@ -124,10 +121,13 @@ const EDITOR_BRIDGE = `
       return;
     }
     var camera = target.closest('.img-camera-btn, [data-editor-control]');
-    var slot = target.closest('[data-image-slot], [data-editor-control][data-image-slot], .worksheet-image, .img-zone-box');
+    var slot = target.closest('[data-image-slot], [data-editor-control][data-image-slot], .worksheet-image, .img-zone-box, img');
+    if (slot && (slot.classList.contains('worksheet-bg') || (slot.closest && (slot.closest('.ai-pencil') || slot.closest('.img-camera-btn'))))) {
+      slot = null;
+    }
     if (camera && !slot) {
       var zone = camera.closest('.img-zone-box, .img-zone, .image-wrap') || camera.parentElement;
-      slot = zone && (zone.querySelector('[data-image-slot], img.worksheet-image, img') || zone);
+      slot = zone && (zone.querySelector('[data-image-slot], img.worksheet-image, img:not(.worksheet-bg)') || zone);
     }
     if (slot) {
       event.preventDefault();
@@ -137,8 +137,8 @@ const EDITOR_BRIDGE = `
       var img = slot.tagName === 'IMG' ? slot : slot.querySelector('img');
       if (img) img.setAttribute('data-ws-target', 'active');
       emit('worksheet-replace-image', {
-        slotId: (slot.getAttribute('data-image-slot') || (img && img.getAttribute('data-image-slot')) || ''),
-        path: (slot.getAttribute('data-field-path') || (img && img.getAttribute('data-field-path')) || undefined)
+        slotId: (slot.getAttribute('data-image-slot') || (img && img.getAttribute('data-image-slot')) || 'image'),
+        path: (slot.getAttribute('data-field-path') || (img && img.getAttribute('data-field-path')) || 'image')
       });
       return;
     }
@@ -215,18 +215,23 @@ function isUsableSrc(value: string): boolean {
 function slotUrl(
   structure: Record<string, unknown>,
   slotId: string,
-): { src: string; alt: string; path: string; slotId: string } {
+): { src: string; alt: string; path: string; slotId: string; replaced: boolean } {
   const match = resolveImageSlot(structure, slotId);
   const node = match?.path
     ? lookup(structure, match.path.replace(/\[(\d+)\]/g, '.$1'))
     : lookup(structure, slotId);
   const record = isRecord(node) ? node : {};
+  const replacement =
+    typeof record.imageUrl === 'string' && isUsableSrc(record.imageUrl)
+      ? record.imageUrl
+      : '';
   const rawSrc =
+    replacement ||
     (typeof record.assetUrl === 'string' && record.assetUrl) ||
-    (typeof record.imageUrl === 'string' && record.imageUrl) ||
     '';
   return {
     src: isUsableSrc(rawSrc) ? rawSrc : '',
+    replaced: Boolean(replacement),
     alt:
       match?.imageQuery ||
       visualQueryFromImageRecord(record) ||
@@ -250,8 +255,20 @@ function imageTag(
   return `<img class="worksheet-image" data-image-slot="${escapeHtml(resolved.slotId || slotId)}" data-field-path="${escapeHtml(resolved.path)}"${srcAttr} alt="${escapeHtml(resolved.alt)}" style="${style}" />`;
 }
 
+function htmlHasImageSlot(html: string, slotId: string): boolean {
+  const aliases = [slotId, 'main_image', 'image', 'goat', 'hero'].filter(Boolean);
+  return aliases.some((id) =>
+    new RegExp(`data-image-slot=["']${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`, 'i').test(
+      html,
+    ),
+  );
+}
+
 function applyImageSlots(html: string, structure: Record<string, unknown>): string {
   const withTokens = html.replace(/\{\{IMAGE:([A-Za-z0-9_]+)\}\}/g, (_match, slotId: string) => {
+    if (htmlHasImageSlot(html, slotId)) {
+      return '';
+    }
     return imageTag(slotId, slotUrl(structure, slotId), false);
   });
 
@@ -262,6 +279,9 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
         return full;
       }
       const slotId = name.replace(/_IMAGE$/i, '');
+      if (htmlHasImageSlot(withTokens, slotId)) {
+        return '';
+      }
       return imageTag(slotId, slotUrl(structure, slotId), true);
     },
   );
@@ -272,7 +292,11 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
       const resolved = slotUrl(structure, slotId);
       const existingSrc = attrs.match(/\bsrc=(["'])(.*?)\1/i)?.[2] ?? '';
       let next = attrs.replace(/\s*\bsrc=(["']).*?\1/i, '');
-      const src = isUsableSrc(existingSrc) ? existingSrc : resolved.src;
+      const src = resolved.replaced && isUsableSrc(resolved.src)
+        ? resolved.src
+        : isUsableSrc(existingSrc)
+          ? existingSrc
+          : resolved.src;
       if (isUsableSrc(src)) {
         next += ` src="${escapeHtml(src)}"`;
       }
