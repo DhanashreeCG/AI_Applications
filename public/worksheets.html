@@ -2021,6 +2021,7 @@
       });
       enableInlineEditing(state.editMode);
       applyPendingImages(doc);
+      hydrateFrameImages(doc);
     }
 
     function isPlainSearchName(value) {
@@ -2279,6 +2280,25 @@
       Object.entries(state.pendingImageReplacements).forEach(([path, item]) => {
         if (!item?.imageUrl) return;
         applyImageInFrame(item.imageUrl, path, item.slotId);
+      });
+    }
+
+    function hydrateFrameImages(doc) {
+      if (!doc) return;
+      doc.querySelectorAll('img').forEach((img) => {
+        const raw = img.getAttribute('src') || '';
+        if (!raw || /^(data:|blob:)/i.test(raw)) return;
+        const resolved = resolveUrl(raw);
+        if (!resolved) return;
+        img.removeAttribute('srcset');
+        img.setAttribute('src', resolved);
+        img.src = resolved;
+        cachedImageSrc(resolved).then((src) => {
+          if (img.isConnected && src) {
+            img.setAttribute('src', src);
+            img.src = src;
+          }
+        });
       });
     }
 
@@ -3200,6 +3220,7 @@
           id: body.id || state.worksheetId,
           template: { ...previousTemplate, ...(body.template || {}) },
         };
+        state.pendingImageReplacements = {};
         persistPreviewToItems({ fromIframe: false });
       }
       const keepEdit = state.editMode;

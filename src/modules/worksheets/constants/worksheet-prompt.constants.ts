@@ -34,18 +34,35 @@ const REGEN_CONTEXT_OMIT = new Set([
   'ai_config',
   'is_colouring_template',
   'pairs',
+  'assetId',
+  'assetUrl',
+  'imageUrl',
+  'signedUrl',
+  'userUploadedKey',
+  'userUploadedImages',
 ]);
+
+function stripRegenContextValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripRegenContextValue(item));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const next: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (REGEN_CONTEXT_OMIT.has(key)) continue;
+    next[key] = stripRegenContextValue(child);
+  }
+  return next;
+}
 
 export function sanitizeStructureForRegenPrompt(
   structure?: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
   if (!structure || typeof structure !== 'object') return null;
-  const next: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(structure)) {
-    if (REGEN_CONTEXT_OMIT.has(key)) continue;
-    next[key] = value;
-  }
-  return next;
+  const next = stripRegenContextValue(structure) as Record<string, unknown>;
+  return Object.keys(next).length ? next : null;
 }
 
 export function buildWorksheetContentPrompt(input: {

@@ -16,6 +16,18 @@ describe('worksheet regen prompt', () => {
     expect(sanitized?.instruction_text).toContain('word names');
   });
 
+  it('strips previous asset ids so regenerate must search new images', () => {
+    const sanitized = sanitizeStructureForRegenPrompt({
+      topic: 'Farm',
+      image: {
+        imageQuery: 'two goats',
+        assetId: 'old-asset',
+        assetUrl: '/worksheets/assets/old-asset/image',
+      },
+    });
+    expect(sanitized?.image).toEqual({ imageQuery: 'two goats' });
+  });
+
   it('puts AI Edit field entries above leftover context and allows Roman match type', () => {
     const prompt = buildWorksheetContentPrompt({
       request: {

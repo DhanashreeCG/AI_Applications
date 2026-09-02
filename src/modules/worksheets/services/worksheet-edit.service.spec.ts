@@ -246,6 +246,11 @@ describe('WorksheetEditService', () => {
     });
 
     expect(contentService.generateStructure).toHaveBeenCalled();
+    expect(assetService.attachAssets).toHaveBeenCalledWith(
+      llmStructure,
+      undefined,
+      expect.any(Object),
+    );
     expect(result.structure.topic).toBe('whole numbers');
     expect(result.structure.instruction_text).toBe(
       'Match the numbers with their Roman numerals.',

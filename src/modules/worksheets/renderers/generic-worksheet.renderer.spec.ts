@@ -59,7 +59,8 @@ describe('GenericWorksheetRenderer', () => {
       },
       mode: 'editor',
     });
-    expect(html).toContain('src="/already.png"');
+    expect(html).toContain('src="/worksheets/assets/asset-9/image"');
+    expect(html).not.toContain('src="/already.png"');
     expect(html).toContain('data-field-path="image"');
   });
 

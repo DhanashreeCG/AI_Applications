@@ -596,20 +596,11 @@ export class WorksheetEditService {
     if (leaked) {
       throwContentNotAllowed(leaked, 'generated content', generateDto.countryCode);
     }
-    const meta = this.templateService.parseMeta(template);
     const attached = await runTrackedStage(
       this.emitter,
       telemetry,
       PIPELINE_STAGES.IMAGE_RETRIEVAL,
-      () =>
-        this.assetService.attachAssets(
-          generated,
-          {
-            grades: generateDto.grade ? [String(generateDto.grade)] : meta.grades,
-            ageGroups: generateDto.ageGroup ? [String(generateDto.ageGroup)] : undefined,
-          },
-          telemetry,
-        ),
+      () => this.assetService.attachAssets(generated, undefined, telemetry),
     );
     const validated = await runTrackedStage(
       this.emitter,

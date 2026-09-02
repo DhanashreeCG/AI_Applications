@@ -292,11 +292,9 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
       const resolved = slotUrl(structure, slotId);
       const existingSrc = attrs.match(/\bsrc=(["'])(.*?)\1/i)?.[2] ?? '';
       let next = attrs.replace(/\s*\bsrc=(["']).*?\1/i, '');
-      const src = resolved.replaced && isUsableSrc(resolved.src)
+      const src = isUsableSrc(resolved.src)
         ? resolved.src
-        : isUsableSrc(existingSrc)
-          ? existingSrc
-          : resolved.src;
+        : existingSrc;
       if (isUsableSrc(src)) {
         next += ` src="${escapeHtml(src)}"`;
       }
