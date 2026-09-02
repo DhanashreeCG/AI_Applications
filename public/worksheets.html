@@ -1692,9 +1692,11 @@
       state.preview.html = /<!doctype/i.test(markup) ? markup : '<!DOCTYPE html>' + markup;
     }
 
-    function persistPreviewToItems() {
+    function persistPreviewToItems(options) {
       if (!state.preview || !state.worksheetId) return;
-      snapshotPreviewHtml();
+      if (!options || options.fromIframe !== false) {
+        snapshotPreviewHtml();
+      }
       const index = state.items.findIndex((item) => item.id === state.worksheetId);
       const next = { ...state.preview, id: state.worksheetId };
       if (index >= 0) {
@@ -1966,7 +1968,7 @@
       }
     }
 
-    async function openPreview(item) {
+    async function openPreview(item, options) {
       if (typeof item === 'string') {
         item = state.items.find((row) => row.id === item) || null;
       }
@@ -1974,7 +1976,7 @@
         toast('Worksheet data is missing');
         return;
       }
-      persistPreviewToItems();
+      persistPreviewToItems(options);
       state.worksheetId = item.id || Date.now().toString();
       state.editMode = false;
       els.editBtn.textContent = 'Edit';
@@ -1986,12 +1988,14 @@
         state.preview = preview;
         els.worksheetTitle.textContent = preview.template?.name || 'Worksheet';
         const iframe = els.worksheetFrame;
+        const html = preview.html || '';
         const onReady = () => {
           scaleFrame();
           wireFrame();
         };
         iframe.onload = onReady;
-        iframe.srcdoc = preview.html || '';
+        iframe.removeAttribute('srcdoc');
+        iframe.srcdoc = html;
         requestAnimationFrame(onReady);
       };
 
@@ -2330,6 +2334,7 @@
       doc.querySelectorAll('[data-editable]').forEach((el) => {
         const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
         if (!path || seen.has(path)) return;
+        if (/badge|skill_label|skillLabel|^header$|page_number/i.test(path)) return;
         seen.add(path);
         fields.push({
           path,
@@ -2398,7 +2403,9 @@
       els.aiTemplatePopup.querySelectorAll('.ai-structured-field, [data-field]').forEach((node) => {
         const key = node.getAttribute('data-field') || node.id?.replace(/^aiField_/, '');
         if (!key) return;
-        values[key] = (node.value || '').trim();
+        const value = (node.value || '').trim();
+        if (!value) return;
+        values[key] = value;
       });
       return values;
     }
@@ -3125,11 +3132,11 @@
         applyTextInFrame(path, text);
         if (body.structure) {
           state.preview = { ...state.preview, ...body, id: state.worksheetId };
-          persistPreviewToItems();
+          persistPreviewToItems({ fromIframe: !body.html });
         }
         if (body.html) {
           const keepEdit = state.editMode;
-          await openPreview(state.preview);
+          await openPreview(state.preview, { fromIframe: false });
           state.editMode = keepEdit;
           enableInlineEditing(keepEdit);
           renderAiPanel();
@@ -3186,11 +3193,17 @@
         return;
       }
       if (body.structure || body.html) {
-        state.preview = { ...state.preview, ...body, id: body.id || state.worksheetId };
-        persistPreviewToItems();
+        const previousTemplate = state.preview?.template;
+        state.preview = {
+          ...state.preview,
+          ...body,
+          id: body.id || state.worksheetId,
+          template: { ...previousTemplate, ...(body.template || {}) },
+        };
+        persistPreviewToItems({ fromIframe: false });
       }
       const keepEdit = state.editMode;
-      await openPreview(state.preview);
+      await openPreview(state.preview, { fromIframe: false });
       state.editMode = keepEdit;
       enableInlineEditing(keepEdit);
       renderAiPanel();

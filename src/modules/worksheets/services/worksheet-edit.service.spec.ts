@@ -101,6 +101,7 @@ describe('WorksheetEditService', () => {
       validationService as unknown as WorksheetValidationService,
       assetService as unknown as WorksheetAssetService,
       { composeHtml: () => ({ html: '<p>ok</p>', canvas: { width: 1016, height: 1316 } }) } as unknown as WorksheetRenderService,
+      { emit: jest.fn() } as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue(worksheet);
     templateService.getById.mockResolvedValue(template);
@@ -224,5 +225,34 @@ describe('WorksheetEditService', () => {
     const result = await service.searchImages('ws-1', { path: 'instruction' });
     expect(assetService.searchCandidates).not.toHaveBeenCalled();
     expect(result.results).toEqual([]);
+  });
+
+  it('regenerate applies AI Edit match type even if the LLM returns word names', async () => {
+    const llmStructure = {
+      topic: 'NUMBER NAMES',
+      instruction_text: 'Match the numbers with their word names.',
+      pairs: [
+        { number: '1', name: 'one' },
+        { number: '5', name: 'five' },
+      ],
+    };
+    contentService.generateStructure.mockResolvedValue(llmStructure);
+    assetService.attachAssets.mockResolvedValue({ structure: llmStructure, slots: [] });
+
+    const result = await service.regenerate('ws-1', {
+      query: 'Change the topic to "whole numbers". Match type: Roman numeral.',
+      topic: 'whole numbers',
+      fields: { topic: 'whole numbers', matchType: 'roman_numerals' },
+    });
+
+    expect(contentService.generateStructure).toHaveBeenCalled();
+    expect(result.structure.topic).toBe('whole numbers');
+    expect(result.structure.instruction_text).toBe(
+      'Match the numbers with their Roman numerals.',
+    );
+    expect((result.structure.pairs as Array<{ name: string }>).map((pair) => pair.name)).toEqual([
+      'I',
+      'V',
+    ]);
   });
 });

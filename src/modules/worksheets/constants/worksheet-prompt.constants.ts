@@ -24,6 +24,30 @@ export function buildAgeGroupSafetyClause(
   ].join(' ');
 }
 
+const REGEN_CONTEXT_OMIT = new Set([
+  'badge_label',
+  'skill_label',
+  'skillLabel',
+  'header',
+  'page_number',
+  'editable_fields',
+  'ai_config',
+  'is_colouring_template',
+  'pairs',
+]);
+
+export function sanitizeStructureForRegenPrompt(
+  structure?: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!structure || typeof structure !== 'object') return null;
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(structure)) {
+    if (REGEN_CONTEXT_OMIT.has(key)) continue;
+    next[key] = value;
+  }
+  return next;
+}
+
 export function buildWorksheetContentPrompt(input: {
   request: GenerateWorksheetRequest;
   templateName: string;
@@ -78,11 +102,12 @@ export function buildWorksheetContentPrompt(input: {
         ].join('\n')
       : '';
 
-  const contextBlock = input.currentStructure
+  const contextStructure = sanitizeStructureForRegenPrompt(input.currentStructure);
+  const contextBlock = contextStructure
     ? [
-        'Current worksheet JSON (keep the same layout/template; replace text and imageQuery values):',
-        JSON.stringify(input.currentStructure, null, 2),
-        'Do not copy the previous wording. Produce a clearly new variation that still matches the template.',
+        'Current worksheet content (context only). User field entries OVERRIDE topic, title, instruction, and match type.',
+        'Do not reuse the previous topic, skill badge, or header wording unless the user asked for it.',
+        JSON.stringify(contextStructure, null, 2),
       ].join('\n')
     : '';
 
@@ -101,6 +126,9 @@ export function buildWorksheetContentPrompt(input: {
     'Never use any forbidden or restricted term from the country list, including close spellings or plurals.',
     '',
     fieldBlock,
+    fieldEntries.length
+      ? 'Apply every user field entry exactly. The worksheet topic/title must be the user topic, not the previous header or skill label.'
+      : '',
     contextBlock,
     '',
     `Template: ${input.templateName} (${input.templateSlug})`,
@@ -144,8 +172,10 @@ export function buildWorksheetContentPrompt(input: {
       'For number_names matching worksheets:',
       '- Output pairs[], not items[]. Each pair has number (left column string) and name (right column string).',
       '- Include exactly 6 pairs unless the structure definition says otherwise.',
-      '- number and name must match (e.g. "20" / "twenty"). Do not put JSON in topic or instruction_text.',
-      '- Keep worksheet_type as "number_names".',
+      '- "name" is the RIGHT-column match for the chosen match type (written name, Roman numeral, addition, etc.), not always English number-words.',
+      '- If the user chose Roman numerals, right column must be Roman numerals (I, II, XII), not "twelve".',
+      '- Set topic to the user topic. Update instruction_text to describe this match type. Do not keep a stale "Number Names" header.',
+      '- Do not put JSON in topic or instruction_text. Keep worksheet_type as "number_names".',
       ''
     ] : []),
     'Template metadata:',

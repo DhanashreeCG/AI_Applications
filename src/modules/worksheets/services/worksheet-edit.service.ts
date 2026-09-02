@@ -1,7 +1,21 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@generated/prisma/client';
 import { getErrorMessage } from '../../../common/utils/error-message';
+import {
+  PIPELINE_STAGES,
+  PipelineTelemetryContext,
+} from '../../../common/events/pipeline-tracker.events';
 import { PrismaService } from '../../database/prisma.service';
+import {
+  WORKSHEET_REGENERATE_STAGE,
+  WORKSHEET_WORKFLOW_REGENERATE,
+} from '../constants/worksheet.constants';
+import {
+  WorksheetPipelineEmitter,
+  createTelemetryContext,
+  runTrackedStage,
+} from '../telemetry/worksheet-pipeline.events';
 import {
   assertGenerationRequestAllowed,
   throwContentNotAllowed,
@@ -24,6 +38,7 @@ import {
   setValueAtPath,
   visualQueryFromImageRecord,
 } from '../utils/structure.util';
+import { applyNumberMatchOverrides } from '../utils/number-match.util';
 import { WorksheetAssetService } from './worksheet-asset.service';
 import { WorksheetContentService } from './worksheet-content.service';
 import { WorksheetRenderService } from './worksheet-render.service';
@@ -40,6 +55,7 @@ export interface EditWorksheetOptions {
 @Injectable()
 export class WorksheetEditService {
   private readonly logger = new Logger(WorksheetEditService.name);
+  private readonly emitter: WorksheetPipelineEmitter;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -48,7 +64,10 @@ export class WorksheetEditService {
     private readonly validationService: WorksheetValidationService,
     private readonly assetService: WorksheetAssetService,
     private readonly renderService: WorksheetRenderService,
-  ) {}
+    eventEmitter: EventEmitter2,
+  ) {
+    this.emitter = new WorksheetPipelineEmitter(eventEmitter);
+  }
 
   public async edit(
     worksheetId: string,
@@ -456,8 +475,51 @@ export class WorksheetEditService {
   public async regenerate(
     worksheetId: string,
     dto: RegenerateWorksheetDto,
+    options: EditWorksheetOptions = {},
   ): Promise<GenerateWorksheetResponse> {
-    const fields = this.normalizeFields(dto.fields);
+    const telemetry = createTelemetryContext({
+      correlationId: options.correlationId,
+      workflowType: WORKSHEET_WORKFLOW_REGENERATE,
+    });
+    this.emitter.emitStarted({
+      ...telemetry,
+      metadata: {
+        operation: 'regenerate',
+        worksheetId,
+        topic: dto.topic ?? dto.fields?.topic ?? null,
+        ageGroup: dto.ageGroup ?? null,
+        fields: dto.fields ?? {},
+      },
+    });
+    try {
+      const response = await this.runRegenerate(worksheetId, dto, telemetry);
+      this.emitter.emitCompleted({
+        ...telemetry,
+        status: 'completed',
+        metadata: {
+          operation: 'regenerate',
+          worksheetId: response.id,
+          templateId: response.template.id,
+          templateSlug: response.template.slug,
+        },
+      });
+      return response;
+    } catch (error) {
+      this.emitter.emitFailed({
+        ...telemetry,
+        status: 'failed',
+        errorMessage: getErrorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  private async runRegenerate(
+    worksheetId: string,
+    dto: RegenerateWorksheetDto,
+    telemetry: PipelineTelemetryContext,
+  ): Promise<GenerateWorksheetResponse> {
+    const fields = this.inferMatchFields(this.normalizeFields(dto.fields));
     const query =
       dto.query?.trim() ||
       this.instructionFromFields(fields);
@@ -507,7 +569,7 @@ export class WorksheetEditService {
     const generateDto = {
       ...previousRequest,
       query,
-      topic: topic || previousRequest.topic || query,
+      topic: topic || query,
       ageGroup: dto.ageGroup?.trim() || previousRequest.ageGroup,
       age: dto.age ?? previousRequest.age,
       countryCode: dto.countryCode || previousRequest.countryCode,
@@ -515,13 +577,19 @@ export class WorksheetEditService {
       fields,
     } as GenerateWorksheetDto & { fields?: Record<string, string> };
 
-    const generated = await this.contentService.generateStructure(
-      template,
-      generateDto,
-      undefined,
+    const generated = await runTrackedStage(
+      this.emitter,
+      telemetry,
+      PIPELINE_STAGES.LLM_CONTENT_GENERATION,
+      () =>
+        this.contentService.generateStructure(template, generateDto, telemetry, {
+          currentStructure,
+          systemPrompt: template.aiSystemPrompt,
+          stage: WORKSHEET_REGENERATE_STAGE,
+        }),
       {
-        currentStructure,
-        systemPrompt: template.aiSystemPrompt,
+        startMetadata: { fields, query },
+        completeMetadata: { templateSlug: template.slug },
       },
     );
     const leaked = this.findForbiddenTerm(generated, generateDto.countryCode);
@@ -529,14 +597,33 @@ export class WorksheetEditService {
       throwContentNotAllowed(leaked, 'generated content', generateDto.countryCode);
     }
     const meta = this.templateService.parseMeta(template);
-    const attached = await this.assetService.attachAssets(generated, {
-      grades: generateDto.grade ? [String(generateDto.grade)] : meta.grades,
-      ageGroups: generateDto.ageGroup ? [String(generateDto.ageGroup)] : undefined,
-    });
-    const validated = this.validationService.validateGeneratedStructure(
-      this.assetService.persistableStructure(attached.structure),
-      template,
-      { allowEnrichmentKeys: true },
+    const attached = await runTrackedStage(
+      this.emitter,
+      telemetry,
+      PIPELINE_STAGES.IMAGE_RETRIEVAL,
+      () =>
+        this.assetService.attachAssets(
+          generated,
+          {
+            grades: generateDto.grade ? [String(generateDto.grade)] : meta.grades,
+            ageGroups: generateDto.ageGroup ? [String(generateDto.ageGroup)] : undefined,
+          },
+          telemetry,
+        ),
+    );
+    const validated = await runTrackedStage(
+      this.emitter,
+      telemetry,
+      PIPELINE_STAGES.CONTENT_VALIDATION,
+      () =>
+        this.applyFieldOverrides(
+          this.validationService.validateGeneratedStructure(
+            this.assetService.persistableStructure(attached.structure),
+            template,
+            { allowEnrichmentKeys: true },
+          ),
+          fields,
+        ),
     );
     if (!worksheet) {
       return this.toResponse(
@@ -638,6 +725,27 @@ export class WorksheetEditService {
       }
     }
     return next;
+  }
+
+  private inferMatchFields(fields: Record<string, string>): Record<string, string> {
+    const next = { ...fields };
+    if (!next.matchType && next.topic) {
+      const topic = next.topic.toLowerCase();
+      if (/roman/.test(topic)) next.matchType = 'roman_numerals';
+      else if (/ordinal/.test(topic)) next.matchType = 'ordinals';
+      else if (/addition|\+/.test(topic)) next.matchType = 'addition';
+      else if (/subtract|minus/.test(topic)) next.matchType = 'subtraction';
+      else if (/multipl|times|×/.test(topic)) next.matchType = 'multiplication';
+      else if (/division|÷/.test(topic)) next.matchType = 'division';
+    }
+    return next;
+  }
+
+  private applyFieldOverrides(
+    structure: Record<string, unknown>,
+    fields: Record<string, string>,
+  ): Record<string, unknown> {
+    return applyNumberMatchOverrides(structure, fields);
   }
 
   private instructionFromFields(fields: Record<string, string>): string {

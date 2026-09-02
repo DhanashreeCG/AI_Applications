@@ -78,6 +78,7 @@ export class WorksheetContentService {
     extras?: {
       currentStructure?: Record<string, unknown> | null;
       systemPrompt?: string | null;
+      stage?: string;
     },
   ): Promise<Array<Record<string, unknown>>> {
     const targetCount = Math.max(1, count);
@@ -109,7 +110,7 @@ export class WorksheetContentService {
 
       const parsed = await this.generateJson(
         prompt,
-        WORKSHEET_CONTENT_STAGE,
+        extras?.stage || WORKSHEET_CONTENT_STAGE,
         telemetry,
       );
 
@@ -191,6 +192,7 @@ export class WorksheetContentService {
     extras?: {
       currentStructure?: Record<string, unknown> | null;
       systemPrompt?: string | null;
+      stage?: string;
     },
   ): Promise<Record<string, unknown>> {
     const items = await this.generateStructures(

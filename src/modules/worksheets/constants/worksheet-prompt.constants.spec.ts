@@ -1,0 +1,45 @@
+import {
+  buildWorksheetContentPrompt,
+  sanitizeStructureForRegenPrompt,
+} from './worksheet-prompt.constants';
+
+describe('worksheet regen prompt', () => {
+  it('omits skill badge, header, and previous pairs from context', () => {
+    const sanitized = sanitizeStructureForRegenPrompt({
+      topic: 'NUMBER NAMES',
+      badge_label: 'Numeracy',
+      instruction_text: 'Match the numbers with their word names.',
+      pairs: [{ number: '1', name: 'one' }],
+    });
+    expect(sanitized).not.toHaveProperty('badge_label');
+    expect(sanitized).not.toHaveProperty('pairs');
+    expect(sanitized?.instruction_text).toContain('word names');
+  });
+
+  it('puts AI Edit field entries above leftover context and allows Roman match type', () => {
+    const prompt = buildWorksheetContentPrompt({
+      request: {
+        query: 'Change the topic to "whole numbers". Match type: Roman numeral.',
+        topic: 'whole numbers',
+        fields: { topic: 'whole numbers', matchType: 'roman_numerals' },
+        ageGroup: '4-5',
+      },
+      templateName: 'Number Names',
+      templateSlug: 'number_names',
+      structureDefinition: { type: 'object' },
+      meta: {},
+      currentStructure: {
+        topic: 'NUMBER NAMES',
+        badge_label: 'WHOLE NUMBERS',
+        instruction_text: 'Match the numbers with their word names.',
+        pairs: [{ number: '1', name: 'one' }],
+      },
+    });
+
+    expect(prompt).toContain('topic: whole numbers');
+    expect(prompt).toContain('matchType: roman_numerals');
+    expect(prompt).toContain('Roman numerals');
+    expect(prompt).not.toContain('badge_label');
+    expect(prompt).not.toContain('"name": "one"');
+  });
+});

@@ -438,12 +438,20 @@ export class WorksheetsController {
   async regenerate(
     @Param('worksheetId') worksheetId: string,
     @Body() dto: RegenerateWorksheetDto,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
     @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.editService.regenerate(worksheetId, {
-      ...dto,
-      countryCode: dto.countryCode || headerCountryCode,
-    });
+    return this.editService.regenerate(
+      worksheetId,
+      {
+        ...dto,
+        countryCode: dto.countryCode || headerCountryCode,
+      },
+      {
+        correlationId: correlationId || traceId,
+      },
+    );
   }
 
   @Post(':worksheetId/images')
