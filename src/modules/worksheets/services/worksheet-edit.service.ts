@@ -16,6 +16,7 @@ import {
   getValueAtPath,
   isEditableField,
   looksLikeHtml,
+  resolveAliasFieldPath,
   setValueAtPath,
   visualQueryFromImageRecord,
 } from '../utils/structure.util';
@@ -75,12 +76,16 @@ export class WorksheetEditService {
       query: instruction,
       countryCode: dto.countryCode,
     });
-    const fieldPath = path;
-
     const worksheet = await this.prisma.worksheet.findUnique({
       where: { id: worksheetId },
     });
-    if (!worksheet) {
+    const inMemory =
+      !worksheet &&
+      worksheetId.startsWith('temp-') &&
+      dto.templateId &&
+      dto.structure &&
+      typeof dto.structure === 'object';
+    if (!worksheet && !inMemory) {
       throw new WorksheetException(
         'WORKSHEET_NOT_FOUND',
         `Worksheet "${worksheetId}" was not found`,
@@ -88,10 +93,15 @@ export class WorksheetEditService {
       );
     }
 
-    const template = await this.templateService.getById(worksheet.templateId);
+    const template = worksheet
+      ? await this.templateService.getById(worksheet.templateId)
+      : await this.templateService.getActiveByIdOrSlug(String(dto.templateId));
 
     const aiConfig = this.templateService.parseAiConfig(template);
-    const structure = asStructureRecord(worksheet.structure);
+    const structure = asStructureRecord(
+      worksheet ? worksheet.structure : dto.structure,
+    );
+    const fieldPath = resolveAliasFieldPath(structure, path);
     const currentValue = getValueAtPath(structure, fieldPath);
     const declared = isEditableField(fieldPath, aiConfig.editableFields);
     const leaf =
@@ -117,6 +127,7 @@ export class WorksheetEditService {
       systemPrompt: template.aiSystemPrompt,
       fieldPath,
       fieldPrompt:
+        resolved.fieldPrompts[path] ||
         resolved.fieldPrompts[fieldPath] ||
         resolved.fieldPrompts[String(fieldPath.split(/[.[]/)[0])],
       instruction: dto.instruction.trim(),
@@ -155,6 +166,18 @@ export class WorksheetEditService {
         next = this.assetService.applySlot(next, slot);
       }
       this.logger.log('image query edit triggered asset re-resolution');
+    }
+
+    if (!worksheet) {
+      return this.toResponse(
+        {
+          id: worksheetId,
+          status: 'GENERATED',
+          request: {},
+          structure: this.assetService.persistableStructure(next),
+        },
+        template,
+      );
     }
 
     const updated = await this.prisma.worksheet.update({
@@ -513,6 +536,7 @@ export class WorksheetEditService {
         slug: template.slug,
         name: template.name,
         rendererType: template.rendererType,
+        ...this.templateService.parseAiEditUi(template),
       },
       request: asStructureRecord(worksheet.request),
       structure: asStructureRecord(worksheet.structure),

@@ -20,4 +20,14 @@ export class EditWorksheetDto {
 
   @ApiPropertyOptional({ example: 'IN' })
   countryCode?: string;
+
+  @ApiPropertyOptional({
+    description: 'Template id or slug. Required when editing a temp-generated worksheet.',
+  })
+  templateId?: string;
+
+  @ApiPropertyOptional({
+    description: 'In-memory structure for temp-generated worksheets (not yet persisted).',
+  })
+  structure?: Record<string, unknown>;
 }

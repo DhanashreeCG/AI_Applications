@@ -102,11 +102,15 @@ export interface GenerateWorksheetResponse {
     slug: string;
     name: string;
     rendererType: string;
+    aiEditPopupHtml?: string | null;
+    aiEditConfigJs?: string | null;
+    aiEditPanelJs?: string | null;
   };
   request: GenerateWorksheetRequest;
   structure: Record<string, unknown>;
   html?: string;
   canvas?: { width: number; height: number };
+  fieldPrompts?: Record<string, string>;
 }
 
 export interface WorksheetRenderInput {

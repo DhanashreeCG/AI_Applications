@@ -490,6 +490,32 @@ export function collectImageSlots(
   return found;
 }
 
+/** Map WorksheetMaker keys (question_1, option_2) onto structure paths. */
+export function resolveAliasFieldPath(
+  root: Record<string, unknown>,
+  fieldPath: string,
+): string {
+  const question = fieldPath.match(/^question_(\d+)$/i);
+  if (question && Array.isArray(root.questions)) {
+    return `questions[${Number(question[1]) - 1}].question`;
+  }
+  const option = fieldPath.match(/^option_(\d+)$/i);
+  if (option && Array.isArray(root.questions)) {
+    const parent = root.questions.find((item) => {
+      return isRecord(item) && Array.isArray(item.options);
+    });
+    const index = parent
+      ? (root.questions as unknown[]).indexOf(parent)
+      : 2;
+    return `questions[${index}].options[${Number(option[1]) - 1}].text`;
+  }
+  const sentence = fieldPath.match(/^sentence_(\d+)$/i);
+  if (sentence && Array.isArray(root.rows)) {
+    return `rows[${Number(sentence[1]) - 1}].sentence`;
+  }
+  return fieldPath;
+}
+
 export function getValueAtPath(root: unknown, fieldPath: string): unknown {
   const tokens = parseFieldPath(fieldPath);
   let current: unknown = root;

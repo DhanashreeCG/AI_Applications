@@ -53,6 +53,9 @@ export interface PreviewWorksheetResult {
     slug: string;
     name: string;
     rendererType: string;
+    aiEditPopupHtml?: string | null;
+    aiEditConfigJs?: string | null;
+    aiEditPanelJs?: string | null;
   };
 }
 
@@ -276,6 +279,7 @@ export class WorksheetRenderService {
         slug: template.slug,
         name: template.name,
         rendererType: template.rendererType,
+        ...this.templateService.parseAiEditUi(template),
       },
     };
   }

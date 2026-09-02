@@ -201,33 +201,33 @@ model AiUsage {
 
 /// Layout-only flashcard template. Never stores educational content.
 model FlashcardTemplate {
-  id                 String                  @id @default(cuid())
-  name               String
-  description        String?
-  supportedGrades    String[]                @default([])
-  learningObjectives String[]
-  subjectsSupported  String[]                @default([])
-  difficultyLevels   String[]                @default([])
-  templateVersion    String                  @default("1.0")
-  active             Boolean                 @default(true)
-  layoutDefinition   Json
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
-  templateType       String
-  layoutType         String
-  supportedAgeGroups String[]
-  tags               String[]                @default([])
-  pageSize           String                  @default("A6")
-  orientation        String                  @default("PORTRAIT")
-  thumbnail          String?
+  id                      String                  @id @default(cuid())
+  name                    String
+  description             String?
+  supportedGrades         String[]                @default([])
+  learningObjectives      String[]
+  subjectsSupported       String[]                @default([])
+  difficultyLevels        String[]                @default([])
+  templateVersion         String                  @default("1.0")
+  active                  Boolean                 @default(true)
+  layoutDefinition        Json
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  templateType            String
+  layoutType              String
+  supportedAgeGroups      String[]
+  tags                    String[]                @default([])
+  pageSize                String                  @default("A6")
+  orientation             String                  @default("PORTRAIT")
+  thumbnail               String?
   /// Opt-in layouts (tracing, handwriting drills). Excluded from automatic
   /// selection unless the request explicitly asks for them.
-  requiresExplicitRequest  Boolean           @default(false) @map("requires_explicit_request")
+  requiresExplicitRequest Boolean                 @default(false) @map("requires_explicit_request")
   /// Query terms that count as explicitly asking for this template.
   /// Falls back to tags + templateType when left empty.
-  explicitRequestKeywords  String[]          @default([]) @map("explicit_request_keywords")
-  selectionRules     TemplateSelectionRule[]
-  flashcardSets      FlashcardSet[]
+  explicitRequestKeywords String[]                @default([]) @map("explicit_request_keywords")
+  selectionRules          TemplateSelectionRule[]
+  flashcardSets           FlashcardSet[]
 
   @@unique([name, templateVersion])
   @@index([active])
@@ -398,25 +398,31 @@ model PipelineImageSearchExecution {
 
 /// Database-backed worksheet template. Stores HTML and JSON config, never renderer code.
 model WorksheetTemplate {
-  id                  String                   @id @default(cuid())
+  id                  String                  @id @default(cuid())
   name                String
-  slug                String                   @unique
+  slug                String                  @unique
   category            String
   description         String?
-  status              WorksheetTemplateStatus  @default(DRAFT)
-  version             Int                      @default(1)
+  status              WorksheetTemplateStatus @default(DRAFT)
+  version             Int                     @default(1)
   templateHtml        String
   structureDefinition Json
   meta                Json?
-  rendererType        String                   @default("generic")
+  rendererType        String                  @default("generic")
   rendererConfig      Json?
   aiConfig            Json?
   fieldPrompts        Json?
   aiSystemPrompt      String?
+  aiEditConfigJs      String?
+  aiEditPopupHtml     String?
+  aiEditPanelJs       String?
+  editorJs            String?
+  fieldEditorJs       String?
+  rendererJs          String?
   backgroundAssetId   String?
   sampleAssetId       String?
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
   worksheets          Worksheet[]
 
   @@index([status])
@@ -425,13 +431,13 @@ model WorksheetTemplate {
 
 /// Generated worksheet instance. Structure is user-specific content, not the template schema.
 model Worksheet {
-  id         String          @id @default(cuid())
+  id         String            @id @default(cuid())
   templateId String
   request    Json
   structure  Json
-  status     WorksheetStatus @default(GENERATED)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  status     WorksheetStatus   @default(GENERATED)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
   template   WorksheetTemplate @relation(fields: [templateId], references: [id])
   outputs    WorksheetOutput[]
 
@@ -442,12 +448,12 @@ model Worksheet {
 
 /// Rendered worksheet artifact stored in S3 (or configured storage). Never binary in Postgres.
 model WorksheetOutput {
-  id          String                 @id @default(cuid())
+  id          String                @id @default(cuid())
   worksheetId String
   format      WorksheetOutputFormat
   storageKey  String
-  createdAt   DateTime               @default(now())
-  worksheet   Worksheet              @relation(fields: [worksheetId], references: [id], onDelete: Cascade)
+  createdAt   DateTime              @default(now())
+  worksheet   Worksheet             @relation(fields: [worksheetId], references: [id], onDelete: Cascade)
 
   @@index([worksheetId])
 }
@@ -542,15 +548,15 @@ enum ContentRestrictionCategory {
 /// Runtime content-safety terms for flashcards (and similar generation).
 /// `countryCode` is ISO 3166-1 alpha-2, or "*" for global terms.
 model ContentRestrictionTerm {
-  id          String                       @id @default(cuid())
+  id          String                     @id @default(cuid())
   term        String
   category    ContentRestrictionCategory
   severity    ContentRestrictionSeverity
-  countryCode String                       @default("*")
-  active      Boolean                      @default(true)
+  countryCode String                     @default("*")
+  active      Boolean                    @default(true)
   notes       String?
-  createdAt   DateTime                     @default(now())
-  updatedAt   DateTime                     @updatedAt
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
 
   @@unique([term, countryCode, severity])
   @@index([active, countryCode])

@@ -767,6 +767,172 @@
       background: #efe6f8;
     }
 
+    .ai-field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .ai-field-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ai-field-required,
+    .ai-field-optional {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 999px;
+    }
+
+    .ai-field-required {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .ai-field-optional {
+      background: #f1f5f9;
+      color: #94a3b8;
+    }
+
+    .ai-structured-field {
+      width: 100%;
+      font: inherit;
+      font-size: 14px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1.5px solid var(--line);
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .ai-structured-field:focus {
+      border-color: var(--primary);
+    }
+
+    .aip-section-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin: 4px 0 10px;
+    }
+
+    .aip-q-card {
+      border: 1.5px solid var(--line);
+      border-radius: 14px;
+      padding: 13px;
+      background: #fdfbff;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      margin-bottom: 11px;
+    }
+
+    .aip-q-card-header {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .aip-q-badge {
+      font-size: 10px;
+      font-weight: 800;
+      background: linear-gradient(87deg, #5f1296, #e41588);
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .aip-q-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #4b3a72;
+    }
+
+    .aip-q-current {
+      font-size: 13px;
+      color: #2d1b4e;
+      line-height: 1.55;
+      background: #f5f2fd;
+      border-radius: 9px;
+      padding: 9px 11px;
+      min-height: 44px;
+      border: 1.5px solid #e6e0f8;
+      outline: none;
+    }
+
+    .aip-q-current:focus {
+      border-color: var(--primary);
+      background: #fff;
+    }
+
+    .aip-q-prompt-wrap {
+      border: 1.5px solid #d0c8e8;
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .aip-q-prompt {
+      width: 100%;
+      border: none;
+      outline: none;
+      font: inherit;
+      font-size: 13px;
+      resize: none;
+      background: transparent;
+    }
+
+    .aip-q-row-btns {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .aip-q-linked {
+      background: #f5f2fd;
+      border: 0.5px solid #ddd5f5;
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .aip-q-linked-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+    }
+
+    .aip-q-linked-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .aip-q-linked-textarea {
+      width: 100%;
+      font: inherit;
+      font-size: 12px;
+      border: 0.5px solid #c9bfee;
+      border-radius: 8px;
+      padding: 7px 9px;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+
     .regen-box {
       border: 1.5px dashed #d8cce8;
       border-radius: 12px;
@@ -1196,17 +1362,24 @@
   <div id="fieldEditModal" class="modal">
     <div class="modal-card ai-panel">
       <div class="image-picker-head">
-        <h2>AI Edit</h2>
+        <div>
+          <h2 id="aiEditTitle">AI Edit</h2>
+          <p id="aiEditSubtitle" class="image-tip" style="margin:4px 0 0;">Edit fields or regenerate the worksheet</p>
+        </div>
         <button class="modal-x" id="fieldEditCancelBtn" type="button" aria-label="Close">×</button>
       </div>
       <div class="ai-panel-body">
+        <div id="aiQuestionCards" style="display:none"></div>
+        <div id="aiTemplatePopup" style="display:none"></div>
         <div id="aiFieldsList"></div>
         <div class="regen-box">
-          <h3 style="margin:0 0 8px; color:var(--primary);">Regenerate whole worksheet</h3>
-          <p class="image-tip" style="margin-bottom:10px;">Keep this template and generate new text and images from your
-            requirements.</p>
-          <textarea id="regenQuery" rows="3"
-            placeholder="e.g. Make this about ocean animals, easier questions, same age group"></textarea>
+          <h3 id="regenBoxTitle" style="margin:0 0 8px; color:var(--primary);">Regenerate whole worksheet</h3>
+          <div id="regenFallbackWrap">
+            <p class="image-tip" style="margin-bottom:10px;">Keep this template and generate new text and images from your
+              requirements.</p>
+            <textarea id="regenQuery" rows="3"
+              placeholder="e.g. Make this about ocean animals, easier questions, same age group"></textarea>
+          </div>
           <p id="fieldEditError" class="banner error" style="display:none;"></p>
           <div class="actions" style="margin-top:12px">
             <button class="btn-primary" id="regenWorksheetBtn" type="button" style="padding:11px 20px;">✦ Regenerate
@@ -1309,7 +1482,13 @@
       fieldEditModal: el('fieldEditModal'),
       fieldEditError: el('fieldEditError'),
       fieldEditCancelBtn: el('fieldEditCancelBtn'),
+      aiEditTitle: el('aiEditTitle'),
+      aiEditSubtitle: el('aiEditSubtitle'),
+      aiQuestionCards: el('aiQuestionCards'),
+      aiTemplatePopup: el('aiTemplatePopup'),
       aiFieldsList: el('aiFieldsList'),
+      regenBoxTitle: el('regenBoxTitle'),
+      regenFallbackWrap: el('regenFallbackWrap'),
       regenQuery: el('regenQuery'),
       regenWorksheetBtn: el('regenWorksheetBtn'),
       singleFieldModal: el('singleFieldModal'),
@@ -2198,7 +2377,185 @@
       return raw.replace(/[_[\]]+/g, ' ').trim();
     }
 
+    function templateAiPopupHtml() {
+      return String(state.preview?.template?.aiEditPopupHtml || '').trim();
+    }
+
+    function loadBuildInstruction(source) {
+      const src = String(source || '').trim();
+      if (!src) return null;
+      try {
+        const factory = new Function(`${src}\n;return typeof buildInstruction === 'function' ? buildInstruction : null;`);
+        const fn = factory();
+        return typeof fn === 'function' ? fn : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function collectStructuredAiValues() {
+      const values = {};
+      els.aiTemplatePopup.querySelectorAll('.ai-structured-field, [data-field]').forEach((node) => {
+        const key = node.getAttribute('data-field') || node.id?.replace(/^aiField_/, '');
+        if (!key) return;
+        values[key] = (node.value || '').trim();
+      });
+      return values;
+    }
+
+    function structuredAiInstruction() {
+      const values = collectStructuredAiValues();
+      const required = [...els.aiTemplatePopup.querySelectorAll('[data-required="true"]')];
+      const missing = required.find((node) => !(node.value || '').trim());
+      if (missing) {
+        missing.focus();
+        return { error: 'Fill the required fields first' };
+      }
+      const build = loadBuildInstruction(state.preview?.template?.aiEditConfigJs);
+      if (build) {
+        try {
+          const instruction = String(build(values) || '').trim();
+          if (instruction) return { query: instruction };
+        } catch { }
+      }
+      const parts = Object.entries(values)
+        .filter(([, value]) => value)
+        .map(([key, value]) => `${key}: ${value}`);
+      if (!parts.length) return { error: 'Enter requirements to regenerate this worksheet' };
+      return { query: parts.join('. ') };
+    }
+
+    function runInjectedPopupScripts(root) {
+      root.querySelectorAll('script').forEach((old) => {
+        const script = document.createElement('script');
+        script.textContent = old.textContent || '';
+        old.replaceWith(script);
+      });
+    }
+
+    function structureQuestions() {
+      const questions = state.preview?.structure?.questions;
+      if (Array.isArray(questions) && questions.length) return questions;
+      const fallback = [1, 2, 3].map((n) => {
+        const text = state.preview?.structure?.[`question_${n}`];
+        return typeof text === 'string' && text.trim() ? { question: text, options: n === 3 ? [
+          { text: state.preview.structure.option_1 || '' },
+          { text: state.preview.structure.option_2 || '' },
+        ] : undefined } : null;
+      }).filter(Boolean);
+      return fallback;
+    }
+
+    function usesQuestionPanel() {
+      return Boolean(state.preview?.template?.aiEditPanelJs) || structureQuestions().length > 0;
+    }
+
+    function questionText(item, index) {
+      if (!item || typeof item !== 'object') return '';
+      return String(item.question || item.text || state.preview?.structure?.[`question_${index + 1}`] || '').trim();
+    }
+
+    function renderQuestionCards() {
+      const questions = structureQuestions();
+      if (!usesQuestionPanel() || !questions.length) {
+        els.aiQuestionCards.style.display = 'none';
+        els.aiQuestionCards.innerHTML = '';
+        return false;
+      }
+      const cards = questions.map((item, index) => {
+        const n = index + 1;
+        const options = Array.isArray(item.options) ? item.options : [];
+        const linked = options.map((opt, oi) => `
+          <div class="aip-q-linked-row">
+            <span class="aip-q-linked-label">Q${n} Option ${String.fromCharCode(65 + oi)}</span>
+            <textarea class="aip-q-linked-textarea" data-ai-option="option_${oi + 1}" rows="2">${escapeHtml(opt.text || opt.label || '')}</textarea>
+          </div>`).join('');
+        return `
+          <div class="aip-q-card" data-question-index="${index}">
+            <div class="aip-q-card-header">
+              <span class="aip-q-badge">Q${n}</span>
+              <span class="aip-q-title">Question ${n}</span>
+            </div>
+            <div class="aip-q-current" contenteditable="true" data-ai-question="question_${n}">${escapeHtml(questionText(item, index))}</div>
+            ${linked ? `<div class="aip-q-linked"><div class="aip-q-linked-title">Auto-generated from above</div>${linked}</div>` : ''}
+            <div class="aip-q-prompt-wrap">
+              <textarea class="aip-q-prompt" data-ai-q-prompt="question_${n}" rows="2" placeholder="Enter prompt to regenerate… (leave blank to auto-regenerate)"></textarea>
+              <div class="aip-q-row-btns">
+                <button class="btn-primary" type="button" data-ai-q-regen="question_${n}" style="padding:6px 13px;font-size:12px;">✦ Re-Generate</button>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+      els.aiQuestionCards.innerHTML = `<div class="aip-section-label">Edit individual questions</div>${cards}`;
+      els.aiQuestionCards.style.display = 'block';
+      return true;
+    }
+
+    async function rewriteField(path, instruction) {
+      const payload = { fieldPath: path, instruction };
+      if (isTempWorksheetId(state.worksheetId)) {
+        payload.templateId = state.preview?.template?.id || state.preview?.template?.slug;
+        payload.structure = state.preview?.structure;
+      }
+      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(friendlyError(body, 'AI edit failed'));
+      if (body.structure) {
+        state.preview = { ...state.preview, ...body, id: body.id || state.worksheetId };
+        persistPreviewToItems();
+      }
+      return body;
+    }
+
+    function applyQuestionToFrame(path, text) {
+      applyTextInFrame(path, text);
+      const questions = structureQuestions();
+      const qMatch = path.match(/^question_(\d+)$/i);
+      if (qMatch && questions[Number(qMatch[1]) - 1]) {
+        questions[Number(qMatch[1]) - 1].question = text;
+      }
+      const oMatch = path.match(/^option_(\d+)$/i);
+      if (oMatch) {
+        const parent = questions.find((item) => Array.isArray(item.options));
+        if (parent?.options?.[Number(oMatch[1]) - 1]) {
+          parent.options[Number(oMatch[1]) - 1].text = text;
+        }
+      }
+    }
+
     function renderAiPanel() {
+      const hasQuestions = renderQuestionCards();
+      const popupHtml = templateAiPopupHtml();
+      if (els.aiEditTitle) {
+        els.aiEditTitle.textContent = hasQuestions ? 'AI Edit Worksheet' : 'AI Edit';
+      }
+      if (els.aiEditSubtitle) {
+        els.aiEditSubtitle.textContent = hasQuestions
+          ? 'Regenerate questions, then save changes on the worksheet'
+          : 'Edit fields or regenerate the worksheet';
+      }
+      if (popupHtml) {
+        els.aiTemplatePopup.innerHTML = popupHtml;
+        els.aiTemplatePopup.style.display = 'block';
+        els.aiFieldsList.style.display = 'none';
+        els.aiFieldsList.innerHTML = '';
+        if (els.regenFallbackWrap) els.regenFallbackWrap.style.display = 'none';
+        if (els.regenBoxTitle) els.regenBoxTitle.textContent = 'Generate new worksheet';
+        runInjectedPopupScripts(els.aiTemplatePopup);
+        const topic = state.preview?.structure?.topic || state.preview?.request?.topic || '';
+        const topicField = els.aiTemplatePopup.querySelector('[data-field="topic"], #aiField_topic');
+        if (topicField && !topicField.value && topic) topicField.value = topic;
+        return;
+      }
+      els.aiTemplatePopup.innerHTML = '';
+      els.aiTemplatePopup.style.display = 'none';
+      els.aiFieldsList.style.display = '';
+      if (els.regenFallbackWrap) els.regenFallbackWrap.style.display = '';
+      if (els.regenBoxTitle) els.regenBoxTitle.textContent = 'Regenerate whole worksheet';
       const fields = collectPanelFields();
       els.aiFieldsList.innerHTML = fields.map((field) => {
         if (field.type === 'image') {
@@ -2665,6 +3022,47 @@
       els.fieldEditModal.classList.remove('show');
     });
 
+    els.aiQuestionCards.addEventListener('click', async (event) => {
+      const regenBtn = event.target.closest('[data-ai-q-regen]');
+      if (!regenBtn) return;
+      const path = regenBtn.getAttribute('data-ai-q-regen');
+      const prompt = els.aiQuestionCards.querySelector(`[data-ai-q-prompt="${path}"]`)?.value.trim();
+      const instruction = prompt || 'Rewrite this question for the same age group. Keep the same role in the worksheet.';
+      regenBtn.disabled = true;
+      els.fieldEditError.style.display = 'none';
+      try {
+        const body = await rewriteField(path, instruction);
+        const questions = body.structure?.questions;
+        const index = Number(path.replace(/\D/g, '')) - 1;
+        const text = questions?.[index]?.question || '';
+        const current = els.aiQuestionCards.querySelector(`[data-ai-question="${path}"]`);
+        if (current) current.textContent = text;
+        applyQuestionToFrame(path, text);
+        if (path === 'question_3') {
+          for (const optionKey of ['option_1', 'option_2']) {
+            try {
+              const linked = await rewriteField(
+                optionKey,
+                `Write a short tick-box option that fits this question: ${text}`,
+              );
+              const parent = linked.structure?.questions?.find((item) => Array.isArray(item.options));
+              const oi = Number(optionKey.replace(/\D/g, '')) - 1;
+              const optionText = parent?.options?.[oi]?.text || '';
+              const box = els.aiQuestionCards.querySelector(`[data-ai-option="${optionKey}"]`);
+              if (box) box.value = optionText;
+              applyQuestionToFrame(optionKey, optionText);
+            } catch { }
+          }
+        }
+        toast('Question updated');
+      } catch (error) {
+        els.fieldEditError.textContent = friendlyError(error, 'AI edit failed');
+        els.fieldEditError.style.display = 'block';
+      } finally {
+        regenBtn.disabled = false;
+      }
+    });
+
     els.aiFieldsList.addEventListener('click', async (event) => {
       const replaceBtn = event.target.closest('[data-ai-replace]');
       if (replaceBtn) {
@@ -2741,7 +3139,18 @@
     });
 
     els.regenWorksheetBtn.addEventListener('click', async () => {
-      const query = els.regenQuery.value.trim();
+      let query = '';
+      if (templateAiPopupHtml()) {
+        const built = structuredAiInstruction();
+        if (built.error) {
+          els.fieldEditError.textContent = built.error;
+          els.fieldEditError.style.display = 'block';
+          return;
+        }
+        query = built.query;
+      } else {
+        query = els.regenQuery.value.trim();
+      }
       if (!query) {
         els.fieldEditError.textContent = 'Enter requirements to regenerate this worksheet';
         els.fieldEditError.style.display = 'block';

@@ -388,11 +388,13 @@ export class WorksheetGenerationService {
           slug: template.slug,
           name: template.name,
           rendererType: template.rendererType,
+          ...this.templateService.parseAiEditUi(template),
         },
         request: dto,
         structure: asStructureRecord(worksheet.structure),
         html: composed.html,
         canvas: composed.canvas,
+        fieldPrompts: this.templateService.parseFieldPrompts(template),
       } satisfies GenerateWorksheetResponse;
     });
 
@@ -519,6 +521,8 @@ export class WorksheetGenerationService {
       slug: string;
       category: string;
       sampleAssetId: string | null;
+      aiEditPopupHtml?: string | null;
+      aiEditConfigJs?: string | null;
     };
   }) {
     const request = asStructureRecord(row.request);
@@ -533,6 +537,7 @@ export class WorksheetGenerationService {
         name: row.template.name,
         slug: row.template.slug,
         category: row.template.category,
+        ...this.templateService.parseAiEditUi(row.template as never),
       },
       thumbnailUrl: row.template.sampleAssetId
         ? `${this.assetImagePath}/${row.template.sampleAssetId}/image`

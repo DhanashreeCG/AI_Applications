@@ -198,6 +198,12 @@ export class WorksheetsController {
         aiConfig: { type: 'string' },
         fieldPrompts: { type: 'string' },
         aiSystemPrompt: { type: 'string' },
+        aiEditConfigJs: { type: 'string' },
+        aiEditPopupHtml: { type: 'string' },
+        aiEditPanelJs: { type: 'string' },
+        editorJs: { type: 'string' },
+        fieldEditorJs: { type: 'string' },
+        rendererJs: { type: 'string' },
         background: { type: 'string', format: 'binary' },
         sample: {
           type: 'string',
