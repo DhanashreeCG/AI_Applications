@@ -111,6 +111,29 @@ describe('OpenAiEmbeddingProvider', () => {
     );
   });
 
+  it('should generate embeddings for multiple texts in one request', async () => {
+    const first = sampleEmbedding;
+    const second = sampleEmbedding.map((value) => value * 0.5);
+    mockCreate.mockResolvedValue({
+      data: [
+        { index: 0, embedding: first },
+        { index: 1, embedding: second },
+      ],
+      usage: { prompt_tokens: 8, total_tokens: 8 },
+    });
+
+    const results = await provider.generateEmbeddings(['red apple', 'yellow banana']);
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      model: 'text-embedding-3-small',
+      input: ['red apple', 'yellow banana'],
+    });
+    expect(results).toHaveLength(2);
+    expect(results[0].embedding).toEqual(first);
+    expect(results[1].embedding).toEqual(second);
+    expect(results[0].sourceTextHash).toBe(hashSourceText('red apple'));
+  });
+
   it('should throw when embedding dimensions are unexpected', async () => {
     mockCreate.mockResolvedValue({
       data: [{ embedding: [0.1, 0.2, 0.3] }],

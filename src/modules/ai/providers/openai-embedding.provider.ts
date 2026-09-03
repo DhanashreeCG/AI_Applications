@@ -74,25 +74,32 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
   }
 
   public async generateEmbedding(text: string): Promise<EmbeddingResult> {
+    const [result] = await this.generateEmbeddings([text]);
+    return result;
+  }
+
+  public async generateEmbeddings(texts: string[]): Promise<EmbeddingResult[]> {
     if (!this.client) {
       throw new Error('OpenAI embedding client is not initialized');
     }
 
-    const normalizedText = text.trim();
-    if (!normalizedText) {
+    const normalized = texts.map((text) => text.trim());
+    if (normalized.some((text) => !text)) {
       throw new Error('Embedding input text cannot be empty');
+    }
+    if (normalized.length === 0) {
+      return [];
     }
 
     this.circuitBreaker.beforeRequest();
     await this.rateLimiter.acquire();
 
-    const sourceTextHash = hashSourceText(normalizedText);
     const startedAt = Date.now();
 
     try {
       const response = await this.client.embeddings.create({
         model: this.modelName,
-        input: normalizedText,
+        input: normalized.length === 1 ? normalized[0] : normalized,
       });
 
       const latencyMs = Date.now() - startedAt;
@@ -103,26 +110,32 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
         requestId: response._request_id ?? undefined,
       };
 
-      const embedding = response.data[0]?.embedding;
-      if (!embedding) {
-        throw new Error('OpenAI embedding response did not contain vector data');
-      }
+      const byIndex = new Map(
+        response.data.map((item) => [item.index, item.embedding]),
+      );
+      const results: EmbeddingResult[] = [];
 
-      if (embedding.length !== this.dimensions) {
-        throw new Error(
-          `Expected ${this.dimensions}-dim embedding, received ${embedding.length}`,
-        );
+      for (let i = 0; i < normalized.length; i += 1) {
+        const embedding = byIndex.get(i) ?? response.data[i]?.embedding;
+        if (!embedding) {
+          throw new Error('OpenAI embedding response did not contain vector data');
+        }
+        if (embedding.length !== this.dimensions) {
+          throw new Error(
+            `Expected ${this.dimensions}-dim embedding, received ${embedding.length}`,
+          );
+        }
+        results.push({
+          embedding,
+          dimensions: embedding.length,
+          provider: this.providerName,
+          model: this.modelName,
+          sourceTextHash: hashSourceText(normalized[i]),
+        });
       }
 
       this.circuitBreaker.recordSuccess();
-
-      return {
-        embedding,
-        dimensions: embedding.length,
-        provider: this.providerName,
-        model: this.modelName,
-        sourceTextHash,
-      };
+      return results;
     } catch (error) {
       this.lastUsage = {
         latencyMs: Date.now() - startedAt,

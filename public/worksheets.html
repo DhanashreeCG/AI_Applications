@@ -1868,6 +1868,32 @@
       if (svg) svg.setAttribute('fill', !isFav ? 'currentColor' : 'none');
     }
 
+    async function readNdjsonStream(response, onEvent) {
+      if (!response.body || !response.body.getReader) {
+        const text = await response.text();
+        for (const line of text.split(/\r?\n/)) {
+          if (!line.trim()) continue;
+          await onEvent(JSON.parse(line));
+        }
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          await onEvent(JSON.parse(line));
+        }
+      }
+      if (buffer.trim()) await onEvent(JSON.parse(buffer));
+    }
+
     async function generateSet() {
       const topic = els.topicInput.value.trim();
       if (!topic) {
@@ -1884,11 +1910,24 @@
       clearBanners();
       setBusy(true);
       renderSkeletons(count);
+      state.items = [];
+      state.selectedIds.clear();
+      state.selectionMode = false;
+      state.page = 1;
+      els.worksheetGrid.classList.remove('selection-mode');
+      if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.style.display = 'none';
+      if (els.toggleSelectMode) els.toggleSelectMode.textContent = 'Select Options';
+
+      let received = 0;
+      let streamFailed = false;
 
       try {
-        const res = await apiFetch('/generate-set', {
+        const res = await apiFetch('/generate-set/stream', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/x-ndjson',
+          },
           body: JSON.stringify({
             query: topic,
             topic,
@@ -1899,8 +1938,8 @@
             templateId: els.templateSelect.value || undefined,
           }),
         });
-        const body = await res.json().catch(() => ({}));
         if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
           removeSkeletons();
           showBanner(
             'error',
@@ -1909,15 +1948,42 @@
           return;
         }
 
-        toast(`Created ${(body.items || []).length} worksheet(s)`);
+        await readNdjsonStream(res, async (event) => {
+          if (!event || !event.type || event.type === 'ping') return;
+          if (event.type === 'meta') {
+            return;
+          }
+          if (event.type === 'item' && event.item) {
+            received += 1;
+            state.items[event.slotIndex] = event.item;
+            const skeletons = els.worksheetGrid.querySelectorAll('[data-loading-skeleton="true"]');
+            if (skeletons[0]) skeletons[0].remove();
+            appendCard(event.item);
+            els.empty.style.display = 'none';
+            els.summary.classList.add('show');
+            els.metaPills.innerHTML = `<span class="pill">Generated: <b>${received}</b></span>`;
+            toast('<span class="spinner"></span>Generating ' + received + '/' + count + ' worksheet(s)…');
+            return;
+          }
+          if (event.type === 'done' && event.payload && Array.isArray(event.payload.items)) {
+            state.items = event.payload.items;
+            return;
+          }
+          if (event.type === 'error') {
+            streamFailed = true;
+            showBanner(
+              'error',
+              errorBannerHtml(event, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
+            );
+          }
+        });
 
-        state.items = Array.isArray(body.items) ? body.items : [];
-        state.selectedIds.clear();
-        state.selectionMode = false;
-        state.page = 1;
-        els.worksheetGrid.classList.remove('selection-mode');
-        if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.style.display = 'none';
-        if (els.toggleSelectMode) els.toggleSelectMode.textContent = 'Select Options';
+        if (streamFailed && !received) {
+          removeSkeletons();
+          return;
+        }
+
+        toast(`Created ${state.items.length} worksheet(s)`);
         if (!state.items.length) {
           els.empty.style.display = 'block';
           els.summary.classList.remove('show');

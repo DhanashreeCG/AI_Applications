@@ -93,6 +93,68 @@ export class WorksheetsController {
     );
   }
 
+  @Post('generate-set/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Generate worksheets as an NDJSON stream, emitting each worksheet as soon as it is assembled',
+  })
+  async generateSetStream(
+    @Body() dto: GenerateWorksheetDto,
+    @Res() response: Response,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-country-code') headerCountryCode?: string,
+  ): Promise<void> {
+    response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-cache, no-transform');
+    response.setHeader('Connection', 'keep-alive');
+    response.setHeader('X-Accel-Buffering', 'no');
+    response.flushHeaders?.();
+
+    let clientGone = false;
+    response.on('close', () => {
+      clientGone = true;
+    });
+
+    const write = (event: Record<string, unknown>): void => {
+      if (clientGone || response.writableEnded) return;
+      response.write(`${JSON.stringify(event)}\n`);
+    };
+
+    const heartbeat = setInterval(() => write({ type: 'ping' }), 15000);
+
+    try {
+      const payload = await this.generationService.generateSet(
+        { ...dto, countryCode: dto.countryCode || headerCountryCode },
+        {
+          correlationId: correlationId || traceId,
+          progress: {
+            onMeta: (meta) => write({ type: 'meta', ...meta }),
+            onItem: (item, slotIndex) =>
+              write({ type: 'item', slotIndex, item }),
+          },
+        },
+      );
+      write({ type: 'done', payload });
+    } catch (error) {
+      const isWorksheetError = error instanceof WorksheetException;
+      write({
+        type: 'error',
+        code: isWorksheetError ? error.code : 'GENERATION_FAILED',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Could not generate worksheets',
+      });
+    } finally {
+      clearInterval(heartbeat);
+      if (!response.writableEnded) {
+        response.end();
+      }
+    }
+  }
+
   @Post('generate-set')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

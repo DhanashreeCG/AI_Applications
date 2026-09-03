@@ -48,4 +48,13 @@ export class SearchAssetsDto {
 
   @ApiPropertyOptional({ example: false })
   bypassCache?: boolean;
+
+  /** Use `limit` as the vector window instead of the default 50-candidate over-fetch. */
+  retrieval?: boolean;
+
+  /** Override the pgvector topK window. */
+  candidateLimit?: number;
+
+  /** Skip per-asset Redis metadata writes after hydrate. */
+  skipMetadataCacheWrite?: boolean;
 }

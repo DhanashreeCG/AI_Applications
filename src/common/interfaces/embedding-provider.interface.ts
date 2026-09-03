@@ -12,4 +12,5 @@ export interface EmbeddingProvider {
   readonly dimensions: number;
 
   generateEmbedding(text: string): Promise<EmbeddingResult>;
+  generateEmbeddings(texts: string[]): Promise<EmbeddingResult[]>;
 }

@@ -15,7 +15,6 @@ import {
   PipelineTelemetryContext,
 } from '../../../common/events/pipeline-tracker.events';
 import {
-  mapWithConcurrency,
   WORKSHEET_IMAGE_SEARCH_EMBEDDING_PURPOSE,
   WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES,
   WORKSHEET_TEMPLATE_IMAGE_MIME_TYPES,
@@ -47,6 +46,7 @@ export class WorksheetAssetService {
   private readonly signedUrlTtlSeconds: number;
   private readonly embeddingMaxAttempts: number;
   private readonly embeddingRetryDelayMs: number;
+  private readonly minSimilarity: number;
   private readonly assetImagePath: string;
   private readonly userUploadS3Prefix: string;
   private readonly emitter: WorksheetPipelineEmitter;
@@ -71,6 +71,10 @@ export class WorksheetAssetService {
     this.embeddingRetryDelayMs = Math.max(
       0,
       this.configService.get<number>('worksheets.imageEmbeddingRetryDelayMs') ?? 200,
+    );
+    this.minSimilarity = Math.max(
+      0,
+      this.configService.get<number>('worksheets.imageMinSimilarity') ?? 0,
     );
     this.signedUrlTtlSeconds =
       this.configService.get<number>('worksheets.signedUrlTtlSeconds') ?? 3600;
@@ -149,18 +153,81 @@ export class WorksheetAssetService {
       new Set(allSlotRequests.map((r) => r.query.trim()).filter(Boolean)),
     );
 
-    // 3. Concurrently search for unique queries
+    // 3. One batch embed + vector search for unique queries (flashcard miss semantics)
     const queryToAssetIdMap = new Map<string, string | undefined>();
-    await mapWithConcurrency(
-      uniqueQueryStrings,
-      this.concurrency,
-      async (queryString) => {
-        const slot = await this.resolveSlot(queryString, '', options, telemetry);
-        if (slot.assetId) {
-          queryToAssetIdMap.set(queryString, slot.assetId);
+    const filters = {
+      grades: options?.grades?.filter(Boolean),
+      ageGroups: options?.ageGroups?.filter(Boolean),
+    };
+    const hasFilters = Boolean(filters.grades?.length || filters.ageGroups?.length);
+
+    if (uniqueQueryStrings.length > 0) {
+      const startedAt = Date.now();
+      const searchIds = new Map(
+        uniqueQueryStrings.map((query) => [query, randomUUID()]),
+      );
+      if (telemetry) {
+        for (const queryString of uniqueQueryStrings) {
+          this.emitter.emitImageSearchStarted({
+            ...telemetry,
+            searchId: searchIds.get(queryString) ?? randomUUID(),
+            stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+            query: queryString,
+            filters: hasFilters ? filters : undefined,
+          });
         }
-      },
-    );
+      }
+      try {
+        const responses = await this.searchBatchWithRetry(
+          uniqueQueryStrings,
+          hasFilters ? filters : undefined,
+        );
+        for (const queryString of uniqueQueryStrings) {
+          const response = responses.get(queryString);
+          this.emitEmbeddingUsage(telemetry, queryString, response);
+          const hit = this.selectHit(response);
+          if (hit) {
+            queryToAssetIdMap.set(queryString, hit);
+          } else {
+            this.logger.warn(`No asset found for imageQuery "${queryString}"`);
+          }
+          if (telemetry) {
+            this.emitter.emitImageSearchCompleted({
+              ...telemetry,
+              searchId: searchIds.get(queryString) ?? randomUUID(),
+              stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+              query: queryString,
+              filters: hasFilters ? filters : undefined,
+              resultCount: response?.results.length ?? 0,
+              selectedAssetId: hit ?? null,
+              cacheHit: response?.fromCache === true,
+              failed: false,
+              durationMs: Date.now() - startedAt,
+            });
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Batch asset search failed: ${getErrorMessage(error)}`,
+        );
+        if (telemetry) {
+          for (const queryString of uniqueQueryStrings) {
+            this.emitter.emitImageSearchCompleted({
+              ...telemetry,
+              searchId: searchIds.get(queryString) ?? randomUUID(),
+              stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+              query: queryString,
+              filters: hasFilters ? filters : undefined,
+              resultCount: 0,
+              selectedAssetId: null,
+              failed: true,
+              errorMessage: 'Asset search failed',
+              durationMs: Date.now() - startedAt,
+            });
+          }
+        }
+      }
+    }
 
     // 4. Map resolved asset IDs back to each worksheet structure
     const results: Array<{
@@ -253,9 +320,9 @@ export class WorksheetAssetService {
         `image search embedding+vector path=${path || '(root)'} query="${query}" hits=${response.results.length} cache=${response.fromCache === true} topAssetId=${response.results[0]?.assetId ?? 'none'}`,
       );
 
-      const hit = response.results && response.results.length > 0 ? response.results[0] : null;
-      const slot: ResolvedAssetSlot = hit
-        ? { path, imageQuery: query, assetId: hit.assetId }
+      const hitId = this.selectHit(response);
+      const slot: ResolvedAssetSlot = hitId
+        ? { path, imageQuery: query, assetId: hitId }
         : this.emptySlot(path, query);
 
       if (!slot.assetId) {
@@ -303,6 +370,48 @@ export class WorksheetAssetService {
     }
   }
 
+  private async searchBatchWithRetry(
+    queries: string[],
+    filters?: { grades?: string[]; ageGroups?: string[] },
+  ): Promise<Map<string, SearchAssetsResponse>> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.embeddingMaxAttempts; attempt += 1) {
+      try {
+        return await this.searchService.searchMany(queries, {
+          limit: this.searchLimit,
+          filters,
+          retrieval: true,
+          concurrency: this.concurrency,
+        });
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(
+          `Worksheet batch image search attempt ${attempt}/${this.embeddingMaxAttempts} failed: ${getErrorMessage(error)}`,
+        );
+        if (attempt < this.embeddingMaxAttempts && this.embeddingRetryDelayMs) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.embeddingRetryDelayMs),
+          );
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  private selectHit(response: SearchAssetsResponse | undefined): string | undefined {
+    const hit = response?.results?.[0];
+    if (!hit?.assetId) {
+      return undefined;
+    }
+    if (this.minSimilarity > 0 && hit.similarity < this.minSimilarity) {
+      this.logger.warn(
+        `Dropped weak match for "${response?.query}" assetId=${hit.assetId} similarity=${hit.similarity}`,
+      );
+      return undefined;
+    }
+    return hit.assetId;
+  }
+
   private async searchWithEmbeddingRetry(
     query: string,
     filters?: { grades?: string[]; ageGroups?: string[] },
@@ -314,6 +423,7 @@ export class WorksheetAssetService {
           query,
           limit: this.searchLimit,
           filters,
+          retrieval: true,
         });
       } catch (error) {
         lastError = error;
@@ -582,9 +692,9 @@ export class WorksheetAssetService {
   private emitEmbeddingUsage(
     telemetry: PipelineTelemetryContext | undefined,
     query: string,
-    response: SearchAssetsResponse,
+    response: SearchAssetsResponse | undefined,
   ): void {
-    if (!telemetry || !response.usage || response.usage.fromCache) {
+    if (!telemetry || !response?.usage || response.usage.fromCache) {
       return;
     }
     const invocationId = randomUUID();

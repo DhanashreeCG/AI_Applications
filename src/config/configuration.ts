@@ -123,6 +123,7 @@ export interface AppConfig {
     imageEmbeddingRetryDelayMs: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
+    imageMinSimilarity: number;
     imagePickerLimit: number;
     userUploadS3Prefix: string;
     generateCountDefault: number;
@@ -478,6 +479,9 @@ export default (): AppConfig => ({
     imageSearchLimit: parseInt(
       process.env.WORKSHEET_IMAGE_SEARCH_LIMIT || '1',
       10,
+    ),
+    imageMinSimilarity: Number.parseFloat(
+      process.env.WORKSHEET_IMAGE_MIN_SIMILARITY || '0',
     ),
     imagePickerLimit: parseInt(
       process.env.WORKSHEET_IMAGE_PICKER_LIMIT || '10',

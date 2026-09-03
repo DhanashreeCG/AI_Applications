@@ -146,7 +146,7 @@ model AssetEmbedding {
   updatedAt        DateTime               @updatedAt
   asset            Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
-  @@index([assetId])
+  @@unique([assetId])
   @@index([sourceTextHash])
 }
 

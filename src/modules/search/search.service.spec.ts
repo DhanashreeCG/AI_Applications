@@ -29,6 +29,7 @@ describe('SearchService', () => {
 
   const mockEmbeddingProvider = {
     generateEmbedding: jest.fn(),
+    generateEmbeddings: jest.fn(),
     getLastUsage: jest.fn().mockReturnValue({
       inputTokens: 3,
       totalTokens: 3,
@@ -366,5 +367,128 @@ describe('SearchService', () => {
       }),
     );
     expect(response.results[0].assetId).toBe('letter-b');
+  });
+
+  it('should use limit as the vector window in retrieval mode', async () => {
+    mockEmbeddingProvider.generateEmbedding.mockResolvedValue({
+      embedding: sampleEmbedding,
+      dimensions: 1536,
+      provider: 'openai',
+      model: 'text-embedding-3-small',
+      sourceTextHash: 'query-hash',
+    });
+    mockVectorStorage.searchSimilar.mockResolvedValue([
+      { assetId: 'asset-001', embeddingId: 'e1', distance: 0.1, similarity: 0.9 },
+    ]);
+    mockPrisma.asset.findMany.mockResolvedValue([
+      letterAsset('asset-001', ['cat']),
+    ]);
+
+    await service.search({
+      query: 'cartoon cat',
+      limit: 1,
+      retrieval: true,
+    });
+
+    expect(mockVectorStorage.searchSimilar).toHaveBeenCalledWith(
+      sampleEmbedding,
+      1,
+    );
+    expect(mockRedisCache.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('should batch-embed uncached queries in searchMany', async () => {
+    mockEmbeddingProvider.generateEmbeddings.mockResolvedValue([
+      {
+        embedding: sampleEmbedding,
+        dimensions: 1536,
+        provider: 'openai',
+        model: 'text-embedding-3-small',
+        sourceTextHash: 'a',
+      },
+      {
+        embedding: sampleEmbedding,
+        dimensions: 1536,
+        provider: 'openai',
+        model: 'text-embedding-3-small',
+        sourceTextHash: 'b',
+      },
+    ]);
+    mockVectorStorage.searchSimilar.mockResolvedValue([
+      { assetId: 'asset-001', embeddingId: 'e1', distance: 0.1, similarity: 0.9 },
+    ]);
+    mockPrisma.asset.findMany.mockResolvedValue([
+      letterAsset('asset-001', ['cat']),
+    ]);
+
+    const responses = await service.searchMany(['red apple', 'yellow banana'], {
+      limit: 1,
+      retrieval: true,
+    });
+
+    expect(mockEmbeddingProvider.generateEmbeddings).toHaveBeenCalledWith([
+      'red apple',
+      'yellow banana',
+    ]);
+    expect(mockEmbeddingProvider.generateEmbedding).not.toHaveBeenCalled();
+    expect(responses.get('red apple')?.results[0].assetId).toBe('asset-001');
+    expect(responses.get('yellow banana')?.results[0].assetId).toBe('asset-001');
+  });
+
+  it('should run vector searches concurrently in searchMany', async () => {
+    mockEmbeddingProvider.generateEmbeddings.mockResolvedValue([
+      {
+        embedding: sampleEmbedding,
+        dimensions: 1536,
+        provider: 'openai',
+        model: 'text-embedding-3-small',
+        sourceTextHash: 'a',
+      },
+      {
+        embedding: sampleEmbedding,
+        dimensions: 1536,
+        provider: 'openai',
+        model: 'text-embedding-3-small',
+        sourceTextHash: 'b',
+      },
+    ]);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    mockVectorStorage.searchSimilar.mockImplementation(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      inFlight -= 1;
+      return [
+        { assetId: 'asset-001', embeddingId: 'e1', distance: 0.1, similarity: 0.9 },
+      ];
+    });
+    mockPrisma.asset.findMany.mockResolvedValue([
+      letterAsset('asset-001', ['cat']),
+    ]);
+
+    await service.searchMany(['red apple', 'yellow banana'], {
+      limit: 1,
+      retrieval: true,
+      concurrency: 2,
+    });
+
+    expect(maxInFlight).toBe(2);
+  });
+
+  it('should skip OpenAI when searchMany hits cache', async () => {
+    mockRedisCache.get.mockResolvedValue({
+      query: 'red apple',
+      total: 0,
+      results: [],
+    });
+
+    const responses = await service.searchMany(['red apple'], {
+      limit: 1,
+      retrieval: true,
+    });
+
+    expect(mockEmbeddingProvider.generateEmbeddings).not.toHaveBeenCalled();
+    expect(responses.get('red apple')?.fromCache).toBe(true);
   });
 });

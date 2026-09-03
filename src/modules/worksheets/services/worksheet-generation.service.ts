@@ -34,8 +34,18 @@ import { WorksheetTemplateSelectionService } from './worksheet-template-selectio
 import { WorksheetTemplateService } from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
 
+export interface GenerateWorksheetProgress {
+  onMeta?: (meta: {
+    count: number;
+    templateId?: string;
+    templateSlug?: string;
+  }) => void;
+  onItem?: (item: GenerateWorksheetResponse, slotIndex: number) => void;
+}
+
 export interface GenerateWorksheetOptions {
   correlationId?: string;
+  progress?: GenerateWorksheetProgress;
 }
 
 @Injectable()
@@ -174,7 +184,7 @@ export class WorksheetGenerationService {
     });
 
     try {
-      const response = await this.runGenerate(dto, telemetry);
+      const response = await this.runGenerate(dto, telemetry, options);
       this.emitter.emitCompleted({
         ...telemetry,
         status: 'completed',
@@ -204,6 +214,7 @@ export class WorksheetGenerationService {
   private async runGenerate(
     dto: GenerateWorksheetDto,
     telemetry: PipelineTelemetryContext,
+    options: GenerateWorksheetOptions = {},
   ): Promise<GenerateWorksheetResponse> {
     await runTrackedStage(
       this.emitter,
@@ -278,6 +289,11 @@ export class WorksheetGenerationService {
     this.logger.log(`template selected slug=${template.slug} id=${template.id}`);
 
     const count = this.normalizeCount(dto.count);
+    options.progress?.onMeta?.({
+      count,
+      templateId: template.id,
+      templateSlug: template.slug,
+    });
     const generatedList = await this.contentService.generateStructures(
       template,
       dto,
@@ -373,30 +389,36 @@ export class WorksheetGenerationService {
     */
     this.logger.log(`batch worksheets persisted count=${persistedRows.length}`);
 
-    const responses = persistedRows.map((worksheet) => {
-      const composed = this.renderService.composeHtml({
-        template,
-        structure: asStructureRecord(worksheet.structure),
-        request: dto as unknown as Record<string, unknown>,
-        mode: 'editor',
-      });
-      return {
-        id: worksheet.id,
-        status: worksheet.status,
-        template: {
-          id: template.id,
-          slug: template.slug,
-          name: template.name,
-          rendererType: template.rendererType,
-          ...this.templateService.parseAiEditUi(template),
-        },
-        request: dto,
-        structure: asStructureRecord(worksheet.structure),
-        html: composed.html,
-        canvas: composed.canvas,
-        fieldPrompts: this.templateService.parseFieldPrompts(template),
-      } satisfies GenerateWorksheetResponse;
-    });
+    const responses = await mapWithConcurrency(
+      persistedRows,
+      Math.min(3, persistedRows.length),
+      async (worksheet, index) => {
+        const composed = this.renderService.composeHtml({
+          template,
+          structure: asStructureRecord(worksheet.structure),
+          request: dto as unknown as Record<string, unknown>,
+          mode: 'editor',
+        });
+        const response = {
+          id: worksheet.id,
+          status: worksheet.status,
+          template: {
+            id: template.id,
+            slug: template.slug,
+            name: template.name,
+            rendererType: template.rendererType,
+            ...this.templateService.parseAiEditUi(template),
+          },
+          request: dto,
+          structure: asStructureRecord(worksheet.structure),
+          html: composed.html,
+          canvas: composed.canvas,
+          fieldPrompts: this.templateService.parseFieldPrompts(template),
+        } satisfies GenerateWorksheetResponse;
+        options.progress?.onItem?.(response, index);
+        return response;
+      },
+    );
 
     await runTrackedStage(
       this.emitter,
