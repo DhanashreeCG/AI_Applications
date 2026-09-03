@@ -1364,7 +1364,7 @@
       <div class="image-picker-head">
         <div>
           <h2 id="aiEditTitle">AI Edit</h2>
-          <p id="aiEditSubtitle" class="image-tip" style="margin:4px 0 0;">Edit fields or regenerate the worksheet</p>
+          <p id="aiEditSubtitle" class="image-tip" style="margin:4px 0 0;">Regenerate this worksheet</p>
         </div>
         <button class="modal-x" id="fieldEditCancelBtn" type="button" aria-label="Close">×</button>
       </div>
@@ -1430,6 +1430,7 @@
       imagePickFromAi: false,
       busy: false,
       items: [],
+      templates: [],
       selectionMode: false,
       selectedIds: new Set(),
     };
@@ -1955,7 +1956,10 @@
           }
           if (event.type === 'item' && event.item) {
             received += 1;
-            state.items[event.slotIndex] = event.item;
+            state.items[event.slotIndex] = {
+              ...event.item,
+              template: mergedTemplate(event.item.template),
+            };
             const skeletons = els.worksheetGrid.querySelectorAll('[data-loading-skeleton="true"]');
             if (skeletons[0]) skeletons[0].remove();
             appendCard(event.item);
@@ -1966,7 +1970,10 @@
             return;
           }
           if (event.type === 'done' && event.payload && Array.isArray(event.payload.items)) {
-            state.items = event.payload.items;
+            state.items = event.payload.items.map((item) => ({
+              ...item,
+              template: mergedTemplate(item.template),
+            }));
             return;
           }
           if (event.type === 'error') {
@@ -2468,8 +2475,28 @@
       return raw.replace(/[_[\]]+/g, ' ').trim();
     }
 
+    function findCatalogTemplate(template) {
+      if (!template) return null;
+      return (state.templates || []).find((item) =>
+        (template.id && item.id === template.id) ||
+        (template.slug && item.slug === template.slug),
+      ) || null;
+    }
+
+    function mergedTemplate(template) {
+      const listed = findCatalogTemplate(template);
+      const current = template && typeof template === 'object' ? template : {};
+      return {
+        ...listed,
+        ...current,
+        aiEditPopupHtml: current.aiEditPopupHtml || listed?.aiEditPopupHtml || '',
+        aiEditConfigJs: current.aiEditConfigJs || listed?.aiEditConfigJs || '',
+        aiEditPanelJs: current.aiEditPanelJs || listed?.aiEditPanelJs || '',
+      };
+    }
+
     function templateAiPopupHtml() {
-      return String(state.preview?.template?.aiEditPopupHtml || '').trim();
+      return String(mergedTemplate(state.preview?.template).aiEditPopupHtml || '').trim();
     }
 
     function loadBuildInstruction(source) {
@@ -2504,7 +2531,7 @@
         missing.focus();
         return { error: 'Fill the required fields first' };
       }
-      const build = loadBuildInstruction(state.preview?.template?.aiEditConfigJs);
+      const build = loadBuildInstruction(mergedTemplate(state.preview?.template).aiEditConfigJs);
       if (build) {
         try {
           const instruction = String(build(values) || '').trim();
@@ -2540,7 +2567,7 @@
     }
 
     function usesQuestionPanel() {
-      return Boolean(state.preview?.template?.aiEditPanelJs) || structureQuestions().length > 0;
+      return Boolean(String(mergedTemplate(state.preview?.template).aiEditPanelJs || '').trim());
     }
 
     function questionText(item, index) {
@@ -2621,6 +2648,10 @@
     }
 
     function renderAiPanel() {
+      if (els.aiFieldsList) {
+        els.aiFieldsList.style.display = 'none';
+        els.aiFieldsList.innerHTML = '';
+      }
       const hasQuestions = renderQuestionCards();
       const popupHtml = templateAiPopupHtml();
       if (els.aiEditTitle) {
@@ -2628,14 +2659,14 @@
       }
       if (els.aiEditSubtitle) {
         els.aiEditSubtitle.textContent = hasQuestions
-          ? 'Regenerate questions, then save changes on the worksheet'
-          : 'Edit fields or regenerate the worksheet';
+          ? 'Regenerate questions, then generate a new worksheet'
+          : popupHtml
+            ? 'Fill the fields, then regenerate this worksheet'
+            : 'Regenerate this worksheet from new requirements';
       }
       if (popupHtml) {
         els.aiTemplatePopup.innerHTML = popupHtml;
         els.aiTemplatePopup.style.display = 'block';
-        els.aiFieldsList.style.display = 'none';
-        els.aiFieldsList.innerHTML = '';
         if (els.regenFallbackWrap) els.regenFallbackWrap.style.display = 'none';
         if (els.regenBoxTitle) els.regenBoxTitle.textContent = 'Generate new worksheet';
         runInjectedPopupScripts(els.aiTemplatePopup);
@@ -2646,33 +2677,8 @@
       }
       els.aiTemplatePopup.innerHTML = '';
       els.aiTemplatePopup.style.display = 'none';
-      els.aiFieldsList.style.display = '';
       if (els.regenFallbackWrap) els.regenFallbackWrap.style.display = '';
       if (els.regenBoxTitle) els.regenBoxTitle.textContent = 'Regenerate whole worksheet';
-      const fields = collectPanelFields();
-      els.aiFieldsList.innerHTML = fields.map((field) => {
-        if (field.type === 'image') {
-          const src = previewImageSrc(field.src) || '';
-          return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
-              <h3>${escapeHtml(field.label)} · image</h3>
-              ${src ? `<img class="ai-thumb" src="${escapeHtml(src)}" alt="">` : '<div class="ai-thumb"></div>'}
-              <div class="row">
-                <button class="btn-search" type="button" data-ai-replace="${escapeHtml(field.path)}" data-slot="${escapeHtml(field.slotId || '')}">Replace image</button>
-              </div>
-            </div>`;
-        }
-        return `<div class="ai-field-card" data-path="${escapeHtml(field.path)}">
-            <h3>${escapeHtml(field.label)}</h3>
-            <label class="field-label" style="font-size:13px; margin-bottom:4px;">Current text</label>
-            <textarea data-ai-current="${escapeHtml(field.path)}" rows="3">${escapeHtml(field.value || '')}</textarea>
-            <label class="field-label" style="font-size:13px; margin:8px 0 4px;">AI prompt</label>
-            <textarea data-ai-prompt="${escapeHtml(field.path)}" rows="2" placeholder="Rewrite this for the same age group…"></textarea>
-            <div class="row">
-              <button class="btn-soft" type="button" data-ai-apply="${escapeHtml(field.path)}">Apply text</button>
-              <button class="btn-primary" type="button" data-ai-rewrite="${escapeHtml(field.path)}" style="padding:8px 16px; font-size:13px;">✦ AI rewrite</button>
-            </div>
-          </div>`;
-      }).join('') || '<p class="image-tip">No editable fields found on this worksheet.</p>';
     }
 
     function applyTextInFrame(path, value) {
@@ -2684,7 +2690,37 @@
       });
     }
 
-    function openAiPanel() {
+    async function ensureTemplateAiEdit() {
+      if (!state.preview?.template) return;
+      state.preview.template = mergedTemplate(state.preview.template);
+      const current = state.preview.template;
+      const hasPopup = String(current.aiEditPopupHtml || '').trim();
+      const hasPanel = String(current.aiEditPanelJs || '').trim();
+      if (hasPopup && hasPanel) return;
+      const id = current.id || current.slug;
+      if (!id) return;
+      try {
+        const res = await apiFetch(`/templates/${encodeURIComponent(id)}`);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const listed = {
+          id: body.id,
+          slug: body.slug,
+          name: body.name,
+          aiEditPopupHtml: body.aiEditPopupHtml,
+          aiEditConfigJs: body.aiEditConfigJs,
+          aiEditPanelJs: body.aiEditPanelJs,
+        };
+        const index = (state.templates || []).findIndex((item) => item.id === listed.id || item.slug === listed.slug);
+        if (index >= 0) state.templates[index] = { ...state.templates[index], ...listed };
+        else state.templates.push(listed);
+        state.preview.template = mergedTemplate(state.preview.template);
+      } catch {
+        /* keep regenerate fallback */
+      }
+    }
+
+    async function openAiPanel() {
       if (!state.worksheetId) {
         toast('Open a worksheet first');
         return;
@@ -2692,6 +2728,7 @@
       els.fieldEditError.style.display = 'none';
       els.fieldEditError.textContent = '';
       els.regenQuery.value = '';
+      await ensureTemplateAiEdit();
       renderAiPanel();
       els.fieldEditModal.classList.add('show');
     }
@@ -3337,6 +3374,7 @@
         const res = await apiFetch('/templates');
         const templates = await res.json();
         if (res.ok && Array.isArray(templates)) {
+          state.templates = templates;
           const options = ['<option value="">Auto — no template selected</option>'];
           templates.forEach((t) => {
             options.push(`<option value="${t.id}">${escapeHtml(t.name)}</option>`);

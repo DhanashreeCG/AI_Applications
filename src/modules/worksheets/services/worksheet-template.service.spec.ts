@@ -120,6 +120,28 @@ describe('WorksheetTemplateService.create', () => {
     expect(result.backgroundUrl).toBe('https://signed.example/img');
   });
 
+  it('listCatalog includes AI Edit popup HTML from the template row', async () => {
+    prisma.worksheetTemplate.findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'tmpl-aac',
+        name: 'Answer and Colour',
+        slug: 'answer_and_colour',
+        category: 'language',
+        description: 'Colour the picture',
+        sampleAssetId: 'sample-1',
+        meta: {},
+        aiEditPopupHtml: '<div class="ai-field-group">Topic</div>',
+        aiEditConfigJs: 'function buildInstruction(v) { return v.topic; }',
+        aiEditPanelJs: null,
+      },
+    ]);
+
+    const catalog = await service.listCatalog();
+    expect(catalog[0].slug).toBe('answer_and_colour');
+    expect(catalog[0].aiEditPopupHtml).toContain('Topic');
+    expect(catalog[0].aiEditConfigJs).toContain('buildInstruction');
+  });
+
   it('rejects create when background image is missing', async () => {
     await expect(
       service.create(

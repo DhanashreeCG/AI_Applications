@@ -201,6 +201,13 @@ export class WorksheetsController {
     return this.templateService.listCatalog();
   }
 
+  @Get('templates/:idOrSlug')
+  @ApiOperation({ summary: 'Get one active worksheet template including AI Edit popup HTML' })
+  async getTemplate(@Param('idOrSlug') idOrSlug: string) {
+    const template = await this.templateService.getActiveByIdOrSlug(idOrSlug);
+    return this.templateService.toCatalogItem(template);
+  }
+
   @Get('images/search')
   @ApiOperation({
     summary: 'Semantic asset search without a saved worksheet',

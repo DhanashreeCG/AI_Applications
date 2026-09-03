@@ -244,22 +244,25 @@ export class WorksheetTemplateService {
     });
   }
 
+  public toCatalogItem(template: WorksheetTemplateRecord) {
+    const meta = this.parseMeta(template);
+    return {
+      id: template.id,
+      name: template.name,
+      slug: template.slug,
+      category: template.category,
+      description: template.description,
+      meta,
+      sampleUrl: template.sampleAssetId
+        ? `${this.assetImagePath}/${template.sampleAssetId}/image`
+        : null,
+      ...this.parseAiEditUi(template),
+    };
+  }
+
   public async listCatalog() {
     const templates = await this.listActive();
-    return templates.map((template) => {
-      const meta = this.parseMeta(template);
-      return {
-        id: template.id,
-        name: template.name,
-        slug: template.slug,
-        category: template.category,
-        description: template.description,
-        meta,
-        sampleUrl: template.sampleAssetId
-          ? `${this.assetImagePath}/${template.sampleAssetId}/image`
-          : null,
-      };
-    });
+    return templates.map((template) => this.toCatalogItem(template));
   }
 
   public parseMeta(template: WorksheetTemplateRecord): WorksheetTemplateMeta {
