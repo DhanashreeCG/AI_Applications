@@ -3330,7 +3330,8 @@
       await openPreview(state.preview, { fromIframe: false });
       state.editMode = keepEdit;
       enableInlineEditing(keepEdit);
-      renderAiPanel();
+      state.imagePickFromAi = false;
+      els.fieldEditModal.classList.remove('show');
       toast('Worksheet regenerated');
     });
 
