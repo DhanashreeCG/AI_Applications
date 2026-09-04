@@ -2810,54 +2810,6 @@
       setStructureValue(structure, persistPathFor(path), value);
     }
 
-    function previewImageSrcFromSlot(slot) {
-      if (!slot || typeof slot !== 'object') return '';
-      const raw = slot.assetUrl || slot.imageUrl || slot.signedUrl || '';
-      if (raw) return resolveUrl(String(raw));
-      if (slot.assetId) return apiUrl('/assets/' + encodeURIComponent(slot.assetId) + '/image');
-      return '';
-    }
-
-    function collectAiPanelImages() {
-      const structure = state.preview?.structure;
-      if (!structure || typeof structure !== 'object') return [];
-      const images = [];
-      const pushSlot = (path, slot) => {
-        if (!slot || typeof slot !== 'object') return;
-        const src = previewImageSrcFromSlot(slot);
-        if (!src && !slot.imageQuery) return;
-        images.push({
-          path,
-          src,
-          query: String(slot.imageQuery || slot.caption || path),
-        });
-      };
-      if (structure.image && typeof structure.image === 'object') {
-        pushSlot('image', structure.image);
-      }
-      const items = Array.isArray(structure.items) ? structure.items : [];
-      items.forEach((item, index) => {
-        if (item && typeof item === 'object') pushSlot('items[' + index + ']', item);
-      });
-      return images;
-    }
-
-    function renderAiImages() {
-      if (!els.aiImageCards) return;
-      const images = collectAiPanelImages();
-      if (!images.length) {
-        els.aiImageCards.style.display = 'none';
-        els.aiImageCards.innerHTML = '';
-        return;
-      }
-      els.aiImageCards.innerHTML = '<div class="aip-section-label">Current images</div>' + images.map((image) => `
-        <div class="aip-image-card" data-ai-image-path="${escapeHtml(image.path)}">
-          <div class="aip-image-thumb" style="${image.src ? `background-image:url('${image.src}')` : ''}"></div>
-          <p class="aip-image-caption">${escapeHtml(image.query)}</p>
-        </div>`).join('');
-      els.aiImageCards.style.display = 'block';
-    }
-
     function refreshAiPanelIfOpen() {
       if (els.fieldEditModal?.classList.contains('show')) renderAiPanel();
     }
@@ -3106,7 +3058,10 @@
         els.aiFieldsList.innerHTML = '';
       }
       const hasQuestions = renderQuestionCards();
-      renderAiImages();
+      if (els.aiImageCards) {
+        els.aiImageCards.style.display = 'none';
+        els.aiImageCards.innerHTML = '';
+      }
       const popupHtml = templateAiPopupHtml();
       if (els.aiEditTitle) {
         els.aiEditTitle.textContent = hasQuestions ? 'AI Edit Worksheet' : 'AI Edit';
