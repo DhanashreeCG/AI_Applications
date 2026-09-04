@@ -3,6 +3,11 @@ import { normalizeBullMqPrefix } from '../common/redis/redis-connection.util';
 export interface AppConfig {
   nodeEnv: string;
   port: number;
+  cors: {
+    origins: string[];
+    allowAll: boolean;
+    credentials: boolean;
+  };
   database: {
     url: string;
   };
@@ -193,9 +198,31 @@ function envInt(primary: string, fallback: string, defaultValue: number): number
   return parseInt(raw || String(defaultValue), 10);
 }
 
+function parseCorsOrigins(): string[] {
+  const listed = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim().replace(/\/$/, ''))
+    .filter((value) => value.length > 0 && value !== '*');
+
+  const parent = envTrim('PARENT_ORIGIN').replace(/\/$/, '');
+  if (parent && parent !== '*' && /^https?:\/\//i.test(parent)) {
+    listed.push(parent);
+  }
+
+  return [...new Set(listed)];
+}
+
 export default (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3000', 10),
+  cors: {
+    origins: parseCorsOrigins(),
+    allowAll:
+      process.env.CORS_ORIGINS === '*' ||
+      (parseCorsOrigins().length === 0 &&
+        (process.env.NODE_ENV || 'development') !== 'production'),
+    credentials: process.env.CORS_CREDENTIALS === 'true',
+  },
   database: {
     url: process.env.DATABASE_URL || '',
   },
