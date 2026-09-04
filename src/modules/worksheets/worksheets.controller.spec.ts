@@ -24,6 +24,8 @@ describe('WorksheetsController', () => {
     uploadImage: jest.fn(),
     loadUserUpload: jest.fn(),
     regenerate: jest.fn(),
+    correctGrammar: jest.fn(),
+    searchLibrary: jest.fn(),
   };
   const renderService = {
     render: jest.fn(),

@@ -18,6 +18,7 @@ import {
 import {
   buildWorksheetContentPrompt,
   buildWorksheetEditPrompt,
+  buildWorksheetGrammarPrompt,
 } from '../constants/worksheet-prompt.constants';
 import { WorksheetException } from '../errors/worksheet.exception';
 import { GenerateWorksheetRequest } from '../types/worksheet.types';
@@ -263,6 +264,55 @@ export class WorksheetContentService {
         completeMetadata: { fieldPath: input.fieldPath },
       },
     );
+  }
+
+  public async correctLearnerGrammar(
+    structure: Record<string, unknown>,
+    telemetry?: PipelineTelemetryContext,
+  ): Promise<Record<string, unknown>> {
+    const parsed = await this.generateJson(
+      buildWorksheetGrammarPrompt({ structure }),
+      WORKSHEET_EDIT_STAGE,
+      telemetry,
+    );
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return structure;
+    }
+    const next = { ...structure };
+    const incoming = (parsed as { questions?: unknown }).questions;
+    if (Array.isArray(incoming) && Array.isArray(next.questions)) {
+      next.questions = (next.questions as Array<Record<string, unknown>>).map(
+        (current, index) => {
+          const updated = incoming[index];
+          if (!updated || typeof updated !== 'object' || Array.isArray(updated)) {
+            return current;
+          }
+          const record = updated as Record<string, unknown>;
+          const merged: Record<string, unknown> = { ...current };
+          if (typeof record.question === 'string') {
+            merged.question = record.question;
+          }
+          if (Array.isArray(record.options) && Array.isArray(current.options)) {
+            merged.options = (current.options as Array<Record<string, unknown>>).map(
+              (option, optionIndex) => {
+                const nextOption = record.options?.[optionIndex];
+                if (
+                  nextOption &&
+                  typeof nextOption === 'object' &&
+                  !Array.isArray(nextOption) &&
+                  typeof (nextOption as { text?: unknown }).text === 'string'
+                ) {
+                  return { ...option, text: (nextOption as { text: string }).text };
+                }
+                return option;
+              },
+            );
+          }
+          return merged;
+        },
+      );
+    }
+    return next;
   }
 
   private async generateJson(

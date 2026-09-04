@@ -21,7 +21,10 @@ import {
   throwContentNotAllowed,
 } from '../../../common/content-safety/assert-user-query';
 import { containsForbiddenContent } from '../../flashcards/utils/content-restriction.registry';
-import { EditWorksheetDto } from '../dto/edit-worksheet.dto';
+import {
+  CorrectWorksheetGrammarDto,
+  EditWorksheetDto,
+} from '../dto/edit-worksheet.dto';
 import { GenerateWorksheetDto } from '../dto/generate-worksheet.dto';
 import { SaveWorksheetDto } from '../dto/save-worksheet.dto';
 import { RegenerateWorksheetDto } from '../dto/regenerate-worksheet.dto';
@@ -76,6 +79,49 @@ export class WorksheetEditService {
     _options: EditWorksheetOptions = {},
   ): Promise<GenerateWorksheetResponse> {
     return this.runEdit(worksheetId, dto);
+  }
+
+  public async correctGrammar(
+    worksheetId: string,
+    dto: CorrectWorksheetGrammarDto,
+  ): Promise<GenerateWorksheetResponse> {
+    const worksheet = await this.prisma.worksheet.findUnique({
+      where: { id: worksheetId },
+    });
+    const inMemory =
+      !worksheet &&
+      worksheetId.startsWith('temp-') &&
+      dto.templateId &&
+      dto.structure &&
+      typeof dto.structure === 'object';
+    if (!worksheet && !inMemory) {
+      throw new WorksheetException(
+        'WORKSHEET_NOT_FOUND',
+        `Worksheet "${worksheetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const template = worksheet
+      ? await this.templateService.getById(worksheet.templateId)
+      : await this.templateService.getActiveByIdOrSlug(String(dto.templateId));
+    const structure = asStructureRecord(
+      worksheet ? worksheet.structure : dto.structure,
+    );
+    const corrected = await this.contentService.correctLearnerGrammar(structure);
+    const next = this.validationService.validateGeneratedStructure(
+      this.assetService.persistableStructure(corrected),
+      template,
+      { allowEnrichmentKeys: true },
+    );
+    return this.toResponse(
+      {
+        id: worksheetId,
+        status: worksheet?.status || 'GENERATED',
+        request: worksheet?.request || {},
+        structure: next,
+      },
+      template,
+    );
   }
 
   private async runEdit(

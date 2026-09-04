@@ -1024,6 +1024,29 @@
       gap: 8px;
     }
 
+    .aip-image-card {
+      border: 1px solid #e6e0f8;
+      border-radius: 12px;
+      padding: 10px;
+      margin-bottom: 12px;
+      background: #faf8ff;
+    }
+
+    .aip-image-thumb {
+      width: 100%;
+      height: 140px;
+      border-radius: 10px;
+      background: #f3effc center/contain no-repeat;
+      border: 1px solid #e6e0f8;
+    }
+
+    .aip-image-caption {
+      margin: 8px 2px 0;
+      font-size: 12px;
+      color: #4b3a72;
+      font-weight: 600;
+    }
+
     .aip-q-linked-title {
       font-size: 10px;
       font-weight: 700;
@@ -1500,6 +1523,7 @@
       </div>
       <div class="ai-panel-body">
         <div id="aiQuestionCards" style="display:none"></div>
+        <div id="aiImageCards" style="display:none"></div>
         <div class="aip-question-actions" id="aiQuestionActions">
           <button class="btn-grammar" id="aiCorrectGrammarBtn" type="button">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18 10a2.8 2.8 0 0 0-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>
@@ -1634,6 +1658,7 @@
       aiEditTitle: el('aiEditTitle'),
       aiEditSubtitle: el('aiEditSubtitle'),
       aiQuestionCards: el('aiQuestionCards'),
+      aiImageCards: el('aiImageCards'),
       aiQuestionActions: el('aiQuestionActions'),
       aiCorrectGrammarBtn: el('aiCorrectGrammarBtn'),
       aiSaveChangesBtn: el('aiSaveChangesBtn'),
@@ -2756,7 +2781,76 @@
     }
 
     function usesQuestionPanel() {
-      return Boolean(String(mergedTemplate(state.preview?.template).aiEditPanelJs || '').trim());
+      const hasPanel = Boolean(String(mergedTemplate(state.preview?.template).aiEditPanelJs || '').trim());
+      const questions = state.preview?.structure?.questions;
+      return hasPanel || (Array.isArray(questions) && questions.length > 0);
+    }
+
+    function applyAliasToStructure(structure, path, value) {
+      if (!structure || !path) return;
+      setStructureValue(structure, persistPathFor(path), value);
+    }
+
+    function previewImageSrcFromSlot(slot) {
+      if (!slot || typeof slot !== 'object') return '';
+      const raw = slot.assetUrl || slot.imageUrl || slot.signedUrl || '';
+      if (raw) return resolveUrl(String(raw));
+      if (slot.assetId) return apiUrl('/assets/' + encodeURIComponent(slot.assetId) + '/image');
+      return '';
+    }
+
+    function collectAiPanelImages() {
+      const structure = state.preview?.structure;
+      if (!structure || typeof structure !== 'object') return [];
+      const images = [];
+      const pushSlot = (path, slot) => {
+        if (!slot || typeof slot !== 'object') return;
+        const src = previewImageSrcFromSlot(slot);
+        if (!src && !slot.imageQuery) return;
+        images.push({
+          path,
+          src,
+          query: String(slot.imageQuery || slot.caption || path),
+        });
+      };
+      if (structure.image && typeof structure.image === 'object') {
+        pushSlot('image', structure.image);
+      }
+      const items = Array.isArray(structure.items) ? structure.items : [];
+      items.forEach((item, index) => {
+        if (item && typeof item === 'object') pushSlot('items[' + index + ']', item);
+      });
+      return images;
+    }
+
+    function renderAiImages() {
+      if (!els.aiImageCards) return;
+      const images = collectAiPanelImages();
+      if (!images.length) {
+        els.aiImageCards.style.display = 'none';
+        els.aiImageCards.innerHTML = '';
+        return;
+      }
+      els.aiImageCards.innerHTML = '<div class="aip-section-label">Current images</div>' + images.map((image) => `
+        <div class="aip-image-card" data-ai-image-path="${escapeHtml(image.path)}">
+          <div class="aip-image-thumb" style="${image.src ? `background-image:url('${image.src}')` : ''}"></div>
+          <p class="aip-image-caption">${escapeHtml(image.query)}</p>
+        </div>`).join('');
+      els.aiImageCards.style.display = 'block';
+    }
+
+    function refreshAiPanelIfOpen() {
+      if (els.fieldEditModal?.classList.contains('show')) renderAiPanel();
+    }
+
+    function syncFrameEditsIntoStructure() {
+      const doc = els.worksheetFrame?.contentDocument;
+      if (!doc || !state.preview?.structure) return;
+      doc.querySelectorAll('[data-editable]').forEach((node) => {
+        const path = node.getAttribute('data-editable') || node.getAttribute('data-field-path');
+        if (!path) return;
+        applyAliasToStructure(state.preview.structure, path, (node.innerText || '').trim());
+      });
     }
 
     function questionText(item, index) {
@@ -2894,14 +2988,9 @@
 
     function applyLocalField(path, value) {
       if (!state.preview?.structure) return;
-      const qMatch = path.match(/^question_(\d+)$/i);
-      const oMatch = path.match(/^option_(\d+)$/i);
-      if (qMatch || oMatch) {
-        applyQuestionToFrame(path, value);
-      } else {
-        setStructureValue(state.preview.structure, path, value);
-        applyTextInFrame(path, value);
-      }
+      applyAliasToStructure(state.preview.structure, path, value);
+      applyQuestionToFrame(path, value);
+      applyTextInFrame(path, value);
     }
 
     async function persistFieldValue(path, value) {
@@ -2983,6 +3072,7 @@
         els.aiFieldsList.innerHTML = '';
       }
       const hasQuestions = renderQuestionCards();
+      renderAiImages();
       const popupHtml = templateAiPopupHtml();
       if (els.aiEditTitle) {
         els.aiEditTitle.textContent = hasQuestions ? 'AI Edit Worksheet' : 'AI Edit';
@@ -3067,6 +3157,7 @@
       els.fieldEditError.textContent = '';
       els.regenQuery.value = '';
       await ensureTemplateAiEdit();
+      syncFrameEditsIntoStructure();
       renderAiPanel();
       els.fieldEditModal.classList.add('show');
     }
@@ -3153,7 +3244,7 @@
       doc?.querySelectorAll('[data-editable]').forEach((el) => {
         const path = el.getAttribute('data-field-path') || el.getAttribute('data-editable');
         if (!path) return;
-        setStructureValue(structure, path, el.innerText.trim());
+        applyAliasToStructure(structure, path, el.innerText.trim());
       });
 
       for (const [path, item] of Object.entries(state.pendingImageReplacements)) {
@@ -3431,7 +3522,7 @@
       if (!applySelectedImageToPreview()) return;
       closeImagePicker();
       toast('Image updated and saved locally');
-      if (els.fieldEditModal.classList.contains('show')) renderAiPanel();
+      refreshAiPanelIfOpen();
     });
 
     function closeSingleField() {
@@ -3444,10 +3535,10 @@
       const value = els.singleFieldCurrent.value;
       els.singleFieldError.style.display = 'none';
       if (isTempWorksheetId(state.worksheetId) && state.preview?.structure) {
-        setStructureValue(state.preview.structure, path, value);
-        applyTextInFrame(path, value);
+        applyLocalField(path, value);
         persistPreviewToItems();
         closeSingleField();
+        refreshAiPanelIfOpen();
         toast('Text updated locally');
         return;
       }
@@ -3462,10 +3553,11 @@
         els.singleFieldError.style.display = 'block';
         return;
       }
-      applyTextInFrame(path, value);
+      applyLocalField(path, value);
       if (body.structure) state.preview = { ...state.preview, structure: body.structure };
       persistPreviewToItems();
       closeSingleField();
+      refreshAiPanelIfOpen();
       toast('Text updated');
     });
 
@@ -3489,7 +3581,9 @@
       const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], body.structure);
       const text = typeof next === 'string' || typeof next === 'number' ? String(next) : els.singleFieldCurrent.value;
       els.singleFieldCurrent.value = text;
-      applyTextInFrame(path, text);
+      applyLocalField(path, text);
+      persistPreviewToItems();
+      refreshAiPanelIfOpen();
       toast('Text rewritten');
     });
 
@@ -3537,22 +3631,27 @@
 
     if (els.aiCorrectGrammarBtn) {
       els.aiCorrectGrammarBtn.addEventListener('click', async () => {
-        const fields = collectQuestionDraftFields().filter((item) => item.value);
-        if (!fields.length) return;
+        if (!collectQuestionDraftFields().some((item) => item.value)) return;
         els.aiCorrectGrammarBtn.disabled = true;
         els.fieldEditError.style.display = 'none';
         try {
-          let structure = draftStructureFromModal();
-          for (const field of fields) {
-            const body = await rewriteField(field.path, GRAMMAR_INSTRUCTION, {
-              persist: false,
-              draft: true,
-              structure,
+          const res = await apiFetch('/temp-ai-draft/grammar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              templateId: state.preview?.template?.id || state.preview?.template?.slug,
+              structure: draftStructureFromModal(),
+            }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(friendlyError(body, 'Could not correct grammar'));
+          const questions = Array.isArray(body.structure?.questions) ? body.structure.questions : [];
+          questions.forEach((item, index) => {
+            applyDraftTextToCard('question_' + (index + 1), String(item?.question || ''));
+            (Array.isArray(item?.options) ? item.options : []).forEach((opt, optionIndex) => {
+              applyDraftTextToCard('option_' + (optionIndex + 1), String(opt?.text || opt?.label || ''));
             });
-            const text = fieldTextFromStructure(body.structure, field.path);
-            applyDraftTextToCard(field.path, text);
-            if (body.structure) structure = body.structure;
-          }
+          });
           toast('Grammar corrected in editor. Save changes to apply.');
         } catch (error) {
           els.fieldEditError.textContent = friendlyError(error, 'Could not correct grammar');

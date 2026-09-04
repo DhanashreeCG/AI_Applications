@@ -377,6 +377,38 @@ export function withLineartQuery(
   return `${trimmed} lineart`;
 }
 
+const LEARNER_LINEART_TERM = /\s*\b(line\s*art|lineart)\b/gi;
+const IMAGE_DESCRIPTION_KEYS = new Set<string>(IMAGE_QUERY_ALIAS_KEYS);
+
+export function stripLineartFromLearnerText(value: string): string {
+  return value.replace(LEARNER_LINEART_TERM, ' ').replace(/\s+/g, ' ').trim();
+}
+
+export function stripLineartFromNonImageFields(
+  structure: Record<string, unknown>,
+): Record<string, unknown> {
+  const walk = (node: unknown, key?: string): unknown => {
+    if (typeof node === 'string') {
+      if (key && IMAGE_DESCRIPTION_KEYS.has(key)) {
+        return node;
+      }
+      return stripLineartFromLearnerText(node);
+    }
+    if (Array.isArray(node)) {
+      return node.map((item) => walk(item));
+    }
+    if (!isRecord(node)) {
+      return node;
+    }
+    const next: Record<string, unknown> = {};
+    for (const [childKey, child] of Object.entries(node)) {
+      next[childKey] = walk(child, childKey);
+    }
+    return next;
+  };
+  return asStructureRecord(walk(structure));
+}
+
 export function collectImageQueries(
   value: unknown,
   path = '',

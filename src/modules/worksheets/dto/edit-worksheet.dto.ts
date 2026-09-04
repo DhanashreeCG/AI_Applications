@@ -31,3 +31,18 @@ export class EditWorksheetDto {
   })
   structure?: Record<string, unknown>;
 }
+
+export class CorrectWorksheetGrammarDto {
+  @ApiPropertyOptional({ example: 'IN' })
+  countryCode?: string;
+
+  @ApiPropertyOptional({
+    description: 'Template id or slug. Required when correcting a temp-generated worksheet.',
+  })
+  templateId?: string;
+
+  @ApiPropertyOptional({
+    description: 'In-memory structure for temp-generated worksheets (not yet persisted).',
+  })
+  structure?: Record<string, unknown>;
+}

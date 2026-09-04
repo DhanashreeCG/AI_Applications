@@ -4,7 +4,9 @@ import { WorksheetException } from '../errors/worksheet.exception';
 import {
   asStructureRecord,
   collectImageQueries,
+  isAnswerAndColourSlug,
   parseJsonObject,
+  stripLineartFromNonImageFields,
   validateAgainstSchema,
 } from '../utils/structure.util';
 import { WorksheetTemplateRecord } from './worksheet-template.service';
@@ -29,7 +31,9 @@ export class WorksheetValidationService {
     template: WorksheetTemplateRecord,
     options: { allowEnrichmentKeys?: boolean } = {},
   ): Record<string, unknown> {
-    const record = asStructureRecord(structure);
+    const record = isAnswerAndColourSlug(template.slug)
+      ? stripLineartFromNonImageFields(asStructureRecord(structure))
+      : asStructureRecord(structure);
     const schema = this.parseStructureDefinition(template);
     validateAgainstSchema(record, schema, 'structure', {
       allowEnrichmentKeys: options.allowEnrichmentKeys ?? false,

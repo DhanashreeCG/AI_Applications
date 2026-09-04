@@ -34,7 +34,10 @@ import {
   CreateWorksheetTemplateDto,
   CreateWorksheetTemplateResponseDto,
 } from './dto/create-worksheet-template.dto';
-import { EditWorksheetDto } from './dto/edit-worksheet.dto';
+import {
+  CorrectWorksheetGrammarDto,
+  EditWorksheetDto,
+} from './dto/edit-worksheet.dto';
 import {
   GenerateWorksheetDto,
   GenerateWorksheetResponseDto,
@@ -299,6 +302,23 @@ export class WorksheetsController {
     const background = files?.background?.[0];
     const sample = files?.sample?.[0] ?? files?.example?.[0];
     return this.templateService.create(dto, { background, sample });
+  }
+
+  @Post(':worksheetId/grammar')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Correct grammar on all worksheet questions in one Gemini call',
+  })
+  @ApiOkResponse({ type: GenerateWorksheetResponseDto })
+  async correctGrammar(
+    @Param('worksheetId') worksheetId: string,
+    @Body() dto: CorrectWorksheetGrammarDto,
+    @Headers('x-country-code') headerCountryCode?: string,
+  ) {
+    return this.editService.correctGrammar(worksheetId, {
+      ...dto,
+      countryCode: dto.countryCode || headerCountryCode,
+    });
   }
 
   @Post(':worksheetId/edit')

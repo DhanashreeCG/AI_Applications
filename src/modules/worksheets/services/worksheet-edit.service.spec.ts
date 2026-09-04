@@ -30,6 +30,7 @@ describe('WorksheetEditService', () => {
   const contentService = {
     generateFieldReplacement: jest.fn(),
     generateStructure: jest.fn(),
+    correctLearnerGrammar: jest.fn(),
   };
   const validationService = {
     validateGeneratedStructure: jest.fn(),
@@ -261,5 +262,22 @@ describe('WorksheetEditService', () => {
       'I',
       'V',
     ]);
+  });
+
+  it('corrects all questions in one grammar call without persisting', async () => {
+    const corrected = {
+      ...worksheet.structure,
+      questions: [{ question: 'What will you do?' }],
+    };
+    contentService.correctLearnerGrammar.mockResolvedValue(corrected);
+    const result = await service.correctGrammar('temp-ai-draft', {
+      templateId: 'tmpl-1',
+      structure: {
+        questions: [{ question: 'what will you do' }],
+      },
+    });
+    expect(contentService.correctLearnerGrammar).toHaveBeenCalledTimes(1);
+    expect(prisma.worksheet.update).not.toHaveBeenCalled();
+    expect(result.structure).toEqual(corrected);
   });
 });

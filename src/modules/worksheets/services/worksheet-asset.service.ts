@@ -26,8 +26,10 @@ import {
 } from '../types/worksheet.types';
 import {
   collectImageQueries,
+  isAnswerAndColourSlug,
   normalizeImageQueryFields,
   patchImageSlot,
+  stripLineartFromNonImageFields,
   withLineartQuery,
   setUserUploadedImageIndex,
   setValueAtPath,
@@ -126,7 +128,12 @@ export class WorksheetAssetService {
     },
     telemetry?: PipelineTelemetryContext,
   ): Promise<Array<{ structure: Record<string, unknown>; slots: ResolvedAssetSlot[] }>> {
-    const normalizedList = structures.map((s) => normalizeImageQueryFields(s));
+    const normalizedList = structures.map((s) => {
+      const normalized = normalizeImageQueryFields(s);
+      return isAnswerAndColourSlug(options?.templateSlug)
+        ? stripLineartFromNonImageFields(normalized)
+        : normalized;
+    });
 
     // 1. Gather all slot queries across all structures in the batch
     const allSlotRequests: Array<{

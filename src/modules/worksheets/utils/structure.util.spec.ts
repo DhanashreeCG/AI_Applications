@@ -2,6 +2,7 @@ import {
   collectImageSlots,
   normalizeImageQueryFields,
   normalizeLlmWorksheetPayload,
+  stripLineartFromNonImageFields,
   withLineartQuery,
 } from './structure.util';
 
@@ -96,5 +97,24 @@ describe('withLineartQuery', () => {
 
   it('leaves other templates unchanged', () => {
     expect(withLineartQuery('two goats', 'circle_the_words')).toBe('two goats');
+  });
+});
+
+describe('stripLineartFromNonImageFields', () => {
+  it('keeps lineart on imageQuery and removes it from questions and topic', () => {
+    const next = stripLineartFromNonImageFields({
+      topic: 'Farm lineart animals',
+      instruction_text: 'Colour the line art picture.',
+      questions: [{ question: 'What is this lineart goat doing?' }],
+      image: { imageQuery: 'two goats lineart' },
+    });
+    expect(next.topic).toBe('Farm animals');
+    expect(next.instruction_text).toBe('Colour the picture.');
+    expect(
+      (next.questions as Array<{ question: string }>)[0].question,
+    ).toBe('What is this goat doing?');
+    expect((next.image as { imageQuery: string }).imageQuery).toBe(
+      'two goats lineart',
+    );
   });
 });

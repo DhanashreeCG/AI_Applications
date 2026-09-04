@@ -158,8 +158,9 @@ export function buildWorksheetContentPrompt(input: {
     input.templateSlug === 'answer-and-colour'
       ? [
           'For answer_and_colour worksheets:',
-          '- Every imageQuery MUST include the word "lineart" so the library returns colouring-page outlines only.',
-          '- Do not request finished coloured pictures.',
+          '- Put the word "lineart" ONLY in imageQuery (the image search description). Example: "two goats lineart".',
+          '- Never write "lineart", "line art", or colouring-page wording in topic, questions, options, instruction_text, badge_label, or any learner-facing sentence.',
+          '- Do not request finished coloured pictures in imageQuery.',
           '',
         ]
       : []),
@@ -253,10 +254,30 @@ export function buildWorksheetEditPrompt(input: {
     'Return JSON of the form {"value": <replacement>}.',
     'The replacement must be the new value for this field only.',
     'If the field uses images, keep or update imageQuery as a visual search phrase, never a filename.',
+    'Put "lineart" only in imageQuery. Never put "lineart" or "line art" in questions, options, topic, or instructions.',
     'Plain text only. No HTML, CSS, or JavaScript.',
   ]
     .filter((line) => line !== '')
     .join('\n');
+}
+
+export function buildWorksheetGrammarPrompt(input: {
+  structure: Record<string, unknown>;
+}): string {
+  const questions = Array.isArray(input.structure.questions)
+    ? input.structure.questions
+    : [];
+  return [
+    'Correct grammar and spelling in these worksheet questions and options only.',
+    'Keep the same meaning, count, order, and age level.',
+    'Do not add or remove questions or options.',
+    'Do not mention lineart, images, or layout.',
+    'Return JSON only: {"questions":[{"question":"...","options":[{"text":"..."}]}]}',
+    'Omit options on a question if it has none.',
+    '',
+    'Current questions:',
+    JSON.stringify(questions, null, 2),
+  ].join('\n');
 }
 
 export const WORKSHEET_TEMPLATE_SELECTION_PROMPT_VERSION = 'v1-worksheet-fit';
