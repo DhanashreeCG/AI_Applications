@@ -1,6 +1,13 @@
+import { normalizeBullMqPrefix } from '../common/redis/redis-connection.util';
+
 export interface AppConfig {
   nodeEnv: string;
   port: number;
+  cors: {
+    origins: string[];
+    allowAll: boolean;
+    credentials: boolean;
+  };
   database: {
     url: string;
   };
@@ -13,8 +20,12 @@ export interface AppConfig {
   redis: {
     host: string;
     port: number;
+    username?: string;
     password?: string;
     enabled: boolean;
+    tls: boolean;
+    cluster: boolean;
+    db: number;
     searchCacheTtlSeconds: number;
     assetMetadataCacheTtlSeconds: number;
   };
@@ -208,9 +219,31 @@ function envInt(primary: string, fallback: string, defaultValue: number): number
   return parseInt(raw || String(defaultValue), 10);
 }
 
+function parseCorsOrigins(): string[] {
+  const listed = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim().replace(/\/$/, ''))
+    .filter((value) => value.length > 0 && value !== '*');
+
+  const parent = envTrim('PARENT_ORIGIN').replace(/\/$/, '');
+  if (parent && parent !== '*' && /^https?:\/\//i.test(parent)) {
+    listed.push(parent);
+  }
+
+  return [...new Set(listed)];
+}
+
 export default (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3000', 10),
+  cors: {
+    origins: parseCorsOrigins(),
+    allowAll:
+      process.env.CORS_ORIGINS === '*' ||
+      (parseCorsOrigins().length === 0 &&
+        (process.env.NODE_ENV || 'development') !== 'production'),
+    credentials: process.env.CORS_CREDENTIALS === 'true',
+  },
   database: {
     url: process.env.DATABASE_URL || '',
   },
@@ -223,8 +256,12 @@ export default (): AppConfig => ({
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD,
+    username: process.env.REDIS_USERNAME || undefined,
+    password: process.env.REDIS_PASSWORD || undefined,
     enabled: process.env.REDIS_ENABLED !== 'false',
+    tls: process.env.REDIS_TLS === 'true',
+    cluster: process.env.REDIS_CLUSTER === 'true',
+    db: parseInt(process.env.REDIS_DB || '0', 10),
     searchCacheTtlSeconds: parseInt(
       process.env.REDIS_SEARCH_CACHE_TTL_SECONDS || '300',
       10,
@@ -298,7 +335,7 @@ export default (): AppConfig => ({
       'SQS_WORKER_SHUTDOWN_TIMEOUT_MS',
       30000,
     ),
-    prefix: process.env.BULLMQ_PREFIX || 'asset-ingestion',
+    prefix: normalizeBullMqPrefix(process.env.BULLMQ_PREFIX),
   },
   flashcards: {
     gyanApiBaseUrl: envTrim('GYAN_API_BASE_URL') || 'https://gyan-api.creativegalileo.com',

@@ -12,11 +12,16 @@ import { Browser, chromium } from 'playwright';
 export class BrowserPoolService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BrowserPoolService.name);
   private readonly enabled: boolean;
+  private readonly executablePath?: string;
   private browser: Browser | null = null;
   private launchPromise: Promise<Browser> | null = null;
 
   constructor(private readonly configService: ConfigService) {
-    this.enabled = true;
+    this.enabled =
+      this.configService.get<boolean>('flashcards.renderer.enabled') !== false ||
+      this.configService.get<boolean>('worksheets.renderer.enabled') !== false;
+    this.executablePath =
+      process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined;
   }
 
   async onModuleInit(): Promise<void> {
@@ -24,12 +29,20 @@ export class BrowserPoolService implements OnModuleInit, OnModuleDestroy {
       this.logger.log('Playwright renderer disabled; skipping browser launch');
       return;
     }
-    await this.getBrowser();
+
+    try {
+      await this.getBrowser();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Playwright failed to launch at startup; API will start without a browser. ${message}`,
+      );
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
     if (this.browser) {
-      await this.browser.close();
+      await this.browser.close().catch(() => undefined);
       this.browser = null;
       this.launchPromise = null;
       this.logger.log('Playwright browser closed');
@@ -49,7 +62,13 @@ export class BrowserPoolService implements OnModuleInit, OnModuleDestroy {
       this.launchPromise = chromium
         .launch({
           headless: true,
-          args: ['--font-render-hinting=none'],
+          executablePath: this.executablePath,
+          args: [
+            '--font-render-hinting=none',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+          ],
         })
         .then((browser) => {
           this.browser = browser;
@@ -58,10 +77,27 @@ export class BrowserPoolService implements OnModuleInit, OnModuleDestroy {
         })
         .catch((error) => {
           this.launchPromise = null;
-          throw error;
+          throw this.toLaunchError(error);
         });
     }
 
     return this.launchPromise;
+  }
+
+  private toLaunchError(error: unknown): ServiceUnavailableException {
+    const message = error instanceof Error ? error.message : String(error);
+    const missingLib = /cannot open shared object file|libatk|shared libraries/i.test(
+      message,
+    );
+
+    if (missingLib) {
+      return new ServiceUnavailableException(
+        'Playwright Chromium is missing OS libraries (e.g. libatk-1.0.so.0). On the server run: npx playwright install-deps chromium',
+      );
+    }
+
+    return new ServiceUnavailableException(
+      `Playwright browser is unavailable: ${message}`,
+    );
   }
 }
