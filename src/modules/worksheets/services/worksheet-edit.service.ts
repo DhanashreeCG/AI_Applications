@@ -37,6 +37,7 @@ import {
   resolveAliasFieldPath,
   setValueAtPath,
   visualQueryFromImageRecord,
+  withLineartQuery,
 } from '../utils/structure.util';
 import { applyNumberMatchOverrides } from '../utils/number-match.util';
 import { WorksheetAssetService } from './worksheet-asset.service';
@@ -184,7 +185,7 @@ export class WorksheetEditService {
         const slot = await this.assetService.resolveSlot(
           item.query,
           item.parentPath,
-          { grades: meta.grades },
+          { grades: meta.grades, templateSlug: template.slug },
         );
         next = this.assetService.applySlot(next, slot);
       }
@@ -291,6 +292,7 @@ export class WorksheetEditService {
       for (const item of changed) {
         const slot = await this.assetService.resolveSlot(item.query, item.parentPath, {
           grades: meta.grades,
+          templateSlug: template.slug,
         });
         next = this.assetService.applySlot(next, slot);
       }
@@ -338,18 +340,22 @@ export class WorksheetEditService {
     if (!query) {
       return { query: '', results: [] };
     }
+    const template = await this.templateService.getById(worksheet.templateId);
+    const searchQuery = withLineartQuery(query, template.slug);
     const results = await this.assetService.searchCandidates(
-      query,
+      searchQuery,
       options.limit,
       options.countryCode,
+      template.slug,
     );
-    return { query, results };
+    return { query: searchQuery, results };
   }
 
   public async searchLibrary(options: {
     query?: string;
     limit?: number;
     countryCode?: string;
+    templateSlug?: string;
   }): Promise<{
     query: string;
     results: Array<{
@@ -363,12 +369,14 @@ export class WorksheetEditService {
     if (!query) {
       return { query: '', results: [] };
     }
+    const searchQuery = withLineartQuery(query, options.templateSlug);
     const results = await this.assetService.searchCandidates(
-      query,
+      searchQuery,
       options.limit,
       options.countryCode,
+      options.templateSlug,
     );
-    return { query, results };
+    return { query: searchQuery, results };
   }
 
   public async uploadImage(
@@ -600,7 +608,12 @@ export class WorksheetEditService {
       this.emitter,
       telemetry,
       PIPELINE_STAGES.IMAGE_RETRIEVAL,
-      () => this.assetService.attachAssets(generated, undefined, telemetry),
+      () =>
+        this.assetService.attachAssets(
+          generated,
+          { templateSlug: template.slug },
+          telemetry,
+        ),
     );
     const validated = await runTrackedStage(
       this.emitter,

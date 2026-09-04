@@ -315,7 +315,7 @@ export class WorksheetGenerationService {
       () =>
         this.assetService.attachAssetsBatch(
           generatedList,
-          undefined,
+          { templateSlug: template.slug },
           telemetry,
         ),
       {

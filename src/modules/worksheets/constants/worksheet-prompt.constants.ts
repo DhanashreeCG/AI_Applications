@@ -154,6 +154,15 @@ export function buildWorksheetContentPrompt(input: {
     'Educational request:',
     userRequest || 'Generate age-appropriate worksheet content for the selected template.',
     '',
+    ...(input.templateSlug === 'answer_and_colour' ||
+    input.templateSlug === 'answer-and-colour'
+      ? [
+          'For answer_and_colour worksheets:',
+          '- Every imageQuery MUST include the word "lineart" so the library returns colouring-page outlines only.',
+          '- Do not request finished coloured pictures.',
+          '',
+        ]
+      : []),
     ...(input.templateSlug === 'circle_the_things' ? [
       'For circle_the_things worksheets:',
       '- items[] must have exactly 6-8 items',

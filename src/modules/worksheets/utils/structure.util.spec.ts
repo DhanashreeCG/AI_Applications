@@ -1,4 +1,9 @@
-import { collectImageSlots, normalizeImageQueryFields, normalizeLlmWorksheetPayload } from './structure.util';
+import {
+  collectImageSlots,
+  normalizeImageQueryFields,
+  normalizeLlmWorksheetPayload,
+  withLineartQuery,
+} from './structure.util';
 
 describe('normalizeImageQueryFields pair images', () => {
   it('wraps left_image and right_image filenames into searchable slots', () => {
@@ -73,5 +78,23 @@ describe('normalizeLlmWorksheetPayload', () => {
     );
     expect(result).toHaveLength(1);
     expect((result[0] as { topic: string }).topic).toBe('A');
+  });
+});
+
+describe('withLineartQuery', () => {
+  it('appends lineart for answer_and_colour when missing', () => {
+    expect(withLineartQuery('two goats', 'answer_and_colour')).toBe(
+      'two goats lineart',
+    );
+  });
+
+  it('does not duplicate an existing lineart term', () => {
+    expect(withLineartQuery('goat lineart', 'answer-and-colour')).toBe(
+      'goat lineart',
+    );
+  });
+
+  it('leaves other templates unchanged', () => {
+    expect(withLineartQuery('two goats', 'circle_the_words')).toBe('two goats');
   });
 });

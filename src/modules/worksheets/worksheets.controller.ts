@@ -220,6 +220,7 @@ export class WorksheetsController {
       query: query.query,
       limit: query.limit != null ? Number(query.limit) : undefined,
       countryCode: query.countryCode || headerCountryCode,
+      templateSlug: query.templateSlug,
     });
   }
 

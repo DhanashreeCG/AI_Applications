@@ -351,6 +351,32 @@ export function normalizeImageQueryFields(
   return asStructureRecord(walk(structure));
 }
 
+const ANSWER_AND_COLOUR_SLUGS = new Set([
+  'answer_and_colour',
+  'answer-and-colour',
+]);
+const LINEART_QUERY_HINT = /\b(line\s*art|lineart|outline)\b/i;
+
+export function isAnswerAndColourSlug(
+  slug?: string | null,
+): boolean {
+  return Boolean(slug && ANSWER_AND_COLOUR_SLUGS.has(slug.trim().toLowerCase()));
+}
+
+export function withLineartQuery(
+  query: string,
+  templateSlug?: string | null,
+): string {
+  const trimmed = query.trim();
+  if (!trimmed || !isAnswerAndColourSlug(templateSlug)) {
+    return trimmed;
+  }
+  if (LINEART_QUERY_HINT.test(trimmed)) {
+    return trimmed;
+  }
+  return `${trimmed} lineart`;
+}
+
 export function collectImageQueries(
   value: unknown,
   path = '',

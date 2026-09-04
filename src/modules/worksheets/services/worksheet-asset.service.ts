@@ -28,6 +28,7 @@ import {
   collectImageQueries,
   normalizeImageQueryFields,
   patchImageSlot,
+  withLineartQuery,
   setUserUploadedImageIndex,
   setValueAtPath,
   stripTransientAssetFields,
@@ -105,7 +106,11 @@ export class WorksheetAssetService {
 
   public async attachAssets(
     structure: Record<string, unknown>,
-    options?: { grades?: string[]; ageGroups?: string[] },
+    options?: {
+      grades?: string[];
+      ageGroups?: string[];
+      templateSlug?: string;
+    },
     telemetry?: PipelineTelemetryContext,
   ): Promise<{ structure: Record<string, unknown>; slots: ResolvedAssetSlot[] }> {
     const [result] = await this.attachAssetsBatch([structure], options, telemetry);
@@ -114,7 +119,11 @@ export class WorksheetAssetService {
 
   public async attachAssetsBatch(
     structures: Array<Record<string, unknown>>,
-    options?: { grades?: string[]; ageGroups?: string[] },
+    options?: {
+      grades?: string[];
+      ageGroups?: string[];
+      templateSlug?: string;
+    },
     telemetry?: PipelineTelemetryContext,
   ): Promise<Array<{ structure: Record<string, unknown>; slots: ResolvedAssetSlot[] }>> {
     const normalizedList = structures.map((s) => normalizeImageQueryFields(s));
@@ -132,7 +141,7 @@ export class WorksheetAssetService {
       for (const item of queries) {
         uniqueParents.set(item.parentPath, {
           path: item.parentPath,
-          query: item.query,
+          query: withLineartQuery(item.query, options?.templateSlug),
         });
       }
       for (const item of uniqueParents.values()) {
@@ -280,10 +289,14 @@ export class WorksheetAssetService {
   public async resolveSlot(
     imageQuery: string,
     path: string,
-    options?: { grades?: string[]; ageGroups?: string[] },
+    options?: {
+      grades?: string[];
+      ageGroups?: string[];
+      templateSlug?: string;
+    },
     telemetry?: PipelineTelemetryContext,
   ): Promise<ResolvedAssetSlot> {
-    const query = imageQuery.trim();
+    const query = withLineartQuery(imageQuery, options?.templateSlug);
     if (!query) {
       return this.emptySlot(path, query);
     }
@@ -525,6 +538,7 @@ export class WorksheetAssetService {
     query: string,
     limit?: number,
     countryCode?: string,
+    templateSlug?: string,
   ): Promise<
     Array<{
       assetId: string;
@@ -533,7 +547,7 @@ export class WorksheetAssetService {
       imageUrl: string;
     }>
   > {
-    const trimmed = query.trim();
+    const trimmed = withLineartQuery(query, templateSlug);
     if (!trimmed) {
       return [];
     }

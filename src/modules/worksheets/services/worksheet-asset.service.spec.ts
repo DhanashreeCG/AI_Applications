@@ -227,6 +227,39 @@ describe('WorksheetAssetService', () => {
     });
   });
 
+  it('appends lineart to search queries for answer_and_colour', async () => {
+    searchService.searchMany.mockResolvedValue(
+      new Map([
+        [
+          'two goats lineart',
+          {
+            query: 'two goats lineart',
+            total: 1,
+            results: [
+              {
+                assetId: 'goat-lineart',
+                similarity: 0.9,
+                s3ObjectKey: 'assets/goat.png',
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+
+    const { slots } = await service.attachAssets(
+      { image: { imageQuery: 'two goats' } },
+      { templateSlug: 'answer_and_colour' },
+    );
+
+    expect(searchService.searchMany).toHaveBeenCalledWith(
+      ['two goats lineart'],
+      expect.objectContaining({ retrieval: true }),
+    );
+    expect(slots[0].imageQuery).toBe('two goats lineart');
+    expect(slots[0].assetId).toBe('goat-lineart');
+  });
+
   it('returns empty slot when search returns 0 results', async () => {
     searchService.searchMany.mockResolvedValueOnce(
       new Map([

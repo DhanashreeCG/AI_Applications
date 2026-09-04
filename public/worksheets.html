@@ -465,6 +465,23 @@
       pointer-events: none;
     }
 
+    .tile-name {
+      margin: 0;
+      padding: 10px 12px 12px;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1.3;
+    }
+
+    .template-tile .tile-card {
+      cursor: default;
+    }
+
+    .results-tabs {
+      margin: 0 0 16px;
+    }
+
     .tile-actions {
       display: flex;
       flex-wrap: wrap;
@@ -896,7 +913,9 @@
 
     .aip-q-row-btns {
       display: flex;
+      flex-wrap: wrap;
       justify-content: flex-end;
+      gap: 8px;
     }
 
     .aip-q-linked {
@@ -1252,30 +1271,45 @@
     </section>
 
     <section class="results" id="gridSection">
-      <div class="summary" id="summary">
-        <div class="pills" id="metaPills"></div>
-        <div class="summary-actions">
-          <button class="btn-soft" id="toggleSelectMode" type="button">Select Options</button>
-          <button class="btn-soft" id="saveSelectedWorksheets" type="button" style="display:none">Save Selected</button>
-          <button class="btn-soft" id="saveAllWorksheets" type="button">Save all</button>
+      <div class="results-tabs image-picker-tabs">
+        <button class="image-tab active" id="templatesTabBtn" type="button">All Templates</button>
+        <button class="image-tab" id="generatedTabBtn" type="button">Generated worksheets</button>
+      </div>
+
+      <div id="templatesPane">
+        <div class="grid" id="templateGrid"></div>
+        <div class="empty" id="templatesEmpty" style="display:none">
+          <h2>No templates yet</h2>
+          <p>Templates will appear here when the catalog is available.</p>
         </div>
       </div>
 
-      <div class="grid" id="worksheetGrid"></div>
-
-      <div class="empty" id="empty">
-        <h2>No worksheets yet</h2>
-        <p>Add a learning topic, pick an age group, then generate.</p>
-      </div>
-
-      <div class="table-foot">
-        <div class="rows-per-page" id="rowsPerPage">
-          <span>Row per page:</span>
-          <button aria-current="true" data-size="10" type="button">10</button>
-          <button data-size="20" type="button">20</button>
-          <button data-size="50" type="button">50</button>
+      <div id="generatedPane" class="hidden">
+        <div class="summary" id="summary">
+          <div class="pills" id="metaPills"></div>
+          <div class="summary-actions">
+            <button class="btn-soft" id="toggleSelectMode" type="button">Select Options</button>
+            <button class="btn-soft" id="saveSelectedWorksheets" type="button" style="display:none">Save Selected</button>
+            <button class="btn-soft" id="saveAllWorksheets" type="button">Save all</button>
+          </div>
         </div>
-        <div class="pager" id="pager"></div>
+
+        <div class="grid" id="worksheetGrid"></div>
+
+        <div class="empty" id="empty">
+          <h2>No worksheets yet</h2>
+          <p>Add a learning topic, pick an age group, then generate.</p>
+        </div>
+
+        <div class="table-foot">
+          <div class="rows-per-page" id="rowsPerPage">
+            <span>Row per page:</span>
+            <button aria-current="true" data-size="10" type="button">10</button>
+            <button data-size="20" type="button">20</button>
+            <button data-size="50" type="button">50</button>
+          </div>
+          <div class="pager" id="pager"></div>
+        </div>
       </div>
     </section>
 
@@ -1426,6 +1460,7 @@
       imageBlobCache: new Map(),
       lastImageSearch: { query: '', results: [], path: null },
       imagePickerTab: 'search',
+      resultsTab: 'templates',
       imagePickerLimit: 10,
       imagePickFromAi: false,
       busy: false,
@@ -1448,6 +1483,12 @@
       metaPills: el('metaPills'),
       empty: el('empty'),
       worksheetGrid: el('worksheetGrid'),
+      templateGrid: el('templateGrid'),
+      templatesPane: el('templatesPane'),
+      generatedPane: el('generatedPane'),
+      templatesTabBtn: el('templatesTabBtn'),
+      generatedTabBtn: el('generatedTabBtn'),
+      templatesEmpty: el('templatesEmpty'),
       pager: el('pager'),
       rowsPerPage: el('rowsPerPage'),
       formSection: el('formSection'),
@@ -1732,6 +1773,42 @@
       parent.style.height = Math.round(height * scale) + 'px';
     }
 
+    function setResultsTab(tab) {
+      state.resultsTab = tab === 'generated' ? 'generated' : 'templates';
+      const showGenerated = state.resultsTab === 'generated';
+      if (els.templatesTabBtn) els.templatesTabBtn.classList.toggle('active', !showGenerated);
+      if (els.generatedTabBtn) els.generatedTabBtn.classList.toggle('active', showGenerated);
+      if (els.templatesPane) els.templatesPane.classList.toggle('hidden', showGenerated);
+      if (els.generatedPane) els.generatedPane.classList.toggle('hidden', !showGenerated);
+    }
+
+    function renderTemplateCards() {
+      if (!els.templateGrid) return;
+      els.templateGrid.innerHTML = '';
+      const templates = Array.isArray(state.templates) ? state.templates : [];
+      if (els.templatesEmpty) {
+        els.templatesEmpty.style.display = templates.length ? 'none' : 'block';
+      }
+      templates.forEach((template) => {
+        const tile = document.createElement('div');
+        tile.className = 'tile template-tile';
+        const card = document.createElement('div');
+        card.className = 'tile-card';
+        const frameWrap = document.createElement('div');
+        frameWrap.className = 'thumb-frame';
+        if (template.sampleUrl) {
+          frameWrap.style.background = `center/cover url('${resolveUrl(template.sampleUrl)}')`;
+        }
+        const name = document.createElement('p');
+        name.className = 'tile-name';
+        name.textContent = template.name || template.slug || 'Template';
+        card.appendChild(frameWrap);
+        card.appendChild(name);
+        tile.appendChild(card);
+        els.templateGrid.appendChild(tile);
+      });
+    }
+
     function appendCard(item) {
       const loved = favorites().includes(item.id);
       const tile = document.createElement('div');
@@ -1910,6 +1987,7 @@
       const count = Number(els.countSelect.value) || state.defaultCount;
       clearBanners();
       setBusy(true);
+      setResultsTab('generated');
       renderSkeletons(count);
       state.items = [];
       state.selectedIds.clear();
@@ -2601,6 +2679,8 @@
             <div class="aip-q-prompt-wrap">
               <textarea class="aip-q-prompt" data-ai-q-prompt="question_${n}" rows="2" placeholder="Enter prompt to regenerate… (leave blank to auto-regenerate)"></textarea>
               <div class="aip-q-row-btns">
+                <button class="btn-soft" type="button" data-ai-q-save="question_${n}" style="padding:6px 13px;font-size:12px;">Save changes</button>
+                <button class="btn-soft" type="button" data-ai-q-grammar="question_${n}" style="padding:6px 13px;font-size:12px;">Correct grammar</button>
                 <button class="btn-primary" type="button" data-ai-q-regen="question_${n}" style="padding:6px 13px;font-size:12px;">✦ Re-Generate</button>
               </div>
             </div>
@@ -2628,6 +2708,104 @@
         state.preview = { ...state.preview, ...body, id: body.id || state.worksheetId };
         persistPreviewToItems();
       }
+      return body;
+    }
+
+    const GRAMMAR_INSTRUCTION = 'Correct grammar and spelling only. Keep the same meaning, length, and age level.';
+
+    function isAnswerAndColourTemplate(template) {
+      const slug = String(template?.slug || '').trim().toLowerCase();
+      return slug === 'answer_and_colour' || slug === 'answer-and-colour';
+    }
+
+    function withLineartSearchQuery(query) {
+      const trimmed = String(query || '').trim();
+      if (!trimmed) return trimmed;
+      if (/\b(line\s*art|lineart|outline)\b/i.test(trimmed)) return trimmed;
+      return trimmed + ' lineart';
+    }
+
+    function fieldTextFromStructure(structure, path) {
+      if (!structure || !path) return '';
+      const qMatch = path.match(/^question_(\d+)$/i);
+      if (qMatch && Array.isArray(structure.questions)) {
+        return String(structure.questions[Number(qMatch[1]) - 1]?.question || '');
+      }
+      const oMatch = path.match(/^option_(\d+)$/i);
+      if (oMatch && Array.isArray(structure.questions)) {
+        const parent = structure.questions.find((item) => Array.isArray(item.options));
+        return String(parent?.options?.[Number(oMatch[1]) - 1]?.text || '');
+      }
+      const next = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], structure);
+      return typeof next === 'string' || typeof next === 'number' ? String(next) : '';
+    }
+
+    function applyLocalField(path, value) {
+      if (!state.preview?.structure) return;
+      const qMatch = path.match(/^question_(\d+)$/i);
+      const oMatch = path.match(/^option_(\d+)$/i);
+      if (qMatch || oMatch) {
+        applyQuestionToFrame(path, value);
+      } else {
+        setStructureValue(state.preview.structure, path, value);
+        applyTextInFrame(path, value);
+      }
+    }
+
+    async function persistFieldValue(path, value) {
+      applyLocalField(path, value);
+      if (isTempWorksheetId(state.worksheetId)) {
+        persistPreviewToItems();
+        return { local: true };
+      }
+      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(friendlyError(body, 'Could not save field'));
+      if (body.structure) {
+        state.preview = { ...state.preview, structure: body.structure, html: body.html || state.preview.html };
+      }
+      persistPreviewToItems();
+      return body;
+    }
+
+    function persistPathFor(path) {
+      const qMatch = path.match(/^question_(\d+)$/i);
+      if (qMatch) return `questions[${Number(qMatch[1]) - 1}].question`;
+      const oMatch = path.match(/^option_(\d+)$/i);
+      if (oMatch) {
+        const questions = structureQuestions();
+        const qi = questions.findIndex((item) => Array.isArray(item.options));
+        return `questions[${qi >= 0 ? qi : 0}].options[${Number(oMatch[1]) - 1}].text`;
+      }
+      return path;
+    }
+
+    async function persistFieldList(fields) {
+      const list = (fields || []).filter((item) => item && item.path);
+      if (!list.length) return;
+      list.forEach((item) => applyLocalField(item.path, item.value));
+      if (isTempWorksheetId(state.worksheetId)) {
+        persistPreviewToItems();
+        return { local: true };
+      }
+      let body = {};
+      for (const item of list) {
+        const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/fields`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: persistPathFor(item.path), value: item.value }),
+        });
+        body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(friendlyError(body, 'Could not save changes'));
+        if (body.structure) {
+          state.preview = { ...state.preview, structure: body.structure, html: body.html || state.preview.html };
+        }
+      }
+      persistPreviewToItems();
       return body;
     }
 
@@ -2673,6 +2851,17 @@
         const topic = state.preview?.structure?.topic || state.preview?.request?.topic || '';
         const topicField = els.aiTemplatePopup.querySelector('[data-field="topic"], #aiField_topic');
         if (topicField && !topicField.value && topic) topicField.value = topic;
+        if (els.aiTemplatePopup.querySelector('.ai-structured-field, [data-field]')
+          && !els.aiTemplatePopup.querySelector('[data-ai-popup-save]')) {
+          const row = document.createElement('div');
+          row.className = 'aip-q-row-btns';
+          row.style.marginTop = '12px';
+          row.innerHTML = `
+            <button class="btn-soft" type="button" data-ai-popup-save="true" style="padding:6px 13px;font-size:12px;">Save changes</button>
+            <button class="btn-soft" type="button" data-ai-popup-grammar="true" style="padding:6px 13px;font-size:12px;">Correct grammar</button>
+          `;
+          els.aiTemplatePopup.appendChild(row);
+        }
         return;
       }
       els.aiTemplatePopup.innerHTML = '';
@@ -2872,7 +3061,13 @@
       els.searchImagesBtn.disabled = true;
       els.imageResultsCount.textContent = 'Searching…';
       const params = new URLSearchParams();
-      if (query) params.set('query', query);
+      let searchQuery = query;
+      const template = state.preview?.template;
+      if (isAnswerAndColourTemplate(template)) {
+        if (searchQuery) searchQuery = withLineartSearchQuery(searchQuery);
+        if (template.slug) params.set('templateSlug', template.slug);
+      }
+      if (searchQuery) params.set('query', searchQuery);
       if (path) params.set('path', path);
       params.set('limit', String(state.imagePickerLimit || 10));
       const searchPath = isTempWorksheetId(state.worksheetId)
@@ -3026,6 +3221,8 @@
     els.imagePickerCancelBtn.addEventListener('click', closeImagePicker);
     els.searchTabBtn.addEventListener('click', () => setImagePickerTab('search'));
     els.uploadTabBtn.addEventListener('click', () => setImagePickerTab('upload'));
+    if (els.templatesTabBtn) els.templatesTabBtn.addEventListener('click', () => setResultsTab('templates'));
+    if (els.generatedTabBtn) els.generatedTabBtn.addEventListener('click', () => setResultsTab('generated'));
     function readFileAsDataUrl(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -3153,6 +3350,48 @@
     });
 
     els.aiQuestionCards.addEventListener('click', async (event) => {
+      const saveBtn = event.target.closest('[data-ai-q-save]');
+      if (saveBtn) {
+        const path = saveBtn.getAttribute('data-ai-q-save');
+        const card = saveBtn.closest('.aip-q-card');
+        const questionText = card?.querySelector(`[data-ai-question="${path}"]`)?.textContent ?? '';
+        const fields = [{ path, value: questionText.trim() }];
+        card?.querySelectorAll('[data-ai-option]').forEach((box) => {
+          fields.push({ path: box.getAttribute('data-ai-option'), value: (box.value || '').trim() });
+        });
+        saveBtn.disabled = true;
+        els.fieldEditError.style.display = 'none';
+        try {
+          await persistFieldList(fields);
+          toast(isTempWorksheetId(state.worksheetId) ? 'Changes saved locally' : 'Changes saved');
+        } catch (error) {
+          els.fieldEditError.textContent = friendlyError(error, 'Could not save changes');
+          els.fieldEditError.style.display = 'block';
+        } finally {
+          saveBtn.disabled = false;
+        }
+        return;
+      }
+      const grammarBtn = event.target.closest('[data-ai-q-grammar]');
+      if (grammarBtn) {
+        const path = grammarBtn.getAttribute('data-ai-q-grammar');
+        grammarBtn.disabled = true;
+        els.fieldEditError.style.display = 'none';
+        try {
+          const body = await rewriteField(path, GRAMMAR_INSTRUCTION);
+          const text = fieldTextFromStructure(body.structure, path);
+          const current = els.aiQuestionCards.querySelector(`[data-ai-question="${path}"]`);
+          if (current && text) current.textContent = text;
+          applyQuestionToFrame(path, text);
+          toast('Grammar corrected');
+        } catch (error) {
+          els.fieldEditError.textContent = friendlyError(error, 'Could not correct grammar');
+          els.fieldEditError.style.display = 'block';
+        } finally {
+          grammarBtn.disabled = false;
+        }
+        return;
+      }
       const regenBtn = event.target.closest('[data-ai-q-regen]');
       if (!regenBtn) return;
       const path = regenBtn.getAttribute('data-ai-q-regen');
@@ -3190,6 +3429,51 @@
         els.fieldEditError.style.display = 'block';
       } finally {
         regenBtn.disabled = false;
+      }
+    });
+
+    els.aiTemplatePopup.addEventListener('click', async (event) => {
+      const saveBtn = event.target.closest('[data-ai-popup-save]');
+      const grammarBtn = event.target.closest('[data-ai-popup-grammar]');
+      if (!saveBtn && !grammarBtn) return;
+      const fields = [];
+      els.aiTemplatePopup.querySelectorAll('.ai-structured-field, [data-field]').forEach((node) => {
+        const key = node.getAttribute('data-field') || node.id?.replace(/^aiField_/, '');
+        if (!key) return;
+        fields.push({ path: key, value: (node.value || '').trim() });
+      });
+      els.fieldEditError.style.display = 'none';
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        try {
+          await persistFieldList(fields);
+          toast(isTempWorksheetId(state.worksheetId) ? 'Changes saved locally' : 'Changes saved');
+        } catch (error) {
+          els.fieldEditError.textContent = friendlyError(error, 'Could not save changes');
+          els.fieldEditError.style.display = 'block';
+        } finally {
+          saveBtn.disabled = false;
+        }
+        return;
+      }
+      grammarBtn.disabled = true;
+      try {
+        for (const field of fields) {
+          if (!field.value) continue;
+          const body = await rewriteField(field.path, GRAMMAR_INSTRUCTION);
+          const text = fieldTextFromStructure(body.structure, field.path);
+          if (!text) continue;
+          const input = els.aiTemplatePopup.querySelector(`[data-field="${field.path}"], #aiField_${field.path}`);
+          if (input) input.value = text;
+          applyLocalField(field.path, text);
+        }
+        persistPreviewToItems();
+        toast('Grammar corrected');
+      } catch (error) {
+        els.fieldEditError.textContent = friendlyError(error, 'Could not correct grammar');
+        els.fieldEditError.style.display = 'block';
+      } finally {
+        grammarBtn.disabled = false;
       }
     });
 
@@ -3381,6 +3665,7 @@
             options.push(`<option value="${t.id}">${escapeHtml(t.name)}</option>`);
           });
           els.templateSelect.innerHTML = options.join('');
+          renderTemplateCards();
         }
       } catch (error) {
         console.warn('Could not load templates', error);

@@ -200,6 +200,7 @@ describe('WorksheetEditService', () => {
       'red apple',
       5,
       undefined,
+      undefined,
     );
     expect(result.query).toBe('red apple');
     expect(result.results).toHaveLength(1);
@@ -218,6 +219,7 @@ describe('WorksheetEditService', () => {
       'red apples',
       undefined,
       undefined,
+      'counting_objects_v1',
     );
   });
 
@@ -248,7 +250,7 @@ describe('WorksheetEditService', () => {
     expect(contentService.generateStructure).toHaveBeenCalled();
     expect(assetService.attachAssets).toHaveBeenCalledWith(
       llmStructure,
-      undefined,
+      { templateSlug: 'counting_objects_v1' },
       expect.any(Object),
     );
     expect(result.structure.topic).toBe('whole numbers');
