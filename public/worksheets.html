@@ -2354,8 +2354,9 @@
     function openImagePicker(path, slotId, fromAi) {
       if (!state.editMode && !fromAi && !state.imagePickFromAi) return;
       state.imagePickFromAi = Boolean(fromAi || state.imagePickFromAi);
-      state.selectedImageSlotId = slotId || state.selectedImageSlotId;
-      state.selectedImagePath = resolveImagePath(path, slotId);
+      const fallbackId = slotId || path || window.selectedImageItemId || state.selectedImageSlotId;
+      state.selectedImageSlotId = fallbackId;
+      state.selectedImagePath = resolveImagePath(path || fallbackId, fallbackId);
       state.selectedSearchItem = null;
       setImagePickerTab('search');
       const query = imageSearchQueryFor(state.preview?.structure, state.selectedImagePath);
@@ -2365,6 +2366,9 @@
       els.imagePickerModal.classList.add('show');
       searchImages();
     }
+    window.openImagePicker = function (path, slotId) {
+      openImagePicker(path, slotId, state.imagePickFromAi);
+    };
 
     function resolveImagePath(path, slotId) {
       if (path && path !== 'undefined' && path !== 'null') return path;
@@ -2513,6 +2517,12 @@
       if (!slots.length && slotId) {
         doc.querySelectorAll('img' + cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
       }
+      if (!slots.length && slotId) {
+        doc.querySelectorAll('[data-image-slot="' + String(slotId).replace(/"/g, '') + '"]').forEach((n) => {
+          const img = n.tagName === 'IMG' ? n : n.querySelector && n.querySelector('img');
+          if (img && !img.classList.contains('worksheet-bg')) slots.push(img);
+        });
+      }
       if (!slots.length && (path === 'image' || slotId === 'image' || slotId === 'main_image' || slotId === 'goat')) {
         doc.querySelectorAll('.image-wrap img, .img-zone-box img, img[data-field-path="image"]').forEach((n) => {
           if (!n.classList.contains('worksheet-bg')) slots.push(n);
@@ -2627,7 +2637,8 @@
     function fieldValueAt(path) {
       const structure = state.preview?.structure;
       if (!path || !structure) return '';
-      const node = path.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], structure);
+      const resolved = persistPathFor(path);
+      const node = resolved.split(/[.[\]]/).filter(Boolean).reduce((cur, key) => cur?.[key], structure);
       if (node == null) return '';
       if (typeof node === 'string' || typeof node === 'number') return String(node);
       return '';
@@ -3022,6 +3033,21 @@
         const qi = questions.findIndex((item) => Array.isArray(item.options));
         return `questions[${qi >= 0 ? qi : 0}].options[${Number(oMatch[1]) - 1}].text`;
       }
+      const sentence = path.match(/^sentence_(\d+)$/i);
+      if (sentence && Array.isArray(state.preview?.structure?.rows)) {
+        return `rows[${Number(sentence[1]) - 1}].sentence`;
+      }
+      const itemText = path.match(/^(?:item|caption)_(\d+)$/i);
+      if (itemText && Array.isArray(state.preview?.structure?.items)) {
+        const index = Number(itemText[1]) - 1;
+        const rec = state.preview.structure.items[index];
+        const key = rec && rec.caption != null ? 'caption'
+          : rec && rec.label != null ? 'label'
+          : rec && rec.word != null ? 'word'
+          : rec && rec.text != null ? 'text'
+          : 'caption';
+        return `items[${index}].${key}`;
+      }
       return path;
     }
 
@@ -3112,9 +3138,18 @@
     function applyTextInFrame(path, value) {
       const doc = els.worksheetFrame.contentDocument;
       if (!doc) return;
-      doc.querySelectorAll(`[data-editable='${path}'], [data-field-path='${path}']`).forEach((el) => {
-        if (el.tagName === 'IMG') return;
-        el.textContent = value;
+      const aliases = [path, persistPathFor(path)];
+      const itemMatch = persistPathFor(path).match(/^items\[(\d+)\]\.(caption|label|word|text)$/);
+      if (itemMatch) {
+        aliases.push('item_' + (Number(itemMatch[1]) + 1), 'caption_' + (Number(itemMatch[1]) + 1));
+      }
+      const seen = new Set();
+      aliases.filter(Boolean).forEach((alias) => {
+        doc.querySelectorAll(`[data-editable='${alias}'], [data-field-path='${alias}']`).forEach((el) => {
+          if (el.tagName === 'IMG' || seen.has(el)) return;
+          seen.add(el);
+          el.textContent = value;
+        });
       });
     }
 
@@ -3168,6 +3203,7 @@
         toast('That text field could not be identified');
         return;
       }
+      path = persistPathFor(path);
       state.selectedFieldPath = path;
       const doc = els.worksheetFrame.contentDocument;
       const live = doc?.querySelector(`[data-editable='${path}'], [data-field-path='${path}']`);
@@ -3231,7 +3267,9 @@
       if (item.assetId) {
         next.userUploadedKey = null;
       }
-      if (item.caption && isPlainSearchName(item.caption)) next.caption = item.caption;
+      if (item.caption && isPlainSearchName(item.caption) && !next.caption && !next.label) {
+        next.caption = item.caption;
+      }
       if (!next.imageQuery && item.queryUsed) next.imageQuery = item.queryUsed;
       setStructureValue(structure, path, next);
     }

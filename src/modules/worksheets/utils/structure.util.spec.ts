@@ -2,6 +2,8 @@ import {
   collectImageSlots,
   normalizeImageQueryFields,
   normalizeLlmWorksheetPayload,
+  resolveAliasFieldPath,
+  resolveAliasImagePath,
   stripLineartFromNonImageFields,
   withLineartQuery,
 } from './structure.util';
@@ -116,5 +118,19 @@ describe('stripLineartFromNonImageFields', () => {
     expect((next.image as { imageQuery: string }).imageQuery).toBe(
       'two goats lineart',
     );
+  });
+});
+
+describe('alias field paths', () => {
+  const structure = {
+    items: [{ caption: 'C for Carrot', imageQuery: 'carrot' }],
+    questions: [{ question: 'What?' }],
+  };
+
+  it('maps item_1 to the item caption and IMAGE_1 to the item slot', () => {
+    expect(resolveAliasFieldPath(structure, 'item_1')).toBe('items[0].caption');
+    expect(resolveAliasImagePath(structure, 'item_1')).toBe('items[0]');
+    expect(resolveAliasImagePath(structure, 'IMAGE_1')).toBe('items[0]');
+    expect(resolveAliasFieldPath(structure, 'question_1')).toBe('questions[0].question');
   });
 });

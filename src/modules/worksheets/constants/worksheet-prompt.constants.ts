@@ -195,6 +195,18 @@ export function buildWorksheetContentPrompt(input: {
           '',
         ]
       : []),
+    ...(input.templateSlug === 'look_and_say_letters_and_sounds' ? [
+      'For look_and_say_letters_and_sounds worksheets:',
+      '- Return exactly 4 items[] in this order: top_left, top_right, bottom_left, bottom_right.',
+      '- All 4 words must start with the same target letter and every word must be DIFFERENT.',
+      '- Never repeat a word in uppercase and lowercase form (no "Ant" + "ant", no "Apple" + "apple"). Four distinct objects, e.g. Y -> Yoghurt, yak, Yo-yo, yarn.',
+      '- top_left and bottom_left use the uppercase letter: case "upper", letter "Y", caption "Y for Yoghurt".',
+      '- top_right and bottom_right use the lowercase letter: case "lower", letter "y", caption "y for yak".',
+      '- Set letter_upper, letter_lower, and target_letter to that one letter.',
+      '- Each item needs its own imageQuery describing only that item\'s word (e.g. "single ball of yarn"). All 4 imageQuery values must be different.',
+      '- Choose concrete, picture-friendly nouns young children know. Keep worksheet_type as look_and_say_letters_and_sounds.',
+      ''
+    ] : []),
     ...(input.templateSlug === 'number_names' ? [
       'For number_names matching worksheets:',
       '- Output pairs[], not items[]. Each pair has number (left column string) and name (right column string).',

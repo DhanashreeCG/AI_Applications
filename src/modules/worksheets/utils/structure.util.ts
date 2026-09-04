@@ -571,7 +571,45 @@ export function resolveAliasFieldPath(
   if (sentence && Array.isArray(root.rows)) {
     return `rows[${Number(sentence[1]) - 1}].sentence`;
   }
+  const itemText = fieldPath.match(/^(?:item|caption)_(\d+)$/i);
+  if (itemText && Array.isArray(root.items)) {
+    const index = Number(itemText[1]) - 1;
+    const rec = isRecord(root.items[index]) ? root.items[index] : null;
+    const key =
+      rec && typeof rec.caption === 'string'
+        ? 'caption'
+        : rec && typeof rec.label === 'string'
+          ? 'label'
+          : rec && typeof rec.word === 'string'
+            ? 'word'
+            : rec && typeof rec.text === 'string'
+              ? 'text'
+              : 'caption';
+    return `items[${index}].${key}`;
+  }
   return fieldPath;
+}
+
+/** Map prototype image ids (item_1, IMAGE_2) onto the item object path. */
+export function resolveAliasImagePath(
+  root: Record<string, unknown>,
+  slotId: string,
+): string {
+  const needle = slotId.trim();
+  if (!needle) {
+    return needle;
+  }
+  if (/^[a-zA-Z_]\w*(\[\d+](\.[a-zA-Z_]\w*)*)+$/.test(needle) || /^\w+\[\d+]/.test(needle)) {
+    return needle;
+  }
+  const numbered = needle.match(/^(?:item|image|img|slot)_?(\d+)$/i);
+  if (numbered && Array.isArray(root.items)) {
+    return `items[${Number(numbered[1]) - 1}]`;
+  }
+  if (needle === 'main_image' || needle === 'goat' || needle === 'hero' || needle === 'primary') {
+    return isRecord(root.image) ? 'image' : needle;
+  }
+  return needle;
 }
 
 export function getValueAtPath(root: unknown, fieldPath: string): unknown {

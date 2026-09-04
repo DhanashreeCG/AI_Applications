@@ -54,4 +54,19 @@ describe('worksheet regen prompt', () => {
     expect(prompt).not.toContain('badge_label');
     expect(prompt).not.toContain('"name": "one"');
   });
+
+  it('requires four distinct words for look-and-say phonics worksheets', () => {
+    const prompt = buildWorksheetContentPrompt({
+      request: { topic: 'letter A', ageGroup: '4-5' },
+      templateName: 'Look and Say Letters and Sounds',
+      templateSlug: 'look_and_say_letters_and_sounds',
+      structureDefinition: { type: 'object' },
+      meta: {},
+    });
+
+    expect(prompt).toContain('exactly 4 items[]');
+    expect(prompt).toContain('every word must be DIFFERENT');
+    expect(prompt).toContain('no "Ant" + "ant"');
+    expect(prompt).toContain('All 4 imageQuery values must be different');
+  });
 });

@@ -1,6 +1,8 @@
 import {
   collectImageSlots,
   filenameToSearchQuery,
+  resolveAliasFieldPath,
+  resolveAliasImagePath,
   visualQueryFromImageRecord,
 } from './structure.util';
 import { ImageSlotRef } from '../types/worksheet.types';
@@ -627,9 +629,185 @@ export function resolveImageSlot(
     const index = Number(indexMatch[1]) - 1;
     return (
       slots.find((slot) => slot.path === `items[${index}]`) ||
+      slots.find((slot) => slot.slotId.toLowerCase() === `item_${index + 1}`) ||
       slots.find((slot) => slot.path.endsWith(`[${index}]`)) ||
       null
     );
   }
   return null;
+}
+
+export type ImageZoneBox = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * Quadrant boxes measured against the background artwork: the green ring
+ * renders at x 324-690 / y 479-835 on the 1016x1316 canvas, so the top row
+ * stays above it and the bottom row stays beside it. Keep every box clear of
+ * that rect or pictures cover the letter circle.
+ */
+const DEFAULT_LOOK_AND_SAY_ZONES: Record<string, ImageZoneBox> = {
+  item_1: { left: 55, top: 245, width: 265, height: 230 },
+  item_2: { left: 696, top: 245, width: 265, height: 230 },
+  item_3: { left: 55, top: 700, width: 265, height: 275 },
+  item_4: { left: 696, top: 700, width: 265, height: 275 },
+};
+
+function stylePx(style: string, prop: string): number | undefined {
+  const found = style.match(new RegExp(`${prop}\\s*:\\s*([\\d.]+)px`, 'i'));
+  return found ? Number(found[1]) : undefined;
+}
+
+/**
+ * Quadrant image boxes from prototype .img-zone-box overlays.
+ */
+export function parseImageZoneBoxes(html: string): Record<string, ImageZoneBox> {
+  const zones: Record<string, ImageZoneBox> = {};
+  const tagRe = /<div\b[^>]*class=["'][^"']*\bimg-zone-box\b[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = tagRe.exec(html))) {
+    const tag = match[0];
+    const id =
+      tag.match(/selectWorksheetImage\(\s*['"]([^'"]+)['"]\s*\)/i)?.[1] ||
+      tag.match(/data-image-slot=["']([^"']+)["']/i)?.[1] ||
+      tag.match(/data-item-id=["']([^'"]+)["']/i)?.[1];
+    const style = tag.match(/\bstyle=["']([^"']+)["']/i)?.[1] || '';
+    const left = stylePx(style, 'left');
+    const top = stylePx(style, 'top');
+    const width = stylePx(style, 'width');
+    const height = stylePx(style, 'height');
+    if (!id || ![left, top, width, height].every(Number.isFinite)) {
+      continue;
+    }
+    const box = { left: left!, top: top!, width: width!, height: height! };
+    zones[id] = box;
+    const n = id.match(/(\d+)$/)?.[1];
+    if (n) {
+      zones[`item_${n}`] = box;
+      zones[`IMAGE_${n}`] = box;
+    }
+  }
+  return zones;
+}
+
+export function imageZoneForSlot(
+  html: string,
+  slotId: string,
+): ImageZoneBox | undefined {
+  const zones = parseImageZoneBoxes(html);
+  const n = slotId.match(/(\d+)$/)?.[1];
+  const parsed = zones[slotId] || (n ? zones[`item_${n}`] : undefined);
+  if (parsed) {
+    return parsed;
+  }
+  const isLookAndSay =
+    /\{\{\s*IMAGE[_:]\d+/i.test(html) ||
+    /caption-q[1-4]/i.test(html) ||
+    /look_and_say/i.test(html);
+  if (!isLookAndSay) {
+    return undefined;
+  }
+  return (
+    DEFAULT_LOOK_AND_SAY_ZONES[slotId] ||
+    (n ? DEFAULT_LOOK_AND_SAY_ZONES[`item_${n}`] : undefined)
+  );
+}
+
+export function highlightCaptionLetter(text: string, letter: string): string {
+  const escaped = escapeHtml(text);
+  const raw = letter.trim();
+  if (!raw) {
+    return escaped;
+  }
+  const re = new RegExp(raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  return escaped.replace(re, (match) => `<span class="hl-letter">${match}</span>`);
+}
+
+function upsertHtmlAttr(attrs: string, name: string, value: string): string {
+  if (new RegExp(`\\b${name}\\s*=`, 'i').test(attrs)) {
+    return attrs;
+  }
+  return `${attrs} ${name}="${escapeAttr(value)}"`;
+}
+
+/**
+ * Prototype templates use item_1 / selectWorksheetImage(). Wire the same
+ * data-field-path / data-image-slot hooks every editor already understands.
+ */
+export function bindGenericEditorHooks(
+  html: string,
+  structure: Record<string, unknown>,
+): string {
+  let next = html.replace(
+    /<(div|button|span)(\s[^>]*?(?:img-zone-box|img-camera-btn)[^>]*)>/gi,
+    (full, tag: string, attrs: string) => {
+      const id =
+        attrs.match(/selectWorksheetImage\(\s*['"]([^'"]+)['"]/i)?.[1] ||
+        attrs.match(/data-image-slot=["']([^"']+)["']/i)?.[1];
+      if (!id) {
+        return full;
+      }
+      const path = resolveAliasImagePath(structure, id);
+      let out = upsertHtmlAttr(attrs, 'data-image-slot', id);
+      out = upsertHtmlAttr(out, 'data-field-path', path);
+      return `<${tag}${out}>`;
+    },
+  );
+
+  next = next.replace(
+    /<([a-z0-9]+)(\s[^>]*\bdata-editable=["']([^"']+)["'][^>]*)>/gi,
+    (full, tag: string, attrs: string, editable: string) => {
+      if (/\bdata-field-path=/i.test(attrs)) {
+        return full;
+      }
+      const resolved = resolveAliasFieldPath(structure, editable);
+      if (resolved === editable) {
+        return full;
+      }
+      return `<${tag}${upsertHtmlAttr(attrs, 'data-field-path', resolved)}>`;
+    },
+  );
+
+  next = next.replace(
+    /(\sdata-pencil-for=["'])([^"']+)(["'])/gi,
+    (_match, open: string, path: string, close: string) => {
+      return `${open}${resolveAliasFieldPath(structure, path)}${close}`;
+    },
+  );
+
+  return next;
+}
+
+export function injectLookAndSayCaptions(
+  html: string,
+  structure: Record<string, unknown>,
+): string {
+  if (!/class=["'][^"']*\bcaption\b/i.test(html)) {
+    return html;
+  }
+  const items = Array.isArray(structure.items) ? structure.items : [];
+  const target =
+    typeof structure.target_letter === 'string' ? structure.target_letter : '';
+  return html.replace(
+    /(<div\b[^>]*class=["'][^"']*\bcaption\b[^>]*>)([\s\S]*?)(<\/div>)/gi,
+    (full, open: string, inner: string, close: string) => {
+      const editable = open.match(/data-editable=["']([^"']+)["']/i)?.[1] || '';
+      const indexMatch = editable.match(/item[_-]?(\d+)/i);
+      const index = indexMatch ? Number(indexMatch[1]) - 1 : -1;
+      const item = index >= 0 && isRecord(items[index]) ? items[index] : null;
+      const letter =
+        (item && typeof item.letter === 'string' && item.letter) || target;
+      const caption =
+        (item && typeof item.caption === 'string' && item.caption) ||
+        inner.replace(/<[^>]+>/g, '').trim();
+      if (!caption || !letter) {
+        return full;
+      }
+      return `${open}${highlightCaptionLetter(caption, letter)}${close}`;
+    },
+  );
 }

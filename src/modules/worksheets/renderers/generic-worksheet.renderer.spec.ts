@@ -407,11 +407,68 @@ NULL
     expect(html).toContain('The toys are in the box.');
     expect(html).toContain('data-editable="sentence_1"');
     expect(html).toContain('data-field-path="rows[0].sentence"');
-    expect(html).toContain('data-pencil-for="sentence_1"');
+    expect(html).toContain('data-pencil-for="rows[0].sentence"');
     expect(html).toContain('/worksheets/assets/toy/image');
     expect(html).not.toContain('{{ROWS}}');
     expect(html).not.toContain('{{WORD_BANK_ITEMS}}');
     expect(html).not.toContain('"target_sight_word"');
+  });
+
+  it('places look-and-say quadrant images and highlights target letters', () => {
+    const html = renderer.render({
+      templateHtml: `
+<style>
+.caption { position:absolute; }
+.caption-q1 { left:45px; top:508px; }
+.worksheet-image { position:absolute; object-fit:contain; }
+</style>
+{{IMAGE_1}}
+<div class="img-zone-box" onclick="selectWorksheetImage('item_1')" style="left:50px;top:260px;width:300px;height:230px;"></div>
+<div class="caption caption-q1" data-editable="item_1">{{CAPTION_1}}</div>
+{{IMAGE_2}}
+<div class="img-zone-box" onclick="selectWorksheetImage('item_2')" style="left:540px;top:260px;width:400px;height:230px;"></div>
+<div class="caption caption-q2" data-editable="item_2">{{CAPTION_2}}</div>
+`,
+      structure: {
+        worksheet_type: 'look_and_say_letters_and_sounds',
+        target_letter: 'C',
+        letter_upper: 'C',
+        letter_lower: 'c',
+        items: [
+          {
+            id: 'item_1',
+            letter: 'C',
+            caption: 'C for Carrot',
+            imageQuery: 'orange carrot vegetable',
+            imageUrl: '/worksheets/assets/carrot/image',
+          },
+          {
+            id: 'item_2',
+            letter: 'c',
+            caption: 'c for corn',
+            imageQuery: 'yellow corn cob',
+            assetUrl: '/worksheets/assets/corn/image',
+          },
+        ],
+      },
+      mode: 'export',
+    });
+
+    expect(html).toContain('src="/worksheets/assets/carrot/image"');
+    expect(html).toContain('src="/worksheets/assets/corn/image"');
+    expect(html).toContain('data-image-slot="item_1"');
+    expect(html).toContain('data-image-slot="item_2"');
+    expect(html).toContain('data-field-path="items[0]"');
+    expect(html).toContain('data-field-path="items[0].caption"');
+    expect(html).toContain('data-field-path="items[1]"');
+    expect(html).toContain('left:50px;top:260px;width:300px;height:230px');
+    expect(html).toContain('left:540px;top:260px;width:400px;height:230px');
+    expect(html).toContain('z-index:2');
+    expect(html).toContain('<span class="hl-letter">C</span> for <span class="hl-letter">C</span>arrot');
+    expect(html).toContain('<span class="hl-letter">c</span> for <span class="hl-letter">c</span>orn');
+    expect(html).not.toContain('{{IMAGE_1}}');
+    expect(html).not.toContain('{{IMAGE_2}}');
+    expect(html).not.toContain('left:70px;top:300px');
   });
 });
 
