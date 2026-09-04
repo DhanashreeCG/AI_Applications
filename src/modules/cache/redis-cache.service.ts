@@ -44,6 +44,7 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
       password: password || undefined,
       lazyConnect: true,
       maxRetriesPerRequest: 1,
+      tls: {}
     });
 
     this.client.on('error', (error) => {
