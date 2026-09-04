@@ -1,3 +1,5 @@
+import { normalizeBullMqPrefix } from '../common/redis/redis-connection.util';
+
 export interface AppConfig {
   nodeEnv: string;
   port: number;
@@ -13,8 +15,12 @@ export interface AppConfig {
   redis: {
     host: string;
     port: number;
+    username?: string;
     password?: string;
     enabled: boolean;
+    tls: boolean;
+    cluster: boolean;
+    db: number;
     searchCacheTtlSeconds: number;
     assetMetadataCacheTtlSeconds: number;
   };
@@ -54,9 +60,41 @@ export interface AppConfig {
     prefix: string;
   };
   flashcards: {
+    gyanApiBaseUrl: string;
+    parentOrigin: string;
     imageConcurrency: number;
+    cardConcurrency: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
+    imageEmbeddingMaxAttempts: number;
+    imageEmbeddingRetryDelayMs: number;
+    imagePickerLimit: number;
+    userUploadS3Prefix: string;
+    defaultCountryCode?: string;
+    contentRestrictionInputRatio: number;
+    templateSelectionAi: {
+      enabled: boolean;
+      provider: string;
+      openaiModel: string;
+      geminiModel: string;
+      minConfidence: number;
+      timeoutMs: number;
+      catalogTtlMs: number;
+      costPerMInputUsd: number;
+      costPerMCachedInputUsd: number;
+      costPerMOutputUsd: number;
+    };
+    imageQueryRefinement: {
+      enabled: boolean;
+      provider: string;
+      geminiModel: string;
+      openaiModel: string;
+      timeoutMs: number;
+      maxAttempts: number;
+      retryDelayMs: number;
+      assetVocabularyEnabled: boolean;
+      assetVocabularyLimit: number;
+    };
     renderer: {
       enabled: boolean;
       storageBackend: 'local' | 's3';
@@ -67,12 +105,77 @@ export interface AppConfig {
       concurrency: number;
       apiBaseUrl: string;
     };
+    upload: {
+      apiUrl: string;
+      entityName: string;
+      entityType: string;
+      folderName: string;
+    };
+  };
+  worksheets: {
+    apiBaseUrl: string;
+    apiPrefix: string;
+    assetImagePath: string;
+    pencilIconUrl: string;
+    imageConcurrency: number;
+    signedUrlTtlSeconds: number;
+    imageSearchLimit: number;
+    imagePickerLimit: number;
+    userUploadS3Prefix: string;
+    generateCountDefault: number;
+    generateCountMax: number;
+    listPageSize: number;
+    listPageSizeMax: number;
+    pagerMaxButtons: number;
+    defaultAgeGroup: string;
+    ageGroups: Array<{ id: string; label: string; age: number; grade: string }>;
+    geminiModel: string;
+    promptVersion: string;
+    renderer: {
+      enabled: boolean;
+      s3KeyPrefix: string;
+      s3Bucket?: string;
+      signedUrlTtlSeconds: number;
+      apiBaseUrl: string;
+      defaultWidth: number;
+      defaultHeight: number;
+    };
   };
   pipelineTracking: {
     enabled: boolean;
     storeAiPayload: boolean;
     workflowDefault: string;
   };
+}
+
+function envTrim(name: string, fallback = ''): string {
+  const raw = process.env[name];
+  if (raw == null || raw.trim() === '') {
+    return fallback;
+  }
+  return raw.trim();
+}
+
+function parseWorksheetAgeGroups(raw: string | undefined): AppConfig['worksheets']['ageGroups'] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as AppConfig['worksheets']['ageGroups'];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(
+      (item) =>
+        item &&
+        typeof item.id === 'string' &&
+        typeof item.label === 'string' &&
+        typeof item.age === 'number' &&
+        typeof item.grade === 'string',
+    );
+  } catch {
+    return [];
+  }
 }
 
 function envFlagEnabled(primary: string, fallback: string): boolean {
@@ -105,8 +208,12 @@ export default (): AppConfig => ({
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD,
+    username: process.env.REDIS_USERNAME || undefined,
+    password: process.env.REDIS_PASSWORD || undefined,
     enabled: process.env.REDIS_ENABLED !== 'false',
+    tls: process.env.REDIS_TLS === 'true',
+    cluster: process.env.REDIS_CLUSTER === 'true',
+    db: parseInt(process.env.REDIS_DB || '0', 10),
     searchCacheTtlSeconds: parseInt(
       process.env.REDIS_SEARCH_CACHE_TTL_SECONDS || '300',
       10,
@@ -180,11 +287,17 @@ export default (): AppConfig => ({
       'SQS_WORKER_SHUTDOWN_TIMEOUT_MS',
       30000,
     ),
-    prefix: process.env.BULLMQ_PREFIX || 'asset-ingestion',
+    prefix: normalizeBullMqPrefix(process.env.BULLMQ_PREFIX),
   },
   flashcards: {
+    gyanApiBaseUrl: envTrim('GYAN_API_BASE_URL') || 'https://gyan-api.creativegalileo.com',
+    parentOrigin: envTrim('PARENT_ORIGIN') || '*',
     imageConcurrency: parseInt(
       process.env.FLASHCARD_IMAGE_CONCURRENCY || '3',
+      10,
+    ),
+    cardConcurrency: parseInt(
+      process.env.FLASHCARD_CARD_CONCURRENCY || '3',
       10,
     ),
     signedUrlTtlSeconds: parseInt(
@@ -192,20 +305,102 @@ export default (): AppConfig => ({
       10,
     ),
     imageSearchLimit: parseInt(
-      process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '1',
+      process.env.FLASHCARD_IMAGE_SEARCH_LIMIT || '8',
       10,
     ),
+    imageEmbeddingMaxAttempts: parseInt(
+      process.env.FLASHCARD_IMAGE_EMBEDDING_MAX_ATTEMPTS || '3',
+      10,
+    ),
+    imageEmbeddingRetryDelayMs: parseInt(
+      process.env.FLASHCARD_IMAGE_EMBEDDING_RETRY_DELAY_MS || '200',
+      10,
+    ),
+    imagePickerLimit: parseInt(
+      process.env.FLASHCARD_IMAGE_PICKER_LIMIT || '10',
+      10,
+    ),
+    userUploadS3Prefix: envTrim(
+      'FLASHCARD_USER_UPLOAD_S3_PREFIX',
+      'flashcards/uploads',
+    ).replace(/\/$/, '') || 'flashcards/uploads',
+    defaultCountryCode: envTrim('FLASHCARD_DEFAULT_COUNTRY_CODE') || undefined,
+    contentRestrictionInputRatio: parseFloat(
+      process.env.CONTENT_RESTRICTION_INPUT_RATIO || '0.2',
+    ),
+    templateSelectionAi: {
+      enabled: process.env.FLASHCARD_TEMPLATE_SELECTION_AI_ENABLED !== 'false',
+      provider:
+        process.env.FLASHCARD_TEMPLATE_SELECTION_PROVIDER || 'openai',
+      openaiModel:
+        process.env.FLASHCARD_TEMPLATE_SELECTION_OPENAI_MODEL ||
+        'gpt-4.1-mini',
+      geminiModel:
+        process.env.FLASHCARD_TEMPLATE_SELECTION_GEMINI_MODEL ||
+        'gemini-2.5-flash',
+      minConfidence: parseFloat(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_MIN_CONFIDENCE || '0.5',
+      ),
+      timeoutMs: parseInt(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_TIMEOUT_MS || '6000',
+        10,
+      ),
+      catalogTtlMs: parseInt(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_CATALOG_TTL_MS || '600000',
+        10,
+      ),
+      costPerMInputUsd: parseFloat(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_INPUT_USD || '0.4',
+      ),
+      costPerMCachedInputUsd: parseFloat(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_CACHED_INPUT_USD ||
+        '0.1',
+      ),
+      costPerMOutputUsd: parseFloat(
+        process.env.FLASHCARD_TEMPLATE_SELECTION_COST_PER_M_OUTPUT_USD || '1.6',
+      ),
+    },
+    imageQueryRefinement: {
+      enabled:
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_ENABLED !== 'false',
+      provider:
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_PROVIDER || 'gemini',
+      geminiModel:
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_GEMINI_MODEL ||
+        'gemini-2.0-flash-lite',
+      openaiModel:
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_OPENAI_MODEL ||
+        'gpt-4o-mini',
+      timeoutMs: parseInt(
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_TIMEOUT_MS || '5000',
+        10,
+      ),
+      maxAttempts: parseInt(
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_MAX_ATTEMPTS || '2',
+        10,
+      ),
+      retryDelayMs: parseInt(
+        process.env.FLASHCARD_IMAGE_QUERY_REFINEMENT_RETRY_DELAY_MS || '300',
+        10,
+      ),
+      assetVocabularyEnabled:
+        process.env.FLASHCARD_IMAGE_QUERY_VOCABULARY_ENABLED === 'true',
+      assetVocabularyLimit: parseInt(
+        process.env.FLASHCARD_IMAGE_QUERY_VOCABULARY_LIMIT || '200',
+        10,
+      ),
+    },
     renderer: {
       enabled: process.env.FLASHCARD_RENDERER_ENABLED !== 'false',
       storageBackend:
-        (process.env.FLASHCARD_RENDERER_STORAGE_BACKEND || 'local').toLowerCase() ===
-        's3'
-          ? 's3'
-          : 'local',
+        (process.env.FLASHCARD_RENDERER_STORAGE_BACKEND || 's3').toLowerCase() ===
+        'local'
+          ? 'local'
+          : 's3',
       storageRoot:
         process.env.FLASHCARD_RENDERER_STORAGE_ROOT || 'storage/flashcards',
       s3KeyPrefix:
-        process.env.FLASHCARD_RENDERER_S3_KEY_PREFIX || 'flashcards/rendered',
+        process.env.FLASHCARD_RENDERER_S3_KEY_PREFIX || 'flashcards',
       s3Bucket: process.env.FLASHCARD_RENDERER_S3_BUCKET || undefined,
       signedUrlTtlSeconds: parseInt(
         process.env.FLASHCARD_RENDERER_SIGNED_URL_TTL_SECONDS || '3600',
@@ -216,7 +411,84 @@ export default (): AppConfig => ({
         10,
       ),
       apiBaseUrl:
-        process.env.FLASHCARD_RENDERER_API_BASE_URL || 'http://localhost:3000',
+        process.env.FLASHCARD_RENDERER_API_BASE_URL ||
+        `http://127.0.0.1:${process.env.PORT || '3000'}`,
+    },
+    upload: {
+      apiUrl: process.env.FLASHCARD_UPLOAD_API_URL || 'https://gyan-dev-api.creativegalileo.com/api/gyan/V1/media/upload-media',
+      entityName: process.env.FLASHCARD_UPLOAD_ENTITY_NAME || 'GYAN',
+      entityType: process.env.FLASHCARD_UPLOAD_ENTITY_TYPE || 'ai_flashcards',
+      folderName: process.env.FLASHCARD_UPLOAD_FOLDER_NAME || 'ai_flashcards',
+    },
+  },
+  worksheets: {
+    apiBaseUrl: envTrim('WORKSHEET_API_BASE_URL').replace(/\/$/, ''),
+    apiPrefix: envTrim('WORKSHEET_API_PREFIX', '/worksheets').replace(/\/$/, '') || '/worksheets',
+    assetImagePath: envTrim('WORKSHEET_ASSET_IMAGE_PATH', '/worksheets/assets').replace(
+      /\/$/,
+      '',
+    ),
+    pencilIconUrl: envTrim('WORKSHEET_PENCIL_ICON_URL', '/pencil.png'),
+    imageConcurrency: parseInt(
+      process.env.WORKSHEET_IMAGE_CONCURRENCY ||
+      process.env.FLASHCARD_IMAGE_CONCURRENCY ||
+      '3',
+      10,
+    ),
+    signedUrlTtlSeconds: parseInt(
+      process.env.WORKSHEET_SIGNED_URL_TTL_SECONDS ||
+      process.env.FLASHCARD_SIGNED_URL_TTL_SECONDS ||
+      '3600',
+      10,
+    ),
+    imageSearchLimit: parseInt(
+      process.env.WORKSHEET_IMAGE_SEARCH_LIMIT || '1',
+      10,
+    ),
+    imagePickerLimit: parseInt(
+      process.env.WORKSHEET_IMAGE_PICKER_LIMIT || '10',
+      10,
+    ),
+    userUploadS3Prefix: envTrim(
+      'WORKSHEET_USER_UPLOAD_S3_PREFIX',
+      'worksheets/uploads',
+    ).replace(/\/$/, '') || 'worksheets/uploads',
+    generateCountDefault: parseInt(
+      process.env.WORKSHEET_GENERATE_COUNT_DEFAULT || '1',
+      10,
+    ),
+    generateCountMax: parseInt(
+      process.env.WORKSHEET_GENERATE_COUNT_MAX || '10',
+      10,
+    ),
+    listPageSize: parseInt(process.env.WORKSHEET_LIST_PAGE_SIZE || '10', 10),
+    listPageSizeMax: parseInt(process.env.WORKSHEET_LIST_PAGE_SIZE_MAX || '50', 10),
+    pagerMaxButtons: parseInt(process.env.WORKSHEET_PAGER_MAX_BUTTONS || '8', 10),
+    defaultAgeGroup: envTrim('WORKSHEET_DEFAULT_AGE_GROUP', '3-4'),
+    ageGroups: parseWorksheetAgeGroups(process.env.WORKSHEET_AGE_GROUPS),
+    geminiModel:
+      process.env.WORKSHEET_GEMINI_MODEL ||
+      process.env.FLASHCARD_GEMINI_MODEL ||
+      'gemini-2.5-flash',
+    promptVersion: process.env.WORKSHEET_PROMPT_VERSION || 'v1',
+    renderer: {
+      enabled: process.env.WORKSHEET_RENDERER_ENABLED !== 'false',
+      s3KeyPrefix:
+        process.env.WORKSHEET_RENDERER_S3_KEY_PREFIX || 'worksheets/rendered',
+      s3Bucket: process.env.WORKSHEET_RENDERER_S3_BUCKET || undefined,
+      signedUrlTtlSeconds: parseInt(
+        process.env.WORKSHEET_RENDERER_SIGNED_URL_TTL_SECONDS || '3600',
+        10,
+      ),
+      apiBaseUrl: envTrim(
+        'WORKSHEET_RENDERER_API_BASE_URL',
+        envTrim('WORKSHEET_API_BASE_URL'),
+      ).replace(/\/$/, ''),
+      defaultWidth: parseInt(process.env.WORKSHEET_RENDER_WIDTH || '1016', 10),
+      defaultHeight: parseInt(
+        process.env.WORKSHEET_RENDER_HEIGHT || '1316',
+        10,
+      ),
     },
   },
   pipelineTracking: {

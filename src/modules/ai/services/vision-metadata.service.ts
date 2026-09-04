@@ -18,6 +18,9 @@ export interface GenerateVisionMetadataOptions {
   /** When true (default), return existing metadata without calling Gemini. */
   skipIfExists?: boolean;
   retryCount?: number;
+  /** When true, pass the source filename into the vision prompt. */
+  readFileNames?: boolean;
+  filename?: string;
 }
 
 @Injectable()
@@ -45,7 +48,11 @@ export class VisionMetadataService {
 
     const asset = await this.prisma.asset.findUnique({
       where: { id: assetId },
-      include: { metadata: true },
+      include: {
+        metadata: true,
+        sources: { take: 1, select: { filename: true } },
+        ingestionFiles: { take: 1, select: { filename: true } },
+      },
     });
 
     if (!asset) {
@@ -83,10 +90,17 @@ export class VisionMetadataService {
           originalBuffer,
         );
 
+      const filename = options.readFileNames
+        ? options.filename ||
+          asset.sources[0]?.filename ||
+          asset.ingestionFiles[0]?.filename
+        : undefined;
+
       const analysis = await this.visionProvider.analyzeImage({
         imageBuffer: optimized.buffer,
         mimeType: optimized.mimeType,
         promptVersion: options.promptVersion,
+        ...(filename ? { filename } : {}),
       });
 
       const usage = this.visionProvider.getLastUsage();

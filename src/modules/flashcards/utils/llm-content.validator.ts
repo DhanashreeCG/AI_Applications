@@ -5,6 +5,13 @@ import {
   LlmFlashcardPayload,
   TemplateComponentDefinition,
 } from '../interfaces/flashcard.interfaces';
+import {
+  assertContiguousIndexedIds,
+  buildIndexedIdPattern,
+  getRepeatBase,
+  isRepeatPlaceholderId,
+  resolveTemplateDefinition,
+} from './repeat-component.util';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -14,30 +21,82 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' ? value.trim() : null;
 }
 
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
 function assertExactComponentIds(
   actual: Record<string, unknown>,
   definitions: TemplateComponentDefinition[],
   cardIndex: number,
   field: 'textComponents' | 'imageComponents',
 ): void {
-  const allowed = new Set(definitions.map((item) => item.componentId));
+  const exactDefinitions = definitions.filter(
+    (item) => !isRepeatPlaceholderId(item.componentId),
+  );
+  const repeatDefinitions = definitions.filter((item) =>
+    isRepeatPlaceholderId(item.componentId),
+  );
+
+  const exactAllowed = new Set(
+    exactDefinitions.map((item) => item.componentId),
+  );
+  const placeholderIds = new Set(
+    repeatDefinitions.map((item) => item.componentId),
+  );
+  const matchedByTemplate = new Map<string, string[]>();
 
   for (const componentId of Object.keys(actual)) {
-    if (!allowed.has(componentId)) {
+    // Placeholder strings are never valid LLM output keys.
+    if (placeholderIds.has(componentId)) {
+      const base = getRepeatBase(componentId);
+      throw new FlashcardException(
+        'INVALID_LLM_OUTPUT',
+        `cards[${cardIndex}].${field} must not use placeholder id "${componentId}"; expected concrete ids matching ^${base}-\\d+$ (e.g. ${base}-1, ${base}-2)`,
+        undefined,
+        {
+          templatedComponentId: componentId,
+          receivedComponentIds: Object.keys(actual),
+        },
+      );
+    }
+
+    if (exactAllowed.has(componentId)) {
+      continue;
+    }
+
+    let matchedTemplate: TemplateComponentDefinition | undefined;
+    for (const definition of repeatDefinitions) {
+      const base = getRepeatBase(definition.componentId);
+      if (buildIndexedIdPattern(base).test(componentId)) {
+        matchedTemplate = definition;
+        break;
+      }
+    }
+
+    if (!matchedTemplate) {
+      const expectedPatterns = [
+        ...exactDefinitions.map((item) => item.componentId),
+        ...repeatDefinitions.map((item) => {
+          const base = getRepeatBase(item.componentId);
+          return `${base}-1..${base}-N (from ${item.componentId})`;
+        }),
+      ];
       throw new FlashcardException(
         'INVALID_LLM_OUTPUT',
         `cards[${cardIndex}].${field} has unsupported component id "${componentId}"`,
         undefined,
-        { expectedComponentIds: Array.from(allowed) },
+        { expectedComponentIds: expectedPatterns },
       );
     }
+
+    const list = matchedByTemplate.get(matchedTemplate.componentId) ?? [];
+    list.push(componentId);
+    matchedByTemplate.set(matchedTemplate.componentId, list);
   }
 
-  for (const definition of definitions) {
-    if (
-      definition.required &&
-      !Object.prototype.hasOwnProperty.call(actual, definition.componentId)
-    ) {
+  for (const definition of exactDefinitions) {
+    if (definition.required && !hasOwn(actual, definition.componentId)) {
       throw new FlashcardException(
         'INVALID_LLM_OUTPUT',
         `cards[${cardIndex}].${field} missing required component "${definition.componentId}"`,
@@ -46,6 +105,113 @@ function assertExactComponentIds(
           expectedComponentIds: definitions.map((item) => item.componentId),
           receivedComponentIds: Object.keys(actual),
         },
+      );
+    }
+  }
+
+  for (const definition of repeatDefinitions) {
+    const base = getRepeatBase(definition.componentId);
+    const matched = matchedByTemplate.get(definition.componentId) ?? [];
+
+    if (definition.required && matched.length === 0) {
+      throw new FlashcardException(
+        'INVALID_LLM_OUTPUT',
+        `cards[${cardIndex}].${field} missing required indexed components for "${definition.componentId}" (expected ${base}-1..${base}-N)`,
+        undefined,
+        {
+          templatedComponentId: definition.componentId,
+          expectedPattern: `^${base}-\\d+$`,
+          receivedComponentIds: Object.keys(actual),
+        },
+      );
+    }
+
+    assertContiguousIndexedIds(
+      matched,
+      definition.componentId,
+      `cards[${cardIndex}].${field}`,
+    );
+  }
+}
+
+/**
+ * Applies a component's validationRules to a single text value.
+ * Used for both exact and expanded indexed instances.
+ */
+function assertTextValidationRules(
+  text: string,
+  componentId: string,
+  rules: Record<string, unknown> | undefined,
+  cardIndex: number,
+): void {
+  if (!rules) {
+    return;
+  }
+
+  const maxCharacters =
+    typeof rules.maxCharacters === 'number'
+      ? rules.maxCharacters
+      : typeof rules.maxLength === 'number'
+        ? rules.maxLength
+        : undefined;
+
+  if (typeof maxCharacters === 'number' && text.length > maxCharacters) {
+    throw new FlashcardException(
+      'INVALID_LLM_OUTPUT',
+      `cards[${cardIndex}].textComponents.${componentId} exceeds maxCharacters=${maxCharacters} (got ${text.length} characters)`,
+      undefined,
+      { componentId, rule: 'maxCharacters', maxCharacters, actualLength: text.length },
+    );
+  }
+
+  const minCharacters =
+    typeof rules.minCharacters === 'number'
+      ? rules.minCharacters
+      : typeof rules.minLength === 'number'
+        ? rules.minLength
+        : undefined;
+
+  if (typeof minCharacters === 'number' && text.length < minCharacters) {
+    throw new FlashcardException(
+      'INVALID_LLM_OUTPUT',
+      `cards[${cardIndex}].textComponents.${componentId} below minCharacters=${minCharacters} (got ${text.length} characters)`,
+      undefined,
+      { componentId, rule: 'minCharacters', minCharacters, actualLength: text.length },
+    );
+  }
+
+  if (typeof rules.pattern === 'string') {
+    let regex: RegExp;
+    try {
+      regex = new RegExp(rules.pattern);
+    } catch {
+      throw new FlashcardException(
+        'INVALID_LLM_OUTPUT',
+        `cards[${cardIndex}].textComponents.${componentId} has invalid validationRules.pattern`,
+        undefined,
+        { componentId, rule: 'pattern', pattern: rules.pattern },
+      );
+    }
+    if (!regex.test(text)) {
+      throw new FlashcardException(
+        'INVALID_LLM_OUTPUT',
+        `cards[${cardIndex}].textComponents.${componentId} does not match validationRules.pattern=${JSON.stringify(rules.pattern)}`,
+        undefined,
+        { componentId, rule: 'pattern', pattern: rules.pattern },
+      );
+    }
+  }
+
+  if (Array.isArray(rules.enum) && rules.enum.length > 0) {
+    const allowed = rules.enum.filter(
+      (item): item is string => typeof item === 'string',
+    );
+    if (allowed.length > 0 && !allowed.includes(text)) {
+      throw new FlashcardException(
+        'INVALID_LLM_OUTPUT',
+        `cards[${cardIndex}].textComponents.${componentId} is not in validationRules.enum`,
+        undefined,
+        { componentId, rule: 'enum', allowed },
       );
     }
   }
@@ -74,6 +240,15 @@ function validateTextComponents(
         `cards[${cardIndex}].textComponents.${componentId} must be a non-empty string`,
       );
     }
+
+    const definition = resolveTemplateDefinition(componentId, definitions);
+    assertTextValidationRules(
+      text,
+      componentId,
+      definition?.validationRules,
+      cardIndex,
+    );
+
     content[componentId] = text;
   }
 

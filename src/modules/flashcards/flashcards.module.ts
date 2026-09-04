@@ -3,40 +3,61 @@ import { AiModule } from '../ai/ai.module';
 import { SearchModule } from '../search/search.module';
 import { StorageModule } from '../storage/storage.module';
 import { FlashcardsController } from './flashcards.controller';
+import { ContentRestrictionController } from './content-restriction.controller';
 import { AssetImageService } from './services/asset-image.service';
 import { FlashcardContentService } from './services/flashcard-content.service';
+import { FlashcardDownloadService } from './services/flashcard-download.service';
+import { FlashcardEditService } from './services/flashcard-edit.service';
 import { FlashcardImageRetrievalService } from './services/flashcard-image-retrieval.service';
 import { FlashcardOrchestratorService } from './services/flashcard-orchestrator.service';
+import { FlashcardPersistenceService } from './services/flashcard-persistence.service';
 import { FlashcardSeedService } from './services/flashcard-seed.service';
+import { ContentRestrictionService } from './services/content-restriction.service';
 import { FlashcardTemplateService } from './services/flashcard-template.service';
+import { TemplateCatalogCacheService } from './services/template-catalog-cache.service';
 import { TemplateRepository } from './services/template.repository';
+import { TemplateSelectionAiService } from './services/template-selection-ai.service';
 import { TemplateSelectionService } from './services/template-selection.service';
 import { FlashcardRendererService } from './flashcard-renderer/renderer/flashcard-renderer.service';
 import { BrowserPoolService } from './flashcard-renderer/browser/browser-pool.service';
 import { FlashcardPdfService } from './flashcard-renderer/pdf/flashcard-pdf.service';
 import { FlashcardStorageService } from './flashcard-renderer/storage/flashcard-storage.service';
+import { ImageQueryRefinementService } from './services/image-query-refinement.service';
+import { AssetVocabularyService } from './services/asset-vocabulary.service';
 
 @Module({
   imports: [AiModule, SearchModule, StorageModule],
-  controllers: [FlashcardsController],
+  controllers: [FlashcardsController, ContentRestrictionController],
   providers: [
     AssetImageService,
     TemplateRepository,
+    TemplateCatalogCacheService,
+    TemplateSelectionAiService,
     TemplateSelectionService,
     FlashcardTemplateService,
     FlashcardContentService,
     FlashcardImageRetrievalService,
     FlashcardOrchestratorService,
+    FlashcardPersistenceService,
+    FlashcardEditService,
+    FlashcardDownloadService,
     FlashcardSeedService,
+    ContentRestrictionService,
     BrowserPoolService,
     FlashcardStorageService,
     FlashcardPdfService,
     FlashcardRendererService,
+    AssetVocabularyService,
+    ImageQueryRefinementService,
   ],
   exports: [
     FlashcardOrchestratorService,
+    FlashcardPersistenceService,
     TemplateSelectionService,
     FlashcardRendererService,
+    BrowserPoolService,
+    AssetImageService,
+    ContentRestrictionService,
   ],
 })
 export class FlashcardsModule {}

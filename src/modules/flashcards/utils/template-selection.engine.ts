@@ -1,5 +1,5 @@
 import { TemplateSelectionCriteria } from '../interfaces/flashcard.interfaces';
-import { ObjectiveConfidence } from './user-request.resolver';
+import { ObjectiveConfidence, keywordMatches } from './user-request.resolver';
 
 export interface SelectableRule {
   id: string;
@@ -13,6 +13,7 @@ export interface SelectableRule {
   difficulties: string[];
   intents: string[];
   topics: string[];
+  isFallback: boolean;
   templateId: string;
   templateActive: boolean;
   templateAgeGroups: string[];
@@ -22,6 +23,12 @@ export interface SelectableRule {
   templateObjectives: string[];
   templateDifficulties: string[];
   templateVersion: string;
+  templateTags?: string[];
+  templateType?: string;
+  /** Opt-in layout (e.g. tracing): only eligible when the request asks for it. */
+  requiresExplicitRequest?: boolean;
+  /** Terms that count as an explicit request. Defaults to tags + templateType. */
+  explicitRequestKeywords?: string[];
 }
 
 export interface SelectionResult {
@@ -36,12 +43,16 @@ export interface SelectionResult {
 export interface CandidateRankingBreakdown {
   objectiveRank: number;
   effectiveObjectiveRank: number;
+  /** 3 = exact native age group, 2 = covers requested band, 1 = younger band, 0 = unknown/legacy. */
+  ageTier: number;
+  youngerMax: number;
   exactAge: boolean;
   exactGrade: boolean;
   exactSubject: boolean;
   exactDifficulty: boolean;
   exactObjective: boolean;
   scoreComponents: {
+    ageTier: number;
     objectiveRank: number;
     exactAge: number;
     exactGrade: number;
@@ -90,42 +101,134 @@ function parseAgeGroup(
   return { min, max, normalized: `${min}-${max}` };
 }
 
-function templateSupportsAgeGroup(
+/**
+ * Age is the first gate. Native (exact requested band) and covering ranges
+ * stay in the pool; wholly younger bands are allowed as fallback; older-only
+ * templates are excluded (e.g. 6-8 is not eligible for a 4-5 request).
+ */
+function templateAgeFit(
   supportedAgeGroups: string[],
   requestedAgeGroup: string | undefined,
   requestedAgeMin: number | null,
   requestedAgeMax: number | null,
-): { supported: boolean; exact: boolean } {
-  // Legacy templates without metadata remain eligible, but never rank exact.
+): {
+  eligible: boolean;
+  native: boolean;
+  younger: boolean;
+  covers: boolean;
+  exact: boolean;
+  ageTier: number;
+  youngerMax: number;
+} {
+  const none = {
+    eligible: false,
+    native: false,
+    younger: false,
+    covers: false,
+    exact: false,
+    ageTier: 0,
+    youngerMax: 0,
+  };
+
   if (!supportedAgeGroups.length) {
-    return { supported: true, exact: false };
+    return { ...none, eligible: true };
   }
 
-  const requested =
-    requestedAgeGroup ? parseAgeGroup(requestedAgeGroup) : null;
+  const requested = requestedAgeGroup
+    ? parseAgeGroup(requestedAgeGroup)
+    : null;
   const reqMin = requested?.min ?? requestedAgeMin;
   const reqMax = requested?.max ?? requestedAgeMax;
   if (reqMin === null || reqMax === null) {
-    return { supported: false, exact: false };
+    return none;
   }
 
-  let supported = false;
-  let exact = false;
+  let native = false;
+  let younger = false;
+  let covers = false;
+  let youngerMax = 0;
+
   for (const configured of supportedAgeGroups) {
     const parsed = parseAgeGroup(configured);
     if (!parsed) continue;
-    if (parsed.min <= reqMax && parsed.max >= reqMin) {
-      supported = true;
-    }
     if (parsed.min === reqMin && parsed.max === reqMax) {
-      exact = true;
+      native = true;
+    }
+    if (parsed.min <= reqMin && parsed.max >= reqMax) {
+      covers = true;
+    }
+    if (
+      parsed.max <= reqMin &&
+      (parsed.min !== reqMin || parsed.max !== reqMax)
+    ) {
+      younger = true;
+      youngerMax = Math.max(youngerMax, parsed.max);
     }
   }
-  return { supported, exact };
+
+  const eligible = native || covers || younger;
+  const ageTier = native ? 3 : covers ? 2 : younger ? 1 : 0;
+  return {
+    eligible,
+    native,
+    younger,
+    covers,
+    exact: native,
+    ageTier,
+    youngerMax,
+  };
 }
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
+}
+
+/**
+ * Terms that unlock an opt-in template. Explicit keywords win; otherwise fall
+ * back to the template's own tags + templateType so a newly flagged template
+ * is never permanently unreachable.
+ */
+export function gateKeywordsFor(rule: SelectableRule): string[] {
+  const configured = (rule.explicitRequestKeywords ?? [])
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+  if (configured.length) {
+    return configured;
+  }
+
+  return [...(rule.templateTags ?? []), rule.templateType ?? '']
+    .flatMap((value) => value.split(/[^\p{L}\p{N}]+/u))
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2);
+}
+
+/**
+ * Opt-in templates (tracing, handwriting drills) teach a mechanic rather than a
+ * topic, so they must never be auto-selected. They become eligible only when the
+ * user's own words name them.
+ */
+function passesExplicitRequestGate(
+  rule: SelectableRule,
+  criteria: { query?: string; topic?: string },
+): boolean {
+  if (!rule.requiresExplicitRequest) {
+    return true;
+  }
+
+  const haystack = [criteria.query ?? '', criteria.topic ?? '']
+    .join(' ')
+    .trim()
+    .toLowerCase();
+  if (!haystack) {
+    return false;
+  }
+
+  const keywords = gateKeywordsFor(rule);
+  if (!keywords.length) {
+    return false;
+  }
+
+  return keywords.some((keyword) => keywordMatches(haystack, keyword));
 }
 
 function normalizeDifficulty(value: string): string {
@@ -219,8 +322,16 @@ const RELATED_OBJECTIVES: Record<string, string[]> = {
   general_knowledge: ['science_facts', 'question_answer', 'vocabulary'],
 };
 
+const GENERIC_FALLBACK_OBJECTIVES = [
+  'vocabulary',
+  'recognition',
+  'general_knowledge',
+];
+
 /**
- * 3 = exact objective, 2 = directly related objective, 1 = generic fallback.
+ * 3 = exact objective, 2 = directly related objective, 0 = no match.
+ * Generic-tag tier 1 is applied later, and only if the whole survivor pool
+ * has no exact/related match.
  */
 function objectiveRelevance(
   requested: string,
@@ -236,10 +347,14 @@ function objectiveRelevance(
     return 2;
   }
 
-  const genericFallbacks = ['vocabulary', 'recognition', 'general_knowledge'];
-  return configuredKeys.some((objective) => genericFallbacks.includes(objective))
-    ? 1
-    : 0;
+  return 0;
+}
+
+function hasGenericFallbackTag(configured: string[]): boolean {
+  const configuredKeys = configured.map(normalizeObjective);
+  return configuredKeys.some((objective) =>
+    GENERIC_FALLBACK_OBJECTIVES.includes(objective),
+  );
 }
 
 
@@ -310,17 +425,21 @@ interface RankedCandidate extends RankedTemplateCandidate {}
  * Deterministic template selection (FLASH_CARD_REVISED):
  * Topic must NOT determine the template.
  *
- * Template supportedAgeGroups are the first hard filter. Learning objective
- * is then ranked exact → related → generic fallback.
+ * Age group is the first hard filter and the first rank key:
+ * native (exact band) → covering range → younger bands. Older-only
+ * templates are never eligible. Learning objective / user intent is
+ * the next rank key within the same age tier.
+ *
+ * Templates flagged requiresExplicitRequest are dropped before ranking unless
+ * the raw query names them, so opt-in layouts never reach the AI selector.
  *
  * Rank priority:
- * 1. supported age-group overlap (hard filter)
- * 2. educational objective relevance
- * 3. exact age range
- * 4. exact grade
- * 5. exact subject / difficulty
- * 6. newest active template version
- * 7. rule priority / stable id
+ * 1. age tier (native > covering > younger)
+ * 2. closer younger band (higher youngerMax)
+ * 3. educational objective / user intent
+ * 4. exact grade / subject / difficulty
+ * 5. newest active template version
+ * 6. rule priority (lower number wins — more specific) / stable id
  */
 function effectiveObjectiveRank(
   objectiveRank: number,
@@ -334,7 +453,22 @@ function effectiveObjectiveRank(
   return Math.min(objectiveRank, 2);
 }
 
-export function rankTemplateCandidates(
+interface EligibleRule {
+  rule: SelectableRule;
+  gradeExact: boolean;
+  exactSubject: boolean;
+  exactDifficulty: boolean;
+  exactAge: boolean;
+  ageTier: number;
+  youngerMax: number;
+  exactObjective: boolean;
+  ruleHasExplicitObjectives: boolean;
+  rawObjectiveRank: number;
+  configuredObjectives: string[];
+  objectiveExactBoost: number;
+}
+
+function collectEligibleRules(
   rules: SelectableRule[],
   criteria: TemplateSelectionCriteria & {
     learningObjective: string;
@@ -342,28 +476,32 @@ export function rankTemplateCandidates(
     ageMax: number | null;
     objectiveConfidence?: ObjectiveConfidence;
   },
-): RankedTemplateCandidate[] {
-  const ranked: RankedCandidate[] = [];
+  fallbackOnly: boolean,
+): EligibleRule[] {
+  const eligible: EligibleRule[] = [];
 
   for (const rule of rules) {
     if (!rule.templateActive) {
       continue;
     }
+    if (Boolean(rule.isFallback) !== fallbackOnly) {
+      continue;
+    }
 
-    const templateAge = templateSupportsAgeGroup(
+    const templateAge = templateAgeFit(
       rule.templateAgeGroups,
       criteria.ageGroup,
       criteria.ageMin,
       criteria.ageMax,
     );
-    if (!templateAge.supported) {
+    if (!templateAge.eligible) {
       continue;
     }
 
-    // Hard filters: age (+ optional rule grade/subject/difficulty when the
-    // request supplies them AND the rule configures them).
-    // Learning objective is ranked, not a hard gate — otherwise a phonics
-    // request in an age band whose rule lists only "vocabulary" returns nothing.
+    if (!passesExplicitRequestGate(rule, criteria)) {
+      continue;
+    }
+
     const grade = ruleDimensionMatch(rule.grades, criteria.grade);
     const subject = ruleDimensionMatch(rule.subjects, criteria.subject);
     const difficulty = ruleDimensionMatch(
@@ -372,7 +510,20 @@ export function rankTemplateCandidates(
       normalizeDifficulty,
     );
 
-    if (!grade.passes || !subject.passes || !difficulty.passes) {
+    // A subject/difficulty guessed from the query is topic in disguise, so it
+    // may only influence rank. Gating on it collapses the pool to whichever
+    // template happens to declare the guessed subject.
+    const subjectGates = (criteria.subjectConfidence ?? 'explicit') === 'explicit';
+    const difficultyGates =
+      (criteria.difficultyConfidence ?? 'explicit') === 'explicit';
+
+    if (!grade.passes) {
+      continue;
+    }
+    if (subjectGates && !subject.passes) {
+      continue;
+    }
+    if (difficultyGates && !difficulty.passes) {
       continue;
     }
 
@@ -387,27 +538,15 @@ export function rankTemplateCandidates(
       normalizeObjective,
     );
 
-    const ruleObjectiveRank = objectiveRelevance(
-      criteria.learningObjective,
-      rule.learningObjectives,
-    );
-    const templateObjectiveRank = objectiveRelevance(
-      criteria.learningObjective,
-      rule.templateObjectives,
-    );
-    // When a rule defines explicit objectives, those define the candidate's
-    // purpose.  Template objectives only provide signal for rules without
-    // explicit objectives (e.g. synthetic fallback rules).
     const ruleHasExplicitObjectives = rule.learningObjectives.length > 0;
-    const rawObjectiveRank = ruleHasExplicitObjectives
-      ? ruleObjectiveRank
-      : templateObjectiveRank;
-    const objectiveRank = effectiveObjectiveRank(
-      rawObjectiveRank,
-      criteria.objectiveConfidence,
+    const configuredObjectives = ruleHasExplicitObjectives
+      ? rule.learningObjectives
+      : rule.templateObjectives;
+    const rawObjectiveRank = objectiveRelevance(
+      criteria.learningObjective,
+      configuredObjectives,
     );
-    // exactObjective: the rule's own objectives directly match the request.
-    // For rules without explicit objectives, fall back to template signal.
+
     const exactObjective = ruleHasExplicitObjectives
       ? ruleObjectiveExact
       : templateObjectiveExact;
@@ -429,9 +568,11 @@ export function rankTemplateCandidates(
       rule.ageMin === criteria.ageMin &&
       rule.ageMax === criteria.ageMax;
     const exactAge = templateAge.exact || exactRuleAge;
+    const ageTier =
+      templateAge.exact || exactRuleAge
+        ? Math.max(templateAge.ageTier, 3)
+        : templateAge.ageTier;
 
-    // Boost reflects rule-level match quality.  When the rule has explicit
-    // objectives, template-level matches must not inflate the score.
     const objectiveExactBoost = ruleObjectiveExact
       ? 120
       : (!ruleHasExplicitObjectives && templateObjectiveExact)
@@ -440,55 +581,126 @@ export function rankTemplateCandidates(
           ? -40
           : 0;
 
-    let score = 0;
-    score += objectiveRank * 1000;
-    if (exactAge) score += 500;
-    if (grade.exact) score += 300;
-    if (exactSubject) score += 200;
-    if (exactDifficulty) score += 100;
-    score += rule.priority;
-    score += objectiveExactBoost;
-
-    ranked.push({
-      ruleId: rule.id,
-      ruleName: rule.name,
-      templateId: rule.templateId,
-      priority: rule.priority,
-      score,
-      templateVersion: rule.templateVersion,
-      breakdown: {
-        objectiveRank: rawObjectiveRank,
-        effectiveObjectiveRank: objectiveRank,
-        exactAge,
-        exactGrade: grade.exact,
-        exactSubject,
-        exactDifficulty,
-        exactObjective,
-        scoreComponents: {
-          objectiveRank: objectiveRank * 1000,
-          exactAge: exactAge ? 500 : 0,
-          exactGrade: grade.exact ? 300 : 0,
-          exactSubject: exactSubject ? 200 : 0,
-          exactDifficulty: exactDifficulty ? 100 : 0,
-          rulePriority: rule.priority,
-          objectiveExactBoost,
-          objectiveConfiguredPenalty: 0,
-        },
-      },
+    eligible.push({
+      rule,
+      gradeExact: grade.exact,
+      exactSubject,
+      exactDifficulty,
+      exactAge,
+      ageTier,
+      youngerMax: templateAge.youngerMax,
+      exactObjective,
+      ruleHasExplicitObjectives,
+      rawObjectiveRank,
+      configuredObjectives,
+      objectiveExactBoost,
     });
   }
 
-  if (!ranked.length) {
+  return eligible;
+}
+
+function toRankedCandidate(
+  item: EligibleRule,
+  rawObjectiveRank: number,
+  objectiveConfidence: ObjectiveConfidence | undefined,
+): RankedCandidate {
+  const objectiveRank = effectiveObjectiveRank(
+    rawObjectiveRank,
+    objectiveConfidence,
+  );
+  const { rule } = item;
+  let score = 0;
+  score += item.ageTier * 2000;
+  score += item.youngerMax;
+  score += objectiveRank * 1000;
+  if (item.exactAge) score += 500;
+  if (item.gradeExact) score += 300;
+  if (item.exactSubject) score += 200;
+  if (item.exactDifficulty) score += 100;
+  score += rule.priority;
+  score += item.objectiveExactBoost;
+
+  return {
+    ruleId: rule.id,
+    ruleName: rule.name,
+    templateId: rule.templateId,
+    priority: rule.priority,
+    score,
+    templateVersion: rule.templateVersion,
+    breakdown: {
+      objectiveRank: rawObjectiveRank,
+      effectiveObjectiveRank: objectiveRank,
+      ageTier: item.ageTier,
+      youngerMax: item.youngerMax,
+      exactAge: item.exactAge,
+      exactGrade: item.gradeExact,
+      exactSubject: item.exactSubject,
+      exactDifficulty: item.exactDifficulty,
+      exactObjective: item.exactObjective,
+      scoreComponents: {
+        ageTier: item.ageTier * 2000,
+        objectiveRank: objectiveRank * 1000,
+        exactAge: item.exactAge ? 500 : 0,
+        exactGrade: item.gradeExact ? 300 : 0,
+        exactSubject: item.exactSubject ? 200 : 0,
+        exactDifficulty: item.exactDifficulty ? 100 : 0,
+        rulePriority: rule.priority,
+        objectiveExactBoost: item.objectiveExactBoost,
+        objectiveConfiguredPenalty: 0,
+      },
+    },
+  };
+}
+
+export function rankTemplateCandidates(
+  rules: SelectableRule[],
+  criteria: TemplateSelectionCriteria & {
+    learningObjective: string;
+    ageMin: number | null;
+    ageMax: number | null;
+    objectiveConfidence?: ObjectiveConfidence;
+  },
+): RankedTemplateCandidate[] {
+  let eligible = collectEligibleRules(rules, criteria, false);
+  if (!eligible.length) {
+    eligible = collectEligibleRules(rules, criteria, true);
+  }
+
+  if (!eligible.length) {
     return [];
   }
+
+  const poolMax = Math.max(
+    ...eligible.map((item) => item.rawObjectiveRank),
+    0,
+  );
+  const allowGenericFallback = poolMax === 0;
+
+  const ranked: RankedCandidate[] = eligible.map((item) => {
+    let raw = item.rawObjectiveRank;
+    if (
+      allowGenericFallback &&
+      raw === 0 &&
+      hasGenericFallbackTag(item.configuredObjectives)
+    ) {
+      raw = 1;
+    }
+    return toRankedCandidate(item, raw, criteria.objectiveConfidence);
+  });
 
   ranked.sort((a, b) => {
     const left = a.breakdown;
     const right = b.breakdown;
+    if (right.ageTier !== left.ageTier) {
+      return right.ageTier - left.ageTier;
+    }
+    if (right.youngerMax !== left.youngerMax) {
+      return right.youngerMax - left.youngerMax;
+    }
     if (right.effectiveObjectiveRank !== left.effectiveObjectiveRank) {
       return right.effectiveObjectiveRank - left.effectiveObjectiveRank;
     }
-    // Prefer rules whose own objectives directly match the request.
     if (left.exactObjective !== right.exactObjective) {
       return left.exactObjective ? -1 : 1;
     }
@@ -504,7 +716,7 @@ export function rankTemplateCandidates(
     );
     if (versionCmp !== 0) return versionCmp;
 
-    if (b.priority !== a.priority) return b.priority - a.priority;
+    if (a.priority !== b.priority) return a.priority - b.priority;
     if (b.score !== a.score) return b.score - a.score;
     return a.ruleId.localeCompare(b.ruleId);
   });

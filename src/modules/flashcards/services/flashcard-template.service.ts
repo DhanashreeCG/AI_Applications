@@ -7,6 +7,7 @@ import {
 } from '../dto/upload-flashcard-template.dto';
 import { SelectedTemplatePayload } from '../interfaces/flashcard.interfaces';
 import { parseEditableComponentsFromLayout } from '../utils/template-layout.util';
+import { TemplateCatalogCacheService } from './template-catalog-cache.service';
 import { TemplateRepository } from './template.repository';
 
 export interface UploadFlashcardTemplatesResult {
@@ -27,7 +28,10 @@ export interface ListFlashcardTemplatesResult {
 
 @Injectable()
 export class FlashcardTemplateService {
-  constructor(private readonly templateRepository: TemplateRepository) {}
+  constructor(
+    private readonly templateRepository: TemplateRepository,
+    private readonly templateCatalogCache: TemplateCatalogCacheService,
+  ) {}
 
   public async listAll(): Promise<ListFlashcardTemplatesResult> {
     const templates =
@@ -54,6 +58,7 @@ export class FlashcardTemplateService {
     try {
       const templates =
         await this.templateRepository.createTemplates(prepared);
+      this.templateCatalogCache.invalidate();
       return { count: templates.length, templates };
     } catch (error) {
       if (
@@ -90,6 +95,8 @@ export class FlashcardTemplateService {
     thumbnail: string | null;
     templateVersion: string;
     active: boolean;
+    requiresExplicitRequest: boolean;
+    explicitRequestKeywords: string[];
   } {
     const prefix = `templates[${index}]`;
     try {
@@ -143,6 +150,10 @@ export class FlashcardTemplateService {
         thumbnail: this.optionalString(dto.thumbnail) ?? null,
         templateVersion: this.optionalString(dto.templateVersion) || '1.0',
         active: dto.active !== false,
+        requiresExplicitRequest: dto.requiresExplicitRequest === true,
+        explicitRequestKeywords: this.optionalStringArray(
+          dto.explicitRequestKeywords,
+        ),
       };
     } catch (error) {
       if (error instanceof FlashcardException) {

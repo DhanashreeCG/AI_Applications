@@ -39,6 +39,7 @@ export const PIPELINE_STAGES = {
   LLM_RESPONSE_VALIDATION: 'llm_response_validation',
   CONTENT_VALIDATION: 'content_validation',
   IMAGE_QUERY_GENERATION: 'image_query_generation',
+  IMAGE_QUERY_REFINEMENT: 'image_query_refinement',
   /** @deprecated Prefer IMAGE_RETRIEVAL */
   IMAGE_SEARCH: 'image_search',
   IMAGE_RETRIEVAL: 'image_retrieval',
@@ -46,6 +47,11 @@ export const PIPELINE_STAGES = {
   IMAGE_MAPPING: 'image_mapping',
   RESPONSE_ASSEMBLY: 'response_assembly',
   FLASHCARD_RENDERING: 'flashcard_rendering',
+  STRUCTURE_VALIDATION: 'structure_validation',
+  PERSISTENCE: 'persistence',
+  FIELD_RESOLUTION: 'field_resolution',
+  HTML_GENERATION: 'html_generation',
+  WORKSHEET_RENDERING: 'worksheet_rendering',
   /** @deprecated Prefer FINAL_VALIDATION */
   RESPONSE_VALIDATION: 'response_validation',
   FINAL_VALIDATION: 'final_validation',
@@ -99,6 +105,7 @@ export interface AiInvocationCompletedPayload extends PipelineTelemetryContext {
   responseHash?: string;
   responsePayload?: unknown;
   inputTokens?: number;
+  cachedInputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
   estimatedCost?: number;

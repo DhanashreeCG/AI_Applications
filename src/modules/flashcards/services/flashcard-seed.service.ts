@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { buildRegionLayout } from '../utils/template-layout.util';
+import { TemplateCatalogCacheService } from './template-catalog-cache.service';
 import { TemplateRepository } from './template.repository';
 
 export const TEMPLATE_SEEDS: Array<{
@@ -185,6 +186,7 @@ export const RULE_SEEDS: Array<{
   ageMax: number;
   learningObjectives: string[];
   templateId: string;
+  isFallback?: boolean;
 }> = [
   {
     id: 'rule_age_2_3_recognition',
@@ -236,6 +238,16 @@ export const RULE_SEEDS: Array<{
     ],
     templateId: 'tmpl_image_fact_quiz',
   },
+  {
+    id: 'rule_fallback_default_vocabulary',
+    name: 'Fallback - Default Vocabulary Card',
+    priority: 1000,
+    ageMin: 2,
+    ageMax: 14,
+    learningObjectives: ['vocabulary', 'recognition', 'general_knowledge'],
+    templateId: 'tmpl_large_image_word',
+    isFallback: true,
+  },
 ];
 
 /** Objective-specific boosts for requests that lack a dedicated layout template. */
@@ -247,11 +259,12 @@ export const OBJECTIVE_RULE_SEEDS: Array<{
   ageMax: number;
   learningObjectives: string[];
   templateId: string;
+  isFallback?: boolean;
 }> = [
   {
     id: 'rule_obj_3_4_comparison',
     name: 'Ages 3-4 comparison',
-    priority: 110,
+    priority: 10,
     ageMin: 3,
     ageMax: 4,
     learningObjectives: ['comparison', 'classification', 'matching'],
@@ -260,7 +273,7 @@ export const OBJECTIVE_RULE_SEEDS: Array<{
   {
     id: 'rule_obj_3_4_phonics',
     name: 'Ages 3-4 phonics',
-    priority: 110,
+    priority: 10,
     ageMin: 3,
     ageMax: 4,
     learningObjectives: ['phonics', 'reading'],
@@ -269,7 +282,7 @@ export const OBJECTIVE_RULE_SEEDS: Array<{
   {
     id: 'rule_obj_3_4_counting',
     name: 'Ages 3-4 counting',
-    priority: 110,
+    priority: 10,
     ageMin: 3,
     ageMax: 4,
     learningObjectives: ['counting', 'matching'],
@@ -278,7 +291,7 @@ export const OBJECTIVE_RULE_SEEDS: Array<{
   {
     id: 'rule_obj_5_6_counting',
     name: 'Ages 5-6 counting',
-    priority: 110,
+    priority: 10,
     ageMin: 5,
     ageMax: 6,
     learningObjectives: ['counting', 'matching', 'vocabulary'],
@@ -287,7 +300,7 @@ export const OBJECTIVE_RULE_SEEDS: Array<{
   {
     id: 'rule_obj_5_6_comparison',
     name: 'Ages 5-6 comparison',
-    priority: 110,
+    priority: 10,
     ageMin: 5,
     ageMax: 6,
     learningObjectives: ['comparison', 'classification', 'sorting'],
@@ -296,7 +309,7 @@ export const OBJECTIVE_RULE_SEEDS: Array<{
   {
     id: 'rule_obj_3_4_sorting',
     name: 'Ages 3-4 sorting',
-    priority: 110,
+    priority: 10,
     ageMin: 3,
     ageMax: 4,
     learningObjectives: ['sorting', 'classification', 'matching'],
@@ -305,7 +318,7 @@ export const OBJECTIVE_RULE_SEEDS: Array<{
   {
     id: 'rule_obj_6_8_comparison',
     name: 'Ages 6-8 comparison',
-    priority: 110,
+    priority: 10,
     ageMin: 6,
     ageMax: 8,
     learningObjectives: ['comparison', 'classification', 'reading'],
@@ -322,6 +335,7 @@ export class FlashcardSeedService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly templateRepository: TemplateRepository,
+    private readonly templateCatalogCache: TemplateCatalogCacheService,
   ) {}
 
   public async onModuleInit(): Promise<void> {
@@ -354,9 +368,11 @@ export class FlashcardSeedService implements OnModuleInit {
             difficulties: [],
             intents: [],
             topics: [],
+            isFallback: Boolean(rule.isFallback),
           },
         });
       }
     });
+    this.templateCatalogCache.invalidate();
   }
 }

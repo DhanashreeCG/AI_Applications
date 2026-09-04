@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
@@ -12,14 +12,23 @@ import type {
   SearchAssetsResponse,
   SearchResultItem,
 } from '../../search/interfaces/search-result.interface';
-import { S3StorageService } from '../../storage/s3-storage.service';
+import {
+  S3StorageService,
+  sanitizeUploadFilename,
+} from '../../storage/s3-storage.service';
+import { PrismaService } from '../../database/prisma.service';
 import {
   DEFAULT_IMAGE_CONCURRENCY,
+  DEFAULT_IMAGE_EMBEDDING_MAX_ATTEMPTS,
+  DEFAULT_IMAGE_EMBEDDING_RETRY_DELAY_MS,
   DEFAULT_IMAGE_SEARCH_LIMIT,
   DEFAULT_SIGNED_URL_TTL_SECONDS,
   FLASHCARD_ASSET_IMAGE_PATH,
   FLASHCARD_IMAGE_SEARCH_EMBEDDING_PURPOSE,
+  FLASHCARD_USER_UPLOAD_MAX_BYTES,
+  FLASHCARD_USER_UPLOAD_MIME_TYPES,
 } from '../constants/flashcard.constants';
+import { FlashcardException } from '../errors/flashcard.exception';
 import {
   AssetReference,
   ImageRetrievalStatus,
@@ -29,6 +38,7 @@ import {
   FlashcardPipelineEmitter,
   hashPayload,
 } from '../telemetry/flashcard-pipeline.events';
+import { resolveFlashcardBrandColor } from '../utils/brand-color.util';
 
 interface RetrieveImagesInput {
   queries: Array<ImageSearchQuery | string>;
@@ -36,6 +46,7 @@ interface RetrieveImagesInput {
   ageMin: number | null;
   ageMax: number | null;
   usedAssetIds?: Set<string>;
+  countryCode?: string;
 }
 
 @Injectable()
@@ -44,11 +55,17 @@ export class FlashcardImageRetrievalService {
   private readonly concurrency: number;
   private readonly signedUrlTtlSeconds: number;
   private readonly searchLimit: number;
+  private readonly embeddingMaxAttempts: number;
+  private readonly embeddingRetryDelayMs: number;
+  private readonly pickerLimit: number;
+  private readonly userUploadS3Prefix: string;
   private readonly emitter: FlashcardPipelineEmitter;
+  private pickLock: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly searchService: SearchService,
     private readonly s3StorageService: S3StorageService,
+    private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     eventEmitter: EventEmitter2,
   ) {
@@ -61,6 +78,22 @@ export class FlashcardImageRetrievalService {
     this.searchLimit =
       this.configService.get<number>('flashcards.imageSearchLimit') ??
       DEFAULT_IMAGE_SEARCH_LIMIT;
+    this.embeddingMaxAttempts = Math.max(
+      1,
+      this.configService.get<number>('flashcards.imageEmbeddingMaxAttempts') ??
+        DEFAULT_IMAGE_EMBEDDING_MAX_ATTEMPTS,
+    );
+    this.embeddingRetryDelayMs = Math.max(
+      0,
+      this.configService.get<number>('flashcards.imageEmbeddingRetryDelayMs') ??
+        DEFAULT_IMAGE_EMBEDDING_RETRY_DELAY_MS,
+    );
+    this.pickerLimit =
+      this.configService.get<number>('flashcards.imagePickerLimit') ?? 10;
+    this.userUploadS3Prefix = (
+      this.configService.get<string>('flashcards.userUploadS3Prefix') ??
+      'flashcards/uploads'
+    ).replace(/\/$/, '');
     this.emitter = new FlashcardPipelineEmitter(eventEmitter);
   }
 
@@ -73,31 +106,25 @@ export class FlashcardImageRetrievalService {
     telemetry?: PipelineTelemetryContext,
   ): Promise<AssetReference> {
     const primary = this.normalizeQuery(input.queries[0]);
-    const cascade = this.buildCascadeQueries(primary, input.topic);
-    const attempts: string[] = [];
-
-    if (!cascade.length) {
-      return this.emptyReference('', attempts, 'IMAGE_NOT_FOUND');
+    if (!primary) {
+      return this.emptyReference('', [], 'IMAGE_NOT_FOUND');
     }
 
-    for (const attempt of cascade) {
-      attempts.push(attempt.label);
-      const hit = await this.searchOnce(
-        attempt.query,
-        input,
-        telemetry,
-        attempts,
-      );
-      if (hit) {
-        return hit;
-      }
-    }
-
-    return this.emptyReference(
-      cascade[0]?.query ?? '',
+    // One SearchService call per image slot. Do not cascade extra queries
+    // (style/background/topic) — those were showing up as a second Assets
+    // search even though the LLM emitted a single searchQuery.
+    const attempts = ['semantic'];
+    const hit = await this.searchOnce(
+      primary.searchQuery,
+      input,
+      telemetry,
       attempts,
-      'IMAGE_NOT_FOUND',
     );
+    if (hit) {
+      return hit;
+    }
+
+    return this.emptyReference(primary.searchQuery, attempts, 'IMAGE_NOT_FOUND');
   }
 
   public async mapWithConcurrency<T, R>(
@@ -135,52 +162,6 @@ export class FlashcardImageRetrievalService {
     return raw;
   }
 
-  /**
-   * Search priority when the primary LLM query misses:
-   * primary semantic → enriched → expected object → object name → topic
-   */
-  private buildCascadeQueries(
-    primary: ImageSearchQuery | null,
-    topic?: string,
-  ): Array<{ label: string; query: string }> {
-    const cascade: Array<{ label: string; query: string }> = [];
-    const seen = new Set<string>();
-
-    const push = (label: string, query: string | undefined) => {
-      const trimmed = query?.trim();
-      if (!trimmed) return;
-      const key = trimmed.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      cascade.push({ label, query: trimmed });
-    };
-
-    if (primary) {
-      push('semantic', primary.searchQuery);
-
-      const enriched = [
-        primary.searchQuery,
-        primary.preferredStyle,
-        primary.preferredBackground
-          ? `${primary.preferredBackground} background`
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join(' ');
-      push('semantic_enriched', enriched);
-
-      if (primary.expectedObjects.length) {
-        push('expected_objects', primary.expectedObjects.join(' '));
-        push('object_name', primary.expectedObjects[0]);
-      }
-    }
-
-    push('topic', topic);
-    push('unfiltered', primary?.expectedObjects[0] || primary?.searchQuery);
-
-    return cascade;
-  }
-
   private async searchOnce(
     query: string,
     input: RetrieveImagesInput,
@@ -200,18 +181,14 @@ export class FlashcardImageRetrievalService {
     }
 
     try {
-      // Single top match only — highest similarity / least distance.
-      const response = await this.searchService.search({
+      const response = await this.searchWithEmbeddingRetry(
         query,
-        limit: this.searchLimit,
-      });
+        input.countryCode,
+      );
 
       this.emitEmbeddingUsage(telemetry, query, response);
 
-      const candidate = this.selectTopSimilarityHit(
-        response.results,
-        input.usedAssetIds,
-      );
+      const candidate = await this.claimHit(response.results, input);
 
       if (!candidate) {
         if (telemetry) {
@@ -229,8 +206,6 @@ export class FlashcardImageRetrievalService {
         }
         return null;
       }
-
-      input.usedAssetIds?.add(candidate.assetId);
 
       let signedUrl: string | null = null;
       try {
@@ -258,17 +233,21 @@ export class FlashcardImageRetrievalService {
         });
       }
 
+      const colors = await this.loadAssetColors(candidate.assetId, candidate.colors);
       return {
         assetId: candidate.assetId,
         s3ObjectKey: candidate.s3ObjectKey,
         signedUrl,
         imageUrl: `${FLASHCARD_ASSET_IMAGE_PATH}/${candidate.assetId}/image`,
+        userUploadedKey: null,
         caption: candidate.caption,
         similarity: candidate.similarity,
         mimeType: candidate.mimeType,
         status: 'found',
         queryUsed: query,
         attempts: [...attempts],
+        colors,
+        color: resolveFlashcardBrandColor(colors),
       };
     } catch (error) {
       const message = getErrorMessage(error);
@@ -286,8 +265,41 @@ export class FlashcardImageRetrievalService {
           durationMs: Date.now() - startedAt,
         });
       }
-      return null;
+      return this.emptyReference(query, attempts, 'error');
     }
+  }
+
+  /**
+   * Retry the same LLM query when embedding/search throws. Never rewrite the query.
+   */
+  private async searchWithEmbeddingRetry(
+    query: string,
+    countryCode?: string,
+  ): Promise<SearchAssetsResponse> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.embeddingMaxAttempts; attempt += 1) {
+      try {
+        return await this.searchService.search({
+          query,
+          limit: this.searchLimit,
+          ...(countryCode ? { countryCode } : {}),
+        });
+      } catch (error) {
+        lastError = error;
+        if (error instanceof HttpException && error.getStatus() < 500) {
+          throw error;
+        }
+        this.logger.warn(
+          `Embedding/search attempt ${attempt}/${this.embeddingMaxAttempts} failed for "${query}": ${getErrorMessage(error)}`,
+        );
+        if (attempt < this.embeddingMaxAttempts && this.embeddingRetryDelayMs) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.embeddingRetryDelayMs),
+          );
+        }
+      }
+    }
+    throw lastError;
   }
 
   private emptyReference(
@@ -300,25 +312,45 @@ export class FlashcardImageRetrievalService {
       s3ObjectKey: null,
       signedUrl: null,
       imageUrl: null,
+      userUploadedKey: null,
       caption: null,
       similarity: null,
       mimeType: null,
       status,
       queryUsed,
       attempts,
+      colors: [],
+      color: null,
     };
   }
 
   /**
-   * Pick exactly the top semantic hit (highest similarity / least distance).
-   * No random rotation. If that asset was already used in this set, treat as a
-   * miss so the cascade can try the next LLM-derived query.
-   * When the only hit is already used and this is the sole result, still return
-   * it so the card is not left blank after all attempts.
+   * Claim the highest-similarity unused asset. If this query's top hit is
+   * already on another card in the set, take 2nd, then 3rd, from the same
+   * ranked list. Never reuse the same assetId and never run a second query.
    */
-  private selectTopSimilarityHit(
+  private claimHit(
     results: SearchResultItem[],
-    usedAssetIds?: Set<string>,
+    input: RetrieveImagesInput,
+  ): Promise<SearchResultItem | null> {
+    const run = this.pickLock.then(() => {
+      const candidate = this.selectTopUnusedHit(results, input.usedAssetIds);
+      if (!candidate) {
+        return null;
+      }
+      input.usedAssetIds?.add(candidate.assetId);
+      return candidate;
+    });
+    this.pickLock = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private selectTopUnusedHit(
+    results: SearchResultItem[],
+    usedAssetIds: Set<string> | undefined,
   ): SearchResultItem | null {
     if (!results.length) {
       return null;
@@ -327,16 +359,195 @@ export class FlashcardImageRetrievalService {
     const ranked = [...results].sort(
       (left, right) => (right.similarity ?? 0) - (left.similarity ?? 0),
     );
-    const top = ranked[0];
 
-    if (!usedAssetIds?.has(top.assetId)) {
-      return top;
+    return (
+      ranked.find((item) => !usedAssetIds?.has(item.assetId)) ?? null
+    );
+  }
+
+  public async searchCandidates(
+    query: string,
+    limit?: number,
+    countryCode?: string,
+  ): Promise<
+    Array<{
+      assetId: string;
+      caption: string;
+      searchDescription: string;
+      imageUrl: string;
+      colors: string[];
+      color: string | null;
+    }>
+  > {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return [];
     }
+    const response = await this.searchService.search({
+      query: trimmed,
+      limit: limit ?? this.pickerLimit,
+      ...(countryCode ? { countryCode } : {}),
+    });
+    return response.results.map((hit) => ({
+      assetId: hit.assetId,
+      caption: hit.caption,
+      searchDescription: hit.searchDescription,
+      imageUrl: `${FLASHCARD_ASSET_IMAGE_PATH}/${hit.assetId}/image`,
+      colors: hit.colors || [],
+      color: resolveFlashcardBrandColor(hit.colors),
+    }));
+  }
 
-    // Top hit already used — only fall through to a lower-ranked unused hit
-    // when the search returned more than one (should not happen with limit=1).
-    const unused = ranked.find((item) => !usedAssetIds.has(item.assetId));
-    return unused ?? top;
+  public async resolveLibraryAsset(
+    assetId: string,
+    queryUsed = '',
+  ): Promise<AssetReference> {
+    const asset = await this.prisma.asset.findUnique({
+      where: { id: assetId },
+      select: {
+        id: true,
+        s3ObjectKey: true,
+        mimeType: true,
+        metadata: { select: { caption: true, colors: true } },
+      },
+    });
+    if (!asset) {
+      throw new FlashcardException(
+        'INVALID_REQUEST',
+        `Asset "${assetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return {
+      assetId: asset.id,
+      s3ObjectKey: asset.s3ObjectKey,
+      signedUrl: null,
+      imageUrl: `${FLASHCARD_ASSET_IMAGE_PATH}/${asset.id}/image`,
+      userUploadedKey: null,
+      caption: asset.metadata?.caption ?? null,
+      similarity: null,
+      mimeType: asset.mimeType,
+      status: 'found',
+      queryUsed,
+      attempts: [],
+      colors: asset.metadata?.colors ?? [],
+      color: resolveFlashcardBrandColor(asset.metadata?.colors),
+    };
+  }
+
+  public userUploadProxyUrl(flashcardSetId: string, uploadId: string): string {
+    return `/flashcards/${flashcardSetId}/uploads/${uploadId}/image`;
+  }
+
+  public applyUserUploadedImage(
+    previous: AssetReference | null | undefined,
+    upload: { key: string; imageUrl: string; contentType: string },
+  ): AssetReference {
+    return {
+      assetId: null,
+      s3ObjectKey: upload.key,
+      signedUrl: null,
+      imageUrl: upload.imageUrl,
+      userUploadedKey: upload.key,
+      caption: previous?.caption ?? 'User uploaded image',
+      similarity: null,
+      mimeType: upload.contentType,
+      status: 'found',
+      queryUsed: previous?.queryUsed ?? '',
+      attempts: previous?.attempts ?? [],
+      colors: previous?.colors ?? [],
+      color: previous?.color ?? null,
+    };
+  }
+
+  public async uploadUserImage(
+    flashcardSetId: string,
+    file: { buffer: Buffer; mimetype?: string; originalname?: string; size?: number },
+  ): Promise<{ key: string; uploadId: string; imageUrl: string; contentType: string }> {
+    const contentType = (file.mimetype || '').toLowerCase();
+    if (!FLASHCARD_USER_UPLOAD_MIME_TYPES.has(contentType)) {
+      throw new FlashcardException(
+        'INVALID_REQUEST',
+        'Upload a JPEG, PNG, WebP, or GIF image',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if ((file.size ?? file.buffer.length) > FLASHCARD_USER_UPLOAD_MAX_BYTES) {
+      throw new FlashcardException(
+        'INVALID_REQUEST',
+        'Image is too large',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const ext =
+      contentType === 'image/png'
+        ? '.png'
+        : contentType === 'image/webp'
+          ? '.webp'
+          : contentType === 'image/gif'
+            ? '.gif'
+            : '.jpg';
+    const uploadId = `${randomUUID()}${ext}`;
+    const key = `${this.userUploadS3Prefix}/${flashcardSetId}/${uploadId}`;
+    await this.s3StorageService.uploadFile(file.buffer, {
+      key,
+      contentType,
+      metadata: {
+        flashcardSetId,
+        originalname: sanitizeUploadFilename(file.originalname, uploadId),
+      },
+    });
+    return {
+      key,
+      uploadId,
+      imageUrl: this.userUploadProxyUrl(flashcardSetId, uploadId),
+      contentType,
+    };
+  }
+
+  public async loadUserUpload(
+    flashcardSetId: string,
+    uploadId: string,
+  ): Promise<{ buffer: Buffer; mimeType: string }> {
+    if (!/^[A-Za-z0-9._-]+$/.test(uploadId)) {
+      throw new FlashcardException(
+        'INVALID_REQUEST',
+        'Invalid upload id',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const key = `${this.userUploadS3Prefix}/${flashcardSetId}/${uploadId}`;
+    try {
+      const buffer = await this.s3StorageService.downloadBuffer(key);
+      const mimeType = uploadId.endsWith('.png')
+        ? 'image/png'
+        : uploadId.endsWith('.webp')
+          ? 'image/webp'
+          : uploadId.endsWith('.gif')
+            ? 'image/gif'
+            : 'image/jpeg';
+      return { buffer, mimeType };
+    } catch {
+      throw new FlashcardException(
+        'INVALID_REQUEST',
+        'Uploaded image was not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+  }
+
+  private async loadAssetColors(
+    assetId: string,
+    fallback?: string[] | null,
+  ): Promise<string[]> {
+    const row = await this.prisma.assetMetadata.findUnique({
+      where: { assetId },
+      select: { colors: true },
+    });
+    if (row?.colors?.length) {
+      return row.colors;
+    }
+    return Array.isArray(fallback) ? fallback.filter(Boolean) : [];
   }
 
   private emitEmbeddingUsage(

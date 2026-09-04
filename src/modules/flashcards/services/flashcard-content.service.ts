@@ -14,10 +14,13 @@ import { CircuitBreaker } from '../../ai/utils/circuit-breaker.util';
 import { RateLimiter } from '../../ai/utils/rate-limiter.util';
 import {
   DEFAULT_FLASHCARD_PROMPT_VERSION,
+  ForbiddenContentError,
   buildFlashcardContentPrompt,
   buildFlashcardContentSchema,
+  buildFlashcardEditPrompt,
+  scanCardsForForbiddenContent,
 } from '../constants/flashcard-prompt.constants';
-import { FLASHCARD_CONTENT_STAGE } from '../constants/flashcard.constants';
+import { FLASHCARD_CONTENT_STAGE, FLASHCARD_EDIT_STAGE } from '../constants/flashcard.constants';
 import { FlashcardException } from '../errors/flashcard.exception';
 import {
   LlmFlashcardPayload,
@@ -32,6 +35,10 @@ import {
   validateLlmCardContent,
   validateLlmFlashcardPayload,
 } from '../utils/llm-content.validator';
+import {
+  requestWantsLineArt,
+  sanitizeCardImageQueries,
+} from '../utils/image-query.util';
 
 export interface GenerateContentInput {
   query: string;
@@ -47,6 +54,7 @@ export interface GenerateContentInput {
   subject?: string | null;
   difficulty?: string | null;
   language?: string;
+  countryCode?: string;
 }
 
 @Injectable()
@@ -235,6 +243,173 @@ export class FlashcardContentService {
     return { ...single.cards[0], cardIndex };
   }
 
+  public async generateFieldReplacement(input: {
+    instruction: string;
+    cardId: string;
+    componentId: string;
+    componentType: string;
+    currentValue: unknown;
+    card: unknown;
+    countryCode?: string;
+    telemetry?: PipelineTelemetryContext;
+  }): Promise<unknown> {
+    if (this.provider === 'gemini' && !this.client) {
+      throw new FlashcardException(
+        'RETRY_EXHAUSTION',
+        'Gemini content client is not initialized',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    if (this.provider === 'openai' && !this.openaiClient) {
+      throw new FlashcardException(
+        'RETRY_EXHAUSTION',
+        'OpenAI content client is not initialized',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    const prompt = this.buildEditPromptOrThrow(input);
+    const invocationId = randomUUID();
+    const startedAt = new Date();
+    let latencyMs = 0;
+    const telemetry = input.telemetry;
+
+    if (telemetry) {
+      this.emitter.emitAiStarted({
+        ...telemetry,
+        invocationId,
+        stageName: PIPELINE_STAGES.LLM_REQUEST,
+        provider: this.provider === 'openai' ? 'openai' : 'google-gemini',
+        model: this.modelName,
+        purpose: FLASHCARD_EDIT_STAGE,
+        promptHash: hashPayload(prompt),
+        promptPayload: prompt,
+      });
+    }
+
+    try {
+      this.circuitBreaker.beforeRequest();
+      await this.rateLimiter.acquire();
+
+      let responseText: string | undefined;
+      let usage:
+        | {
+            promptTokenCount?: number;
+            candidatesTokenCount?: number;
+            totalTokenCount?: number;
+          }
+        | undefined;
+
+      if (this.provider === 'openai') {
+        const response = await this.openaiClient!.chat.completions.create({
+          model: this.modelName,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+        });
+        responseText = response.choices[0]?.message?.content?.trim();
+        usage = {
+          promptTokenCount: response.usage?.prompt_tokens,
+          candidatesTokenCount: response.usage?.completion_tokens,
+          totalTokenCount: response.usage?.total_tokens,
+        };
+      } else {
+        const response = await this.client!.models.generateContent({
+          model: this.modelName,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: { responseMimeType: 'application/json' },
+        });
+        responseText = response.text?.trim();
+        const geminiUsage = (
+          response as { usageMetadata?: Record<string, number> }
+        ).usageMetadata;
+        usage = geminiUsage
+          ? {
+              promptTokenCount: geminiUsage.promptTokenCount,
+              candidatesTokenCount: geminiUsage.candidatesTokenCount,
+              totalTokenCount: geminiUsage.totalTokenCount,
+            }
+          : undefined;
+      }
+
+      latencyMs = Date.now() - startedAt.getTime();
+      if (!responseText) {
+        throw new FlashcardException(
+          'INVALID_LLM_OUTPUT',
+          'LLM returned an empty response',
+        );
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(responseText);
+      } catch {
+        throw new FlashcardException(
+          'INVALID_LLM_OUTPUT',
+          'LLM response was not valid JSON',
+        );
+      }
+
+      await this.aiUsageService.record({
+        stage: FLASHCARD_EDIT_STAGE,
+        provider: this.provider === 'openai' ? 'openai' : 'google-gemini',
+        model: this.modelName,
+        startedAt,
+        completedAt: new Date(),
+        latencyMs,
+        inputTokens: usage?.promptTokenCount,
+        outputTokens: usage?.candidatesTokenCount,
+        totalTokens: usage?.totalTokenCount,
+        status: 'success',
+      });
+      this.circuitBreaker.recordSuccess();
+
+      if (telemetry) {
+        this.emitter.emitAiCompleted({
+          ...telemetry,
+          invocationId,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+          status: 'success',
+          responseHash: hashPayload(responseText),
+          responsePayload: parsed,
+          inputTokens: usage?.promptTokenCount,
+          outputTokens: usage?.candidatesTokenCount,
+          totalTokens: usage?.totalTokenCount,
+          durationMs: latencyMs,
+        });
+      }
+
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        Object.prototype.hasOwnProperty.call(parsed, 'value')
+      ) {
+        return (parsed as { value: unknown }).value;
+      }
+      return parsed;
+    } catch (error) {
+      this.circuitBreaker.recordFailure();
+      if (telemetry) {
+        this.emitter.emitAiCompleted({
+          ...telemetry,
+          invocationId,
+          stageName: PIPELINE_STAGES.LLM_REQUEST,
+          status: 'failed',
+          errorMessage: getErrorMessage(error),
+          durationMs: latencyMs || Date.now() - startedAt.getTime(),
+        });
+      }
+      if (error instanceof FlashcardException) {
+        throw error;
+      }
+      throw new FlashcardException(
+        'INVALID_LLM_OUTPUT',
+        `Flashcard field edit failed: ${getErrorMessage(error)}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
   private async requestContent(
     input: GenerateContentInput,
     correction?: string,
@@ -262,7 +437,7 @@ export class FlashcardContentService {
       });
     }
 
-    const basePrompt = buildFlashcardContentPrompt(input);
+    const basePrompt = this.buildContentPromptOrThrow(input);
     const prompt = correction
       ? `${basePrompt}\n\nYour previous response was rejected: ${correction}\nReturn corrected JSON using the exact component keys listed above.`
       : basePrompt;
@@ -332,6 +507,11 @@ export class FlashcardContentService {
             responseSchema: buildFlashcardContentSchema(
               input.textComponents,
               input.imageComponents,
+              {
+                ageMin: input.ageMin,
+                ageMax: input.ageMax,
+                query: input.query,
+              },
             ),
           },
         });
@@ -414,6 +594,21 @@ export class FlashcardContentService {
           });
         }
         throw validationError;
+      }
+
+      this.stripRetrievalNoiseFromImageQueries(payload, input);
+
+      const violations = scanCardsForForbiddenContent(
+        payload.cards,
+        input.countryCode,
+      );
+      if (violations.length > 0) {
+        throw new FlashcardException(
+          'INVALID_LLM_OUTPUT',
+          `Generated content included forbidden term "${violations[0].matchedTerm}"`,
+          HttpStatus.BAD_GATEWAY,
+          { violations },
+        );
       }
 
       if (telemetry) {
@@ -590,6 +785,7 @@ export class FlashcardContentService {
                 subject: input.subject,
                 difficulty: input.difficulty,
                 language: input.language,
+                countryCode: input.countryCode,
               },
               index,
               reason,
@@ -601,5 +797,61 @@ export class FlashcardContentService {
 
       return { cards };
     }
+  }
+
+  /**
+   * Safety net for the STANDARD image rules in the prompt. Removal-only: strips
+   * teaching-purpose boilerplate (and line-art terms unless the request is about
+   * tracing/colouring) from each slot's own searchQuery, so the card, telemetry,
+   * and asset search all carry the identical single query string.
+   */
+  private stripRetrievalNoiseFromImageQueries(
+    payload: LlmFlashcardPayload,
+    input: GenerateContentInput,
+  ): void {
+    const changes = sanitizeCardImageQueries(payload.cards, {
+      allowLineArt: requestWantsLineArt({
+        query: input.query,
+        topic: input.topic,
+        learningObjective: input.learningObjective,
+        subject: input.subject,
+      }),
+    });
+
+    for (const change of changes) {
+      this.logger.warn(
+        `Image query noise stripped on card ${change.cardIndex} "${change.componentId}": "${change.from}" -> "${change.to}"`,
+      );
+    }
+  }
+
+  private buildContentPromptOrThrow(input: GenerateContentInput): string {
+    try {
+      return buildFlashcardContentPrompt(input);
+    } catch (error) {
+      return this.rethrowForbiddenContent(error);
+    }
+  }
+
+  private buildEditPromptOrThrow(
+    input: Parameters<typeof buildFlashcardEditPrompt>[0],
+  ): string {
+    try {
+      return buildFlashcardEditPrompt(input);
+    } catch (error) {
+      return this.rethrowForbiddenContent(error);
+    }
+  }
+
+  private rethrowForbiddenContent(error: unknown): never {
+    if (error instanceof ForbiddenContentError) {
+      throw new FlashcardException(
+        'CONTENT_NOT_ALLOWED',
+        error.message,
+        HttpStatus.BAD_REQUEST,
+        { matchedTerm: error.matchedTerm, field: error.field },
+      );
+    }
+    throw error;
   }
 }

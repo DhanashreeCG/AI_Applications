@@ -6,7 +6,11 @@ import {
   PIPELINE_STAGES,
   PipelineTelemetryContext,
 } from '../../../common/events/pipeline-tracker.events';
-import { DEFAULT_FLASHCARD_COUNT } from '../constants/flashcard.constants';
+import {
+  DEFAULT_CARD_CONCURRENCY,
+  DEFAULT_FLASHCARD_COUNT,
+} from '../constants/flashcard.constants';
+import { mapWithConcurrency } from '../flashcard-renderer/utils/concurrency.util';
 import { GenerateFlashcardsDto } from '../dto/generate-flashcards.dto';
 import { FlashcardException } from '../errors/flashcard.exception';
 import {
@@ -17,7 +21,13 @@ import {
   TemplateComponentDefinition,
 } from '../interfaces/flashcard.interfaces';
 import { parseEditableComponentsFromLayout } from '../utils/template-layout.util';
+import { expandDefinitionsForAvailableIds } from '../utils/repeat-component.util';
+import { assertAssembledCardComponents } from '../utils/assembled-card.validator';
 import { resolveUserRequest } from '../utils/user-request.resolver';
+import {
+  assertContentRequestIsAllowed,
+  ForbiddenContentError,
+} from '../constants/flashcard-prompt.constants';
 import {
   FlashcardPipelineEmitter,
   createTelemetryContext,
@@ -28,9 +38,31 @@ import { FlashcardRendererService } from '../flashcard-renderer/renderer/flashca
 import { FlashcardRenderResult } from '../flashcard-renderer/interfaces/render-result.interface';
 import { TemplateSelectionService } from './template-selection.service';
 import type { SelectTemplateResult } from './template-selection.service';
+import { TemplateRepository } from './template.repository';
+import { ImageQueryRefinementService } from './image-query-refinement.service';
+import { requestWantsLineArt } from '../utils/image-query.util';
+
+/**
+ * Emitted once the template is known and again per assembled card, so a
+ * streaming transport can deliver cards before the whole set is finished.
+ */
+export interface GenerateFlashcardsProgress {
+  onMeta?: (meta: FlashcardGenerationMeta) => void;
+  onCard?: (card: FlashcardCardPayload, slotIndex: number) => void;
+}
+
+export interface FlashcardGenerationMeta {
+  count: number;
+  request: GenerateFlashcardsResponse['request'];
+  selection: GenerateFlashcardsResponse['selection'];
+  template: GenerateFlashcardsResponse['template'];
+  templateVersion: GenerateFlashcardsResponse['templateVersion'];
+  layoutDefinition: GenerateFlashcardsResponse['layoutDefinition'];
+}
 
 export interface GenerateFlashcardsOptions {
   correlationId?: string;
+  progress?: GenerateFlashcardsProgress;
 }
 
 @Injectable()
@@ -39,12 +71,15 @@ export class FlashcardOrchestratorService {
   private readonly emitter: FlashcardPipelineEmitter;
   private readonly workflowType: string;
   private readonly renderingEnabled: boolean;
+  private readonly cardConcurrency: number;
 
   constructor(
     private readonly templateSelectionService: TemplateSelectionService,
+    private readonly templateRepository: TemplateRepository,
     private readonly contentService: FlashcardContentService,
     private readonly imageRetrievalService: FlashcardImageRetrievalService,
     private readonly rendererService: FlashcardRendererService,
+    private readonly imageQueryRefinementService: ImageQueryRefinementService,
     private readonly configService: ConfigService,
     eventEmitter: EventEmitter2,
   ) {
@@ -54,6 +89,25 @@ export class FlashcardOrchestratorService {
       'flashcards';
     this.renderingEnabled =
       this.configService.get<boolean>('flashcards.renderer.enabled') !== false;
+    this.cardConcurrency = Math.max(
+      1,
+      this.configService.get<number>('flashcards.cardConcurrency') ??
+        DEFAULT_CARD_CONCURRENCY,
+    );
+  }
+
+  /**
+   * Progress callbacks belong to the transport, never to the pipeline. A
+   * client that disconnects mid-stream must not fail the generation.
+   */
+  private notifyProgress(emit: () => void): void {
+    try {
+      emit();
+    } catch (error) {
+      this.logger.warn(
+        `Flashcard progress callback failed: ${getErrorMessage(error)}`,
+      );
+    }
   }
 
   public async generate(
@@ -73,11 +127,12 @@ export class FlashcardOrchestratorService {
         grade: dto.grade,
         count: dto.count ?? DEFAULT_FLASHCARD_COUNT,
         templateId: dto.templateId?.trim() || undefined,
+        countryCode: dto.countryCode,
       },
     });
 
     try {
-      const response = await this.runGenerate(dto, telemetry);
+      const response = await this.runGenerate(dto, telemetry, options.progress);
       this.emitter.emitCompleted({
         ...telemetry,
         status: 'completed',
@@ -106,12 +161,14 @@ export class FlashcardOrchestratorService {
   private async runGenerate(
     dto: GenerateFlashcardsDto,
     telemetry: PipelineTelemetryContext,
+    progress?: GenerateFlashcardsProgress,
   ): Promise<GenerateFlashcardsResponse> {
     this.emitter.emitStageStarted({
       ...telemetry,
       stageName: PIPELINE_STAGES.REQUEST_VALIDATION,
     });
     const count = dto.count ?? DEFAULT_FLASHCARD_COUNT;
+    const countryCode = this.resolveCountryCode(dto.countryCode);
     const explicitTemplateId = dto.templateId?.trim() || null;
     if (dto.templateId !== undefined && dto.templateId !== null && !explicitTemplateId) {
       this.emitter.emitStageFailed({
@@ -149,6 +206,7 @@ export class FlashcardOrchestratorService {
 
     let resolved;
     try {
+      const ruleSignals = await this.templateRepository.listRuleSignals();
       resolved = resolveUserRequest({
         query: dto.query,
         ageGroup: dto.ageGroup,
@@ -156,12 +214,19 @@ export class FlashcardOrchestratorService {
         subject: dto.subject,
         difficulty: dto.difficulty,
         language: dto.language,
+        ruleIntents: ruleSignals.intents,
+        ruleTags: ruleSignals.tags,
       });
+      this.assertRequestContentAllowed(resolved.query, resolved.topic, countryCode);
     } catch (error) {
       this.emitter.emitStageFailed({
         ...telemetry,
         stageName: PIPELINE_STAGES.REQUEST_ANALYSIS,
         errorMessage: getErrorMessage(error),
+        metadata:
+          error instanceof FlashcardException
+            ? { code: error.code, ...(error.details ?? {}) }
+            : undefined,
       });
       throw error;
     }
@@ -190,6 +255,41 @@ export class FlashcardOrchestratorService {
         )
       : await this.runObjectiveAndTemplateSelection(resolved, telemetry);
 
+    const requestSummary: GenerateFlashcardsResponse['request'] = {
+      query: resolved.query,
+      topic: resolved.topic,
+      ageGroup: resolved.ageGroup,
+      ageMin: selected.ageMin,
+      ageMax: selected.ageMax,
+      grade: resolved.grade,
+      subject: resolved.subject,
+      difficulty: resolved.difficulty,
+      language: resolved.language,
+      learningObjective: selected.learningObjective,
+      educationalIntent: resolved.educationalIntent,
+      count,
+      countryCode: countryCode ?? null,
+    };
+    const selectionSummary: GenerateFlashcardsResponse['selection'] = {
+      ruleId: selected.selection.ruleId,
+      ruleName: selected.selection.ruleName,
+      score: selected.selection.score,
+      priority: selected.selection.priority,
+    };
+
+    // Sent before content generation so a streaming client can lay out
+    // correctly-shaped placeholders while the LLM call is still running.
+    this.notifyProgress(() =>
+      progress?.onMeta?.({
+        count,
+        request: requestSummary,
+        selection: selectionSummary,
+        template: selected.template,
+        templateVersion: selected.template.templateVersion,
+        layoutDefinition: selected.template.layoutDefinition,
+      }),
+    );
+
     const editableComponents = parseEditableComponentsFromLayout(
       selected.template.layoutDefinition,
     );
@@ -215,6 +315,27 @@ export class FlashcardOrchestratorService {
         subject: resolved.subject,
         difficulty: resolved.difficulty,
         language: resolved.language,
+        countryCode,
+      },
+      telemetry,
+    );
+
+    // --- Image Query Refinement (lightweight LLM intent extraction) ---
+    // Runs after content generation (which already applied the regex sanitizer)
+    // and before image retrieval. Refines each image slot's searchQuery to a
+    // concise 2-5 word search key optimised for asset embedding search.
+    await this.imageQueryRefinementService.refineQueries(
+      {
+        cards: llmPayload.cards,
+        topic: resolved.topic,
+        learningObjective: selected.learningObjective,
+        allowLineArt: requestWantsLineArt({
+          query: resolved.query,
+          topic: resolved.topic,
+          learningObjective: selected.learningObjective,
+          subject: resolved.subject,
+        }),
+        countryCode,
       },
       telemetry,
     );
@@ -225,12 +346,18 @@ export class FlashcardOrchestratorService {
     });
 
     const usedAssetIds = new Set<string>();
-    const cards = await this.imageRetrievalService.mapWithConcurrency(
-      llmPayload.cards,
-      async (card): Promise<FlashcardCardPayload> => {
+    const assembleCard = async (
+      card: (typeof llmPayload.cards)[number],
+    ): Promise<FlashcardCardPayload> => {
+        // Expand any `{x}` image placeholders into the concrete ids the LLM
+        // returned (image-1..image-N) before retrieval + merge.
+        const expandedImageDefinitions = expandDefinitionsForAvailableIds(
+          imageComponents,
+          Object.keys(card.imageComponents),
+        );
         const retrievedImages =
           await this.imageRetrievalService.mapWithConcurrency(
-          imageComponents,
+          expandedImageDefinitions,
           async (imageDefinition) => {
             const query =
               card.imageComponents[imageDefinition.componentId];
@@ -242,6 +369,7 @@ export class FlashcardOrchestratorService {
                 ageMin: selected.ageMin,
                 ageMax: selected.ageMax,
                 usedAssetIds,
+                countryCode,
               },
               telemetry,
             );
@@ -253,20 +381,43 @@ export class FlashcardOrchestratorService {
         );
         const imageRefs = Object.fromEntries(retrievedImages);
 
-        const components: EditableComponentPayload[] = editableComponents.map(
-          (definition) =>
+        // Expand `{x}` text/image placeholders using the concrete keys present
+        // on this card so FINAL_VALIDATION sees num-1..num-N, not "num-{x}".
+        const expandedEditableComponents = expandDefinitionsForAvailableIds(
+          editableComponents,
+          [
+            ...Object.keys(card.textComponents),
+            ...Object.keys(card.imageComponents),
+          ],
+        );
+
+        const components: EditableComponentPayload[] =
+          expandedEditableComponents.map((definition) =>
             this.mergeComponent(
               definition,
               card.textComponents,
               imageRefs,
             ),
-        );
+          );
 
         return {
           cardId: `card-${card.cardIndex}`,
           cardIndex: card.cardIndex,
           components,
         };
+    };
+
+    // Cards are assembled in parallel; each card's image slots are themselves
+    // fetched concurrently. Cross-card image de-duplication stays correct
+    // because `claimHit` serialises asset claims against the shared
+    // `usedAssetIds` set.
+    const cards = await mapWithConcurrency(
+      llmPayload.cards,
+      this.cardConcurrency,
+      async (card, slotIndex) => {
+        const assembled = await assembleCard(card);
+        this.notifyProgress(() => progress?.onCard?.(assembled, slotIndex));
+        return assembled;
       },
     );
 
@@ -292,26 +443,8 @@ export class FlashcardOrchestratorService {
     };
 
     const response: GenerateFlashcardsResponse = {
-      request: {
-        query: resolved.query,
-        topic: resolved.topic,
-        ageGroup: resolved.ageGroup,
-        ageMin: selected.ageMin,
-        ageMax: selected.ageMax,
-        grade: resolved.grade,
-        subject: resolved.subject,
-        difficulty: resolved.difficulty,
-        language: resolved.language,
-        learningObjective: selected.learningObjective,
-        educationalIntent: resolved.educationalIntent,
-        count,
-      },
-      selection: {
-        ruleId: selected.selection.ruleId,
-        ruleName: selected.selection.ruleName,
-        score: selected.selection.score,
-        priority: selected.selection.priority,
-      },
+      request: requestSummary,
+      selection: selectionSummary,
       template: selected.template,
       templateVersion: selected.template.templateVersion,
       layoutDefinition: selected.template.layoutDefinition,
@@ -548,30 +681,45 @@ export class FlashcardOrchestratorService {
         grade: resolved.grade,
         subject: resolved.subject,
         difficulty: resolved.difficulty,
+        subjectConfidence: resolved.subjectConfidence,
+        difficultyConfidence: resolved.difficultyConfidence,
         query: resolved.query,
+        telemetry,
       });
+
+    const buildSelectionMetadata = (
+      selected: SelectTemplateResult,
+      extra?: Record<string, unknown>,
+    ) => ({
+      templateId: selected.template.id,
+      ruleId: selected.selection.ruleId,
+      templateVersion: selected.template.templateVersion,
+      requestedAgeGroup: resolved.ageGroup,
+      templateAgeGroups: selected.template.supportedAgeGroups,
+      learningObjective: resolved.learningObjective,
+      objectiveConfidence: resolved.objectiveConfidence,
+      selectionScore: selected.selection.score,
+      selectionMode: selected.aiSelection?.selectionMode ?? 'deterministic',
+      aiConfidence: selected.aiSelection?.result?.confidenceScore,
+      aiReasoning: selected.aiSelection?.result?.reasoning,
+      aiFallbackReason: selected.aiSelection?.fallbackReason,
+      catalogHash: selected.aiSelection?.catalogHash,
+      cachedTokens: selected.aiSelection?.result?.cachedInputTokens,
+      rankingBreakdown: selected.ranking?.map((candidate) => ({
+        templateId: candidate.templateId,
+        ruleId: candidate.ruleId,
+        score: candidate.score,
+        breakdown: candidate.breakdown,
+      })),
+      ...extra,
+    });
 
     try {
       const selected = await selectOnce();
       this.emitter.emitStageCompleted({
         ...telemetry,
         stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
-        metadata: {
-          templateId: selected.template.id,
-          ruleId: selected.selection.ruleId,
-          templateVersion: selected.template.templateVersion,
-          requestedAgeGroup: resolved.ageGroup,
-          templateAgeGroups: selected.template.supportedAgeGroups,
-          learningObjective: resolved.learningObjective,
-          objectiveConfidence: resolved.objectiveConfidence,
-          selectionScore: selected.selection.score,
-          rankingBreakdown: selected.ranking?.map((candidate) => ({
-            templateId: candidate.templateId,
-            ruleId: candidate.ruleId,
-            score: candidate.score,
-            breakdown: candidate.breakdown,
-          })),
-        },
+        metadata: buildSelectionMetadata(selected),
       });
       return selected;
     } catch (error) {
@@ -587,11 +735,9 @@ export class FlashcardOrchestratorService {
           this.emitter.emitStageCompleted({
             ...telemetry,
             stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
-            metadata: {
-              templateId: selected.template.id,
-              ruleId: selected.selection.ruleId,
+            metadata: buildSelectionMetadata(selected, {
               retriedAfterInactive: true,
-            },
+            }),
           });
           return selected;
         } catch (retryError) {
@@ -621,22 +767,10 @@ export class FlashcardOrchestratorService {
     if (!Array.isArray(response.cards) || response.cards.length !== count) {
       throw new FlashcardException(
         'INVALID_LLM_OUTPUT',
-        'Assembled flashcard response failed validation',
+        `Assembled flashcard response failed validation: expected ${count} cards, received ${Array.isArray(response.cards) ? response.cards.length : 'non-array'}`,
       );
     }
 
-    const allowedIds = new Set(
-      editableComponents.map((component) => component.componentId),
-    );
-    const expectedIds = editableComponents.map(
-      (component) => component.componentId,
-    );
-    const definitionById = new Map(
-      editableComponents.map((component) => [
-        component.componentId,
-        component,
-      ]),
-    );
     const seenCardIds = new Set<string>();
 
     for (const card of response.cards) {
@@ -648,62 +782,11 @@ export class FlashcardOrchestratorService {
       }
       seenCardIds.add(card.cardId);
 
-      const actualIds = card.components.map(
-        (component) => component.componentId,
+      assertAssembledCardComponents(
+        card.cardId,
+        card.components,
+        editableComponents,
       );
-      if (
-        actualIds.length !== expectedIds.length ||
-        actualIds.some((componentId, index) => componentId !== expectedIds[index])
-      ) {
-        throw new FlashcardException(
-          'INVALID_LLM_OUTPUT',
-          `Card "${card.cardId}" components do not match selected template order`,
-          undefined,
-          { expectedIds, actualIds },
-        );
-      }
-
-      for (const component of card.components) {
-        if (!allowedIds.has(component.componentId)) {
-          throw new FlashcardException(
-            'INVALID_LLM_OUTPUT',
-            `Assembled card has unsupported component "${component.componentId}"`,
-          );
-        }
-        const definition = definitionById.get(component.componentId)!;
-        if (
-          component.type !== definition.componentType ||
-          component.componentType !== definition.componentType ||
-          component.editable !== definition.editable
-        ) {
-          throw new FlashcardException(
-            'INVALID_LLM_OUTPUT',
-            `Component "${component.componentId}" does not match its selected template definition`,
-          );
-        }
-
-        if (
-          definition.componentType !== 'image' &&
-          definition.required &&
-          !component.content?.trim()
-        ) {
-          throw new FlashcardException(
-            'INVALID_LLM_OUTPUT',
-            `Required text component "${component.componentId}" has no content`,
-          );
-        }
-
-        if (
-          definition.componentType === 'image' &&
-          definition.required &&
-          component.assetReference === undefined
-        ) {
-          throw new FlashcardException(
-            'INVALID_LLM_OUTPUT',
-            `Required image component "${component.componentId}" has no retrieval result`,
-          );
-        }
-      }
     }
   }
 
@@ -736,5 +819,42 @@ export class FlashcardOrchestratorService {
       content: contentById[definition.componentId] ?? null,
       validationRules: definition.validationRules,
     };
+  }
+
+  /**
+   * Request countryCode (body/header) always wins when it is a real ISO code.
+   * If the request omits it, FLASHCARD_DEFAULT_COUNTRY_CODE is used for the LLM.
+   */
+  private resolveCountryCode(requested?: string | null): string | undefined {
+    const fromRequest = requested?.trim().toUpperCase();
+    if (fromRequest && /^[A-Z]{2}$/.test(fromRequest)) {
+      return fromRequest;
+    }
+    const fromEnv = (
+      this.configService.get<string>('flashcards.defaultCountryCode') || ''
+    )
+      .trim()
+      .toUpperCase();
+    return /^[A-Z]{2}$/.test(fromEnv) ? fromEnv : undefined;
+  }
+
+  private assertRequestContentAllowed(
+    query: string,
+    topic: string,
+    countryCode?: string,
+  ): void {
+    try {
+      assertContentRequestIsAllowed({ query, topic, countryCode });
+    } catch (error) {
+      if (error instanceof ForbiddenContentError) {
+        throw new FlashcardException(
+          'CONTENT_NOT_ALLOWED',
+          error.message,
+          HttpStatus.BAD_REQUEST,
+          { matchedTerm: error.matchedTerm, field: error.field, countryCode },
+        );
+      }
+      throw error;
+    }
   }
 }

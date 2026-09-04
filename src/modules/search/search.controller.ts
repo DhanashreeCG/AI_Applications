@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SearchService } from './search.service';
 import { SearchAssetsDto } from './dto/search-assets.dto';
@@ -11,8 +11,14 @@ export class SearchController {
   @Post()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Semantic search assets' })
-  async searchAssets(@Body() dto: SearchAssetsDto) {
-    return this.searchService.search(dto);
+  async searchAssets(
+    @Body() dto: SearchAssetsDto,
+    @Headers('x-country-code') headerCountryCode?: string,
+  ) {
+    return this.searchService.search({
+      ...dto,
+      countryCode: dto.countryCode || headerCountryCode,
+    });
   }
 
   @Post('cache/flush')

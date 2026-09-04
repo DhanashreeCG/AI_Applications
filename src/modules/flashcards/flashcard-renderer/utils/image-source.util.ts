@@ -9,7 +9,7 @@ export function resolveImageSource(
   }
 
   if (assetReference.imageUrl) {
-    return assetReference.imageUrl.startsWith('http')
+    return /^(https?:|data:|blob:)/i.test(assetReference.imageUrl)
       ? assetReference.imageUrl
       : `${apiBaseUrl.replace(/\/$/, '')}${assetReference.imageUrl}`;
   }

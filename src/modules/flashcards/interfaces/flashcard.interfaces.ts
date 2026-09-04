@@ -1,6 +1,8 @@
 import { ComponentType } from '../constants/flashcard.constants';
 
 export interface TemplateComponentDefinition {
+  constraints?: Record<string, unknown>;
+  semanticRole?: string;
   componentId: string;
   componentType: ComponentType;
   editable: boolean;
@@ -44,6 +46,15 @@ export interface TemplateSelectionCriteria {
   grade?: string;
   subject?: string;
   topic?: string;
+  /** Raw user request. Used only to unlock opt-in templates, never to rank. */
+  query?: string;
+  /**
+   * Whether subject / difficulty were supplied by the caller or guessed from
+   * the query. Only caller-supplied values gate eligibility; guessed ones are
+   * ranking signals. Defaults to hard-filtering when omitted.
+   */
+  subjectConfidence?: 'explicit' | 'inferred' | 'age_default';
+  difficultyConfidence?: 'explicit' | 'inferred' | 'age_default';
   learningObjective?: string;
   intent?: string;
   difficulty?: string;
@@ -93,12 +104,21 @@ export interface AssetReference {
   signedUrl: string | null;
   /** Same-origin proxy path; avoids S3 CORS for canvas-based renderers. */
   imageUrl: string | null;
+  /**
+   * S3 object key for a user-uploaded replacement. Null when the slot uses a
+   * library asset. Cleared once the upload is replaced with a DB asset.
+   */
+  userUploadedKey?: string | null;
   caption: string | null;
   similarity: number | null;
   mimeType: string | null;
   status: ImageRetrievalStatus;
   queryUsed: string;
   attempts: string[];
+  /** Raw AssetMetadata.colors from image retrieval. */
+  colors?: string[] | null;
+  /** Brand-matched frame hex. White/near-white metadata colors are ignored. */
+  color?: string | null;
 }
 
 export interface EditableComponentPayload {
@@ -168,6 +188,8 @@ export interface FlashcardRenderedOutput {
 }
 
 export interface GenerateFlashcardsResponse {
+  id?: string;
+  status?: string;
   request: {
     query: string;
     topic: string;
@@ -181,6 +203,7 @@ export interface GenerateFlashcardsResponse {
     learningObjective: string;
     educationalIntent: string;
     count: number;
+    countryCode?: string | null;
   };
   selection: {
     ruleId: string;
@@ -227,4 +250,10 @@ export type FlashcardErrorCode =
   | 'TEMPLATE_VERSION_MISMATCH'
   | 'MISSING_EDITABLE_COMPONENT'
   | 'IMAGE_SEARCH_TIMEOUT'
-  | 'PARTIAL_IMAGE_FAILURE';
+  | 'PARTIAL_IMAGE_FAILURE'
+  | 'FLASHCARD_NOT_FOUND'
+  | 'INVALID_FIELD'
+  | 'FIELD_NOT_EDITABLE'
+  | 'UNSUPPORTED_FORMAT'
+  | 'CONTENT_NOT_ALLOWED'
+  | 'DOWNLOAD_NOT_IMPLEMENTED';

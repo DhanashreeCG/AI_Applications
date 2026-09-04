@@ -9,7 +9,14 @@ describe('FlashcardTemplateService.upload', () => {
     listAllTemplateSummaries: jest.fn(),
   };
 
-  const service = new FlashcardTemplateService(repository as never);
+  const catalogCache = {
+    invalidate: jest.fn(),
+  };
+
+  const service = new FlashcardTemplateService(
+    repository as never,
+    catalogCache as never,
+  );
 
   const validDto = {
     name: 'classification_v1',
@@ -66,6 +73,7 @@ describe('FlashcardTemplateService.upload', () => {
     expect(repository.createTemplates.mock.calls[0][0][0]).not.toHaveProperty(
       'id',
     );
+    expect(catalogCache.invalidate).toHaveBeenCalledTimes(1);
     expect(result.count).toBe(2);
     expect(result.templates.map((item) => item.id)).toEqual([
       'tmpl_auto_0',
@@ -107,6 +115,7 @@ describe('FlashcardTemplateService.upload', () => {
     ).rejects.toMatchObject({
       status: HttpStatus.CONFLICT,
     });
+    expect(catalogCache.invalidate).not.toHaveBeenCalled();
   });
 });
 
@@ -115,7 +124,14 @@ describe('FlashcardTemplateService.listAll', () => {
     listAllTemplateSummaries: jest.fn(),
   };
 
-  const service = new FlashcardTemplateService(repository as never);
+  const catalogCache = {
+    invalidate: jest.fn(),
+  };
+
+  const service = new FlashcardTemplateService(
+    repository as never,
+    catalogCache as never,
+  );
 
   it('returns id, name, templateType, and layoutType for each template', async () => {
     repository.listAllTemplateSummaries.mockResolvedValue([

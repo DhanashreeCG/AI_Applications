@@ -3,6 +3,7 @@ import { VisionAnalysisResult } from '../dto/vision-metadata.dto';
 export interface VisionProviderInput {
   imageBuffer: Buffer;
   mimeType: string;
+  /** When set, the vision prompt treats this file name as authoritative for letters/digits. */
   filename?: string;
   promptVersion?: string;
 }

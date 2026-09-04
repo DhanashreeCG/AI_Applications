@@ -74,6 +74,23 @@ describe('resolveLearningObjectiveFromQuery', () => {
     expect(resolution.learningObjective).toBe('vocabulary');
     expect(resolution.objectiveConfidence).toBe('age_default');
   });
+
+  it('matches rule intents that the static keyword map misses', () => {
+    const resolution = resolveLearningObjectiveFromQuery(
+      'Do a tally of farm animals',
+      3,
+      4,
+      {
+        intents: ['tally', 'odd one out'],
+        tags: ['counting'],
+      },
+    );
+    expect(resolution.learningObjective).toBe('counting');
+    expect(resolution.objectiveConfidence).toBe('exact_keyword');
+    expect(resolution.matchedKeywords).toEqual(
+      expect.arrayContaining(['tally']),
+    );
+  });
 });
 
 describe('resolveUserRequest', () => {
@@ -130,6 +147,16 @@ describe('resolveUserRequest', () => {
       ageGroup: '3-4',
     });
     expect(resolved.learningObjective).toBe('comparison');
+    expect(resolved.objectiveConfidence).toBe('exact_keyword');
+  });
+
+  it('uses rule intents when resolving a full request', () => {
+    const resolved = resolveUserRequest({
+      query: 'Do a tally of farm animals',
+      ageGroup: '3-4',
+      ruleIntents: ['tally'],
+    });
+    expect(resolved.learningObjective).toBe('counting');
     expect(resolved.objectiveConfidence).toBe('exact_keyword');
   });
 

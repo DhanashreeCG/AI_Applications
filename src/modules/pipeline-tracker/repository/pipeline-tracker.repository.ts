@@ -174,6 +174,7 @@ export class PipelineTrackerRepository {
     responseHash?: string;
     responsePayload?: Prisma.InputJsonValue;
     inputTokens?: number;
+    cachedInputTokens?: number;
     outputTokens?: number;
     totalTokens?: number;
     estimatedCost?: number;
@@ -199,6 +200,7 @@ export class PipelineTrackerRepository {
         responseHash: input.responseHash,
         responsePayload: input.responsePayload,
         inputTokens: input.inputTokens,
+        cachedInputTokens: input.cachedInputTokens,
         outputTokens: input.outputTokens,
         totalTokens: input.totalTokens,
         estimatedCost: input.estimatedCost,

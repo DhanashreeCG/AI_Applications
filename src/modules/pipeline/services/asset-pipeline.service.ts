@@ -107,6 +107,15 @@ export class AssetPipelineService {
     return this.pipelineRetry.replayFromDlq(request);
   }
 
+  public async replayStuck(request: {
+    status: AssetState;
+    failedStage?: AssetState;
+    limit?: number;
+    dryRun?: boolean;
+  }) {
+    return this.pipelineRetry.replayStuck(request);
+  }
+
   /**
    * Single Drive download → validate → hash → dedup OR create Asset → S3 → AI.
    * Resume: if Asset already STORED_IN_S3+ with S3 object, skip download/upload.
@@ -444,9 +453,26 @@ export class AssetPipelineService {
 
         let metadata = existing;
         if (!metadata) {
+          const [job, ingestionFile] = await Promise.all([
+            this.prisma.ingestionJob.findUnique({
+              where: { id: message.jobId },
+              select: { readFileNames: true },
+            }),
+            this.prisma.ingestionFile.findUnique({
+              where: { id: message.ingestionFileId },
+              select: { filename: true },
+            }),
+          ]);
+          const readFileNames = job?.readFileNames === true;
+
           metadata = await this.visionMetadataService.generateAndSaveForAsset(
             message.assetId,
-            { skipIfExists: true, retryCount: message.attempt - 1 },
+            {
+              skipIfExists: true,
+              retryCount: message.attempt - 1,
+              readFileNames,
+              filename: readFileNames ? ingestionFile?.filename : undefined,
+            },
           );
         } else {
           await this.aiUsage.record({

@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { S3StorageService } from './s3-storage.service';
+import {
+  S3StorageService,
+  sanitizeS3ObjectMetadata,
+  sanitizeUploadFilename,
+} from './s3-storage.service';
 
 describe('S3StorageService', () => {
   let service: S3StorageService;
@@ -43,5 +47,20 @@ describe('S3StorageService', () => {
   it('should generate canonical object key correctly', () => {
     const key = service.generateCanonicalKey('asset-123', 'my image file.png');
     expect(key).toBe('assets/asset-123/original/my_image_file.png');
+  });
+
+  it('sanitizes upload filenames the same way worksheet templates do', () => {
+    expect(sanitizeUploadFilename('My Photo (1).jpg', 'fallback.jpg')).toBe(
+      'My_Photo__1_.jpg',
+    );
+  });
+
+  it('strips non-ascii S3 metadata that would break SigV4', () => {
+    const sanitized = sanitizeS3ObjectMetadata({
+      originalname: 'café photo.png',
+      flashcardSetId: 'cmsykcmp2001c55nr5jjcd4lu',
+    });
+    expect(sanitized?.flashcardSetId).toBe('cmsykcmp2001c55nr5jjcd4lu');
+    expect(sanitized?.originalname).toMatch(/^[\x20-\x7E]+$/);
   });
 });

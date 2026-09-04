@@ -12,6 +12,15 @@ import { FlashcardException } from '../errors/flashcard.exception';
 
 export type ObjectiveConfidence = 'exact_keyword' | 'age_default';
 
+/**
+ * Where a dimension came from. `explicit` = the caller passed it on the
+ * request; `inferred` = guessed from the query wording; `age_default` =
+ * derived from the age band. Only `explicit` values may gate eligibility —
+ * an inferred subject is really the topic in disguise, and topic must not
+ * decide the template.
+ */
+export type DimensionConfidence = 'explicit' | 'inferred' | 'age_default';
+
 export interface LearningObjectiveResolution {
   learningObjective: LearningObjective;
   objectiveConfidence: ObjectiveConfidence;
@@ -194,6 +203,8 @@ export interface ResolvedUserRequest {
   learningObjective: LearningObjective;
   objectiveConfidence: ObjectiveConfidence;
   educationalIntent: LearningObjective;
+  subjectConfidence: DimensionConfidence;
+  difficultyConfidence: DimensionConfidence;
 }
 
 /**
@@ -323,6 +334,7 @@ export function resolveLearningObjectiveFromQuery(
   query: string,
   ageMin: number,
   ageMax: number,
+  ruleSignals?: { intents?: string[]; tags?: string[] },
 ): LearningObjectiveResolution {
   const haystack = query.toLowerCase();
   const scored = OBJECTIVE_KEYWORDS.map((entry) => {
@@ -334,9 +346,21 @@ export function resolveLearningObjectiveFromQuery(
       hitCount: matchedKeywords.length,
       matchedKeywords,
     };
-  }).filter((entry) => entry.hitCount > 0);
+  });
 
-  if (!scored.length) {
+  const signalHits = collectRuleSignalHits(query, ruleSignals);
+  for (const row of scored) {
+    const extra = signalHits.get(row.objective);
+    if (!extra?.length) {
+      continue;
+    }
+    row.hitCount += extra.length;
+    row.matchedKeywords.push(...extra);
+  }
+
+  const withHits = scored.filter((entry) => entry.hitCount > 0);
+
+  if (!withHits.length) {
     return {
       learningObjective: objectiveFromAge(ageMin, ageMax),
       objectiveConfidence: 'age_default',
@@ -344,8 +368,8 @@ export function resolveLearningObjectiveFromQuery(
     };
   }
 
-  const maxHits = Math.max(...scored.map((entry) => entry.hitCount));
-  const topScored = scored.filter((entry) => entry.hitCount === maxHits);
+  const maxHits = Math.max(...withHits.map((entry) => entry.hitCount));
+  const topScored = withHits.filter((entry) => entry.hitCount === maxHits);
   topScored.sort(
     (a, b) =>
       objectivePriorityRank(a.objective) - objectivePriorityRank(b.objective),
@@ -357,6 +381,53 @@ export function resolveLearningObjectiveFromQuery(
     objectiveConfidence: 'exact_keyword',
     matchedKeywords: winner.matchedKeywords,
   };
+}
+
+function collectRuleSignalHits(
+  query: string,
+  ruleSignals?: { intents?: string[]; tags?: string[] },
+): Map<LearningObjective, string[]> {
+  const hits = new Map<LearningObjective, string[]>();
+  const tokens = [
+    ...(ruleSignals?.intents ?? []),
+    ...(ruleSignals?.tags ?? []),
+  ];
+  for (const token of tokens) {
+    const trimmed = token.trim();
+    if (!trimmed || !keywordMatches(query, trimmed)) {
+      continue;
+    }
+    const objective = objectiveFromSignalToken(trimmed);
+    if (!objective) {
+      continue;
+    }
+    const existing = hits.get(objective) ?? [];
+    existing.push(trimmed);
+    hits.set(objective, existing);
+  }
+  return hits;
+}
+
+function objectiveFromSignalToken(token: string): LearningObjective | null {
+  const normalized = token.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const aliases: Record<string, LearningObjective> = {
+    tally: 'counting',
+    categorize: 'classification',
+    categorization: 'classification',
+    classify: 'classification',
+  };
+  if (aliases[normalized]) {
+    return aliases[normalized];
+  }
+  if ((LEARNING_OBJECTIVES as readonly string[]).includes(normalized)) {
+    return normalized as LearningObjective;
+  }
+  for (const entry of OBJECTIVE_KEYWORDS) {
+    if (entry.keywords.some((keyword) => keywordMatches(token, keyword))) {
+      return entry.objective;
+    }
+  }
+  return null;
 }
 
 export function resolveSubjectFromQuery(query: string): string | null {
@@ -453,6 +524,8 @@ export function resolveUserRequest(input: {
   subject?: string;
   difficulty?: string;
   language?: string;
+  ruleIntents?: string[];
+  ruleTags?: string[];
 }): ResolvedUserRequest {
   const query = input.query?.trim();
   if (!query) {
@@ -500,6 +573,7 @@ export function resolveUserRequest(input: {
     query,
     ageMin,
     ageMax,
+    { intents: input.ruleIntents, tags: input.ruleTags },
   );
   const learningObjective = objectiveResolution.learningObjective;
 
@@ -510,14 +584,26 @@ export function resolveUserRequest(input: {
     );
   }
 
+  const explicitDifficulty = normalizeDifficulty(input.difficulty);
+  const queryDifficulty = explicitDifficulty
+    ? null
+    : resolveDifficultyFromQuery(query);
   const difficulty =
-    normalizeDifficulty(input.difficulty) ??
-    resolveDifficultyFromQuery(query) ??
+    explicitDifficulty ??
+    queryDifficulty ??
     (grade ? ageDefaultsForGrade(grade)?.difficulty : null) ??
     difficultyFromAge(ageMin, ageMax);
+  const difficultyConfidence: DimensionConfidence = explicitDifficulty
+    ? 'explicit'
+    : queryDifficulty
+      ? 'inferred'
+      : 'age_default';
 
-  const subject =
-    normalizeSubject(input.subject) ?? resolveSubjectFromQuery(query);
+  const explicitSubject = normalizeSubject(input.subject);
+  const subject = explicitSubject ?? resolveSubjectFromQuery(query);
+  const subjectConfidence: DimensionConfidence = explicitSubject
+    ? 'explicit'
+    : 'inferred';
 
   const language =
     input.language?.trim() ||
@@ -537,5 +623,7 @@ export function resolveUserRequest(input: {
     learningObjective,
     objectiveConfidence: objectiveResolution.objectiveConfidence,
     educationalIntent: learningObjective,
+    subjectConfidence,
+    difficultyConfidence,
   };
 }

@@ -16,6 +16,7 @@ import { SearchModule } from './modules/search/search.module';
 import { PipelineModule } from './modules/pipeline/pipeline.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
 import { FlashcardsModule } from './modules/flashcards/flashcards.module';
+import { WorksheetsModule } from './modules/worksheets/worksheets.module';
 import { PipelineTrackerModule } from './modules/pipeline-tracker/pipeline-tracker.module';
 
 @Module({
@@ -42,6 +43,7 @@ import { PipelineTrackerModule } from './modules/pipeline-tracker/pipeline-track
     IngestionModule,
     PipelineTrackerModule,
     FlashcardsModule,
+    WorksheetsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

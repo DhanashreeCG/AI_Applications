@@ -44,6 +44,19 @@ Return JSON with these fields:
 - educational_uses: educational use cases, including curriculum stage name per AGE & CURRICULUM STAGE MAPPING above where applicable
 - search_keywords: additional retrieval keywords, including shape/category synonyms per TAGGING FOR SEARCH above`;
 
+export function buildVisionAnalysisPrompt(filename?: string): string {
+  if (!filename) {
+    return VISION_ANALYSIS_PROMPT;
+  }
+
+  return `${VISION_ANALYSIS_PROMPT}
+
+SOURCE FILENAME (authoritative for letters, case, and digits):
+"${filename}"
+
+When printed glyphs are visually ambiguous (o/O/0, 1/I/l, 9/g/q, 5/S, 2/Z, etc.), treat the source filename as the source of truth. Do not override it with a guessed reading from the image. Still describe the actual visual scene, but transcribe letters and digits to match the filename.`;
+}
+
 export const VISION_METADATA_JSON_SCHEMA = {
   type: 'object',
   properties: {

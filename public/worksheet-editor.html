@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Worksheet editor</title>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const id = params.get('id');
+      location.replace(id ? 'worksheets.html?id=' + encodeURIComponent(id) : 'worksheets.html');
+    </script>
+  </head>
+  <body>
+    <p>Redirecting to <a href="worksheets.html">Generate AI Worksheets</a>.</p>
+  </body>
+</html>

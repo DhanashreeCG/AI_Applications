@@ -99,12 +99,37 @@ export const COMPONENT_TYPES = [
 export type ComponentType = (typeof COMPONENT_TYPES)[number];
 
 export const FLASHCARD_CONTENT_STAGE = 'flashcard_content';
+export const FLASHCARD_EDIT_STAGE = 'flashcard_edit';
+export const FLASHCARD_WORKFLOW_EDIT = 'flashcards_edit';
 export const FLASHCARD_IMAGE_SEARCH_EMBEDDING_PURPOSE =
   'flashcard_image_search_embedding';
 export const FLASHCARD_ASSET_IMAGE_PATH = '/flashcards/assets';
 export const DEFAULT_FLASHCARD_COUNT = 5;
+export const FLASHCARD_USER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+export const FLASHCARD_USER_UPLOAD_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
 export const DEFAULT_IMAGE_CONCURRENCY = 3;
+/**
+ * Cards assembled in parallel. Multiplies with DEFAULT_IMAGE_CONCURRENCY, so the
+ * worst-case in-flight embedding/vector searches is card × image concurrency.
+ */
+export const DEFAULT_CARD_CONCURRENCY = 3;
 export const DEFAULT_SIGNED_URL_TTL_SECONDS = 3600;
-/** Always fetch the single top semantic match (highest similarity / least distance). */
-export const DEFAULT_IMAGE_SEARCH_LIMIT = 1;
+/** Ranked hits from one query so later cards can take 2nd/3rd if top is already used. */
+export const DEFAULT_IMAGE_SEARCH_LIMIT = 8;
+/** Total embedding/search attempts for the same LLM query (1 + retries). */
+export const DEFAULT_IMAGE_EMBEDDING_MAX_ATTEMPTS = 3;
+export const DEFAULT_IMAGE_EMBEDDING_RETRY_DELAY_MS = 200;
 export const DEFAULT_LANGUAGE = 'English';
+
+// Image query refinement (lightweight LLM intent extraction)
+export const FLASHCARD_IMAGE_QUERY_REFINEMENT_STAGE =
+  'flashcard_image_query_refinement';
+export const DEFAULT_IMAGE_QUERY_REFINEMENT_TIMEOUT_MS = 5000;
+export const DEFAULT_IMAGE_QUERY_REFINEMENT_MAX_ATTEMPTS = 2;
+export const DEFAULT_IMAGE_QUERY_REFINEMENT_RETRY_DELAY_MS = 300;
+export const DEFAULT_IMAGE_QUERY_VOCABULARY_LIMIT = 200;

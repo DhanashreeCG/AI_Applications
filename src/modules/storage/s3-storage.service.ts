@@ -29,7 +29,14 @@ export class S3StorageService implements StorageProvider {
     this.defaultBucket =
       this.configService.get<string>('aws.s3BucketName') || 'ai-asset-ingestion';
 
-    const clientConfig: any = { region };
+    const clientConfig: ConstructorParameters<typeof S3Client>[0] = {
+      region,
+      // Default CRC32 checksums from AWS SDK v3 break SigV4 on several S3
+      // endpoints (SignatureDoesNotMatch). Worksheets/flashcard uploads share
+      // this client; only sign checksums when the API requires them.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
+    };
     if (accessKeyId && secretAccessKey) {
       clientConfig.credentials = { accessKeyId, secretAccessKey };
     }
@@ -56,7 +63,7 @@ export class S3StorageService implements StorageProvider {
       Key: options.key,
       Body: buffer,
       ContentType: options.contentType,
-      Metadata: options.metadata,
+      Metadata: sanitizeS3ObjectMetadata(options.metadata),
     });
 
     const response = await this.s3Client.send(command);
@@ -82,7 +89,7 @@ export class S3StorageService implements StorageProvider {
         Key: options.key,
         Body: stream,
         ContentType: options.contentType,
-        Metadata: options.metadata,
+        Metadata: sanitizeS3ObjectMetadata(options.metadata),
       },
     });
 
@@ -154,4 +161,36 @@ export class S3StorageService implements StorageProvider {
     );
     this.logger.log(`Deleted S3 object: s3://${targetBucket}/${key}`);
   }
+}
+
+export function sanitizeUploadFilename(
+  original: string | undefined,
+  fallback: string,
+): string {
+  const base = original?.split(/[/\\]/).pop()?.trim() || fallback;
+  const sanitized = base.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+  return sanitized || fallback;
+}
+
+/** S3 user metadata must be ASCII or SigV4 can fail with SignatureDoesNotMatch. */
+export function sanitizeS3ObjectMetadata(
+  metadata?: Record<string, string>,
+): Record<string, string> | undefined {
+  if (!metadata) {
+    return undefined;
+  }
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    const safeKey = key.replace(/[^a-zA-Z0-9\-]/g, '-').slice(0, 128);
+    const safeValue = String(value ?? '')
+      .normalize('NFKD')
+      .replace(/[^\x20-\x7E]/g, '_')
+      .replace(/[^\w.\- ]/g, '_')
+      .trim()
+      .slice(0, 256);
+    if (safeKey && safeValue) {
+      next[safeKey] = safeValue;
+    }
+  }
+  return Object.keys(next).length ? next : undefined;
 }

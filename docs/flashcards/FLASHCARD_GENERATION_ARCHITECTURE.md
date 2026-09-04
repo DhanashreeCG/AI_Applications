@@ -9,12 +9,12 @@ Template-driven pipeline: understand the request → select a layout template �
 | Owns | Does not own |
 |---|---|
 | Request analysis (deterministic) | Layout / styling / positioning |
-| Template selection (deterministic) | LLM choosing templates or UI |
+| Template selection hard filter (deterministic) + LLM semantic rank among eligible templates | Inventing layouts / choosing ineligible templates |
 | LLM educational content only | Image generation |
 | Asset Library search (existing) | Duplicating search/embedding logic |
 | Merge: template + content + assets | Frontend rendering (optional renderer is separate) |
 
-The LLM never invents components. The selected template’s `layoutDefinition` is the output contract.
+The LLM never invents components. The selected template’s `layoutDefinition` is the output contract. Template *eligibility* (age/grade/subject/difficulty) stays deterministic; the LLM only ranks topical/pedagogical fit among already-eligible candidates, with deterministic fallback.
 
 ---
 
@@ -35,8 +35,8 @@ The LLM never invents components. The selected template’s `layoutDefinition` i
                     │  ├─ Request resolve │
                     │  ├─ Template select │
                     │  ├─ Content (LLM)   │
-                    │  ├─ Image retrieve  │
-                    │  └─ Assemble JSON   │
+                    │  ├─ Image retrieve  │  ← cards in parallel
+                    │  └─ Assemble JSON   │  ← streamed per card
                     └─┬───────┬───────┬───┘
                       │       │       │
            ┌──────────▼─┐ ┌───▼────┐ ┌▼────────────────┐
@@ -54,13 +54,14 @@ External dependencies (unchanged by this module): Asset Library, Semantic Search
 
 | Component | Role |
 |---|---|
-| `FlashcardsController` | HTTP: generate, list/upload templates, render, asset proxy |
-| `FlashcardOrchestratorService` | End-to-end stage orchestration + telemetry |
+| `FlashcardsController` | HTTP: generate, generate/stream (NDJSON), list/upload templates, render, render-and-notify, asset proxy |
+| `FlashcardOrchestratorService` | End-to-end stage orchestration + telemetry + per-card progress callbacks |
 | `user-request.resolver` | Deterministic topic / age / grade / subject / difficulty / objective |
-| `TemplateSelectionService` + `template-selection.engine` | Hard filter + rank → one template |
+| `TemplateSelectionService` + `template-selection.engine` | Hard filter + rank → one template (deterministic fallback) |
+| `TemplateSelectionAiService` + `TemplateCatalogCacheService` | LLM semantic pick among hard-filtered candidates (cached catalog prefix) |
 | `TemplateRepository` / `FlashcardTemplateService` | Persist & load templates and selection rules |
 | `FlashcardContentService` | Prompt build → LLM → content validation |
-| `FlashcardImageRetrievalService` | Per-slot search cascade → top-1 asset |
+| `FlashcardImageRetrievalService` | One search per image slot → top unused asset |
 | `FlashcardRendererService` (optional) | HTML/WebP/PDF from assembled response |
 
 ---
@@ -140,12 +141,15 @@ Objective comes from keyword rules (with multi-match tie-break), else age-midpoi
 
 ### 2. Template selection
 
-Deterministic (no LLM).
+Hard filter is deterministic; semantic ranking may use an LLM.
 
 1. Load active rules (joined to active templates) + active templates without rules (synthetic candidates)
 2. **Hard filter:** active; age-group overlap with `supportedAgeGroups`; rule `grades` / `subjects` / `difficulties` if non-empty
-3. **Rank** (best → fallback), weighted primarily by objective relevance, then exact objective / age / grade / subject / difficulty, then `templateVersion`, rule `priority`, score, stable rule id
-4. Return exactly one template; parse `layoutDefinition` → editable text + image component contracts
+3. **AI semantic rank** (when `templateId` is omitted and AI is enabled): pass the full active template catalog as a **cached static prompt prefix**, plus a small dynamic suffix with `topic` / learner context / `allowedTemplateIds` (survivors of the hard filter). The model returns one id from `allowedTemplateIds` + confidence + reasoning. Prompt caching (OpenAI automatic prefix cache / Gemini implicit) keeps token cost low across requests. Selection-rule rows are **not** sent to the LLM — they already shaped `allowedTemplateIds`.
+4. **Deterministic fallback:** if AI is disabled, returns an invalid/low-confidence id, times out, or errors, use the existing weighted rank (objective relevance → exact objective / age / grade / subject / difficulty → `templateVersion` → rule `priority` → score → stable rule id)
+5. Return exactly one template; parse `layoutDefinition` → editable text + image component contracts
+
+Telemetry: `TEMPLATE_SELECTION` stage metadata includes `selectionMode` (`ai` | `deterministic`), confidence/reasoning/fallback reason, `catalogHash`, and `cachedTokens`. Each AI call also writes an `AiUsage` row (`stage: flashcard_template_selection`) including `cachedInputTokens`.
 
 ### 3. Content generation
 
@@ -159,15 +163,20 @@ Selected template = LLM contract.
 
 For each card × each image component independently:
 
-1. Build cascade queries from that slot’s search description
-2. Call existing Search Service (`limit: 1`, top similarity)
-3. Attach asset reference / signed URL; miss → `IMAGE_NOT_FOUND` without failing the whole set
+1. Take that slot’s LLM-written `searchQuery` verbatim — never rewritten or expanded
+2. Call the existing Search Service **once** (`limit` = `FLASHCARD_IMAGE_SEARCH_LIMIT`, default 8 ranked hits)
+3. Claim the top-similarity asset not already used elsewhere in the set, so no image repeats across cards
+4. Attach asset reference / signed URL; miss → `IMAGE_NOT_FOUND`, search failure after retries → `error`, neither fails the set
+
+See [`FLASHCARD_IMAGE_RETRIEVAL.md`](./FLASHCARD_IMAGE_RETRIEVAL.md) for the full stage design.
 
 ### 5. Response assembly
 
 Merge selected template + validated text + asset references into ordered components matching the template.
 
 Output is rendering-ready JSON. Downstream renderer (if enabled) requires zero AI re-processing.
+
+After assemble, the demo UI may swap a slot for a computer-selected **data URL** (not a library asset). **Save all / Save selected** send the payload to `POST /flashcards/render-and-notify`, which Playwright-captures each card and uploads the PNG to Gyan `upload-media`. See [`FLASHCARD_LOCAL_IMAGE_UPLOAD.md`](./FLASHCARD_LOCAL_IMAGE_UPLOAD.md).
 
 ---
 
@@ -187,12 +196,16 @@ Assets         → Existing search + library (referenced, not generated)
 | Concern | Path |
 |---|---|
 | Orchestration | `src/modules/flashcards/services/flashcard-orchestrator.service.ts` |
+| Progressive stream | [`PROGRESSIVE_CARD_DELIVERY.md`](./PROGRESSIVE_CARD_DELIVERY.md), `POST /flashcards/generate/stream` |
 | Request analysis | `src/modules/flashcards/utils/user-request.resolver.ts` |
 | Template selection | `src/modules/flashcards/utils/template-selection.engine.ts` |
+| AI template selection | `src/modules/flashcards/services/template-selection-ai.service.ts` |
+| Template catalog cache | `src/modules/flashcards/services/template-catalog-cache.service.ts` |
 | Templates / rules | `src/modules/flashcards/services/template.repository.ts` |
 | Template upload | `src/modules/flashcards/services/flashcard-template.service.ts` |
 | Prompt | `src/modules/flashcards/constants/flashcard-prompt.constants.ts` |
 | Content | `src/modules/flashcards/services/flashcard-content.service.ts` |
 | Content validation | `src/modules/flashcards/utils/llm-content.validator.ts` |
 | Images | `src/modules/flashcards/services/flashcard-image-retrieval.service.ts` |
+| Local computer image (UI) | [`FLASHCARD_LOCAL_IMAGE_UPLOAD.md`](./FLASHCARD_LOCAL_IMAGE_UPLOAD.md), `public/flashcards.html` |
 | Schema | `prisma/schema.prisma` (`FlashcardTemplate`, `TemplateSelectionRule`) |

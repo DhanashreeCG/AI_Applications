@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import { BullmqQueueService } from '../queue/bullmq/bullmq-queue.service';
 import { GoogleDriveAdapterService } from '../drive/google-drive-adapter.service';
 import { AssetState } from '../../common/enums/asset-state.enum';
 import { CreateIngestionJobDto, IngestionJobMode } from './dto/create-ingestion-job.dto';
+import { CleanupByFolderDto } from './dto/cleanup-by-folder.dto';
 import { IngestionProcessMessage } from '../../common/interfaces/pipeline-messages.interface';
 import { getErrorMessage } from '../../common/utils/error-message';
 import { ImageProcessorService } from '../image/image-processor.service';
@@ -24,6 +26,8 @@ import {
   CostEstimate,
   CostEstimatorService,
 } from './services/cost-estimator.service';
+
+const CLEANUP_SAMPLE_LIMIT = 50;
 
 const SHA256_MATCH = 'SHA256_MATCH';
 
@@ -42,11 +46,13 @@ export class IngestionJobService {
 
   async createJob(dto: CreateIngestionJobDto) {
     const mode: IngestionJobMode = dto.mode ?? 'FULL';
+    const readFileNames = dto.readFileNames === true;
     const job = await this.prisma.ingestionJob.create({
       data: {
         sourceType: dto.sourceType,
         rootFolderId: dto.rootFolderId,
         mode,
+        readFileNames,
         status: DatabaseJobState.CREATED,
       },
     });
@@ -55,6 +61,7 @@ export class IngestionJobService {
       job_id: job.id,
       root_folder_id: dto.rootFolderId,
       mode,
+      read_file_names: readFileNames,
       status: 'created',
     });
     return job;
@@ -268,6 +275,156 @@ export class IngestionJobService {
     }
 
     return this.costEstimator.estimateForJob(jobId);
+  }
+
+  /**
+   * Delete DB rows for assets ingested from a Drive rootFolderId.
+   * Preserves AiUsage (nulls assetId). Does not delete S3 objects.
+   */
+  async cleanupByFolder(dto: CleanupByFolderDto) {
+    const dryRun = dto.dryRun !== false;
+    const skipShared = dto.skipSharedAssets !== false;
+    const deleteJobs = dto.deleteJobs !== false;
+    const rootFolderId = dto.rootFolderId?.trim();
+
+    if (!rootFolderId) {
+      throw new BadRequestException('rootFolderId is required');
+    }
+
+    const jobs = await this.prisma.ingestionJob.findMany({
+      where: { rootFolderId },
+      select: { id: true },
+    });
+    const jobIds = jobs.map((job) => job.id);
+
+    if (jobIds.length === 0) {
+      return {
+        rootFolderId,
+        dryRun,
+        jobCount: 0,
+        candidateAssetCount: 0,
+        assetsToDelete: 0,
+        assetsDeleted: 0,
+        skippedSharedAssetCount: 0,
+        skippedSharedAssetIds: [] as string[],
+        assetIdsSample: [] as string[],
+        jobsDeleted: 0,
+        deleteJobs,
+        aiUsagePreserved: true,
+        s3Deleted: false,
+        note: 'No ingestion jobs found for this rootFolderId',
+      };
+    }
+
+    const sources = await this.prisma.assetSource.findMany({
+      where: { ingestionFile: { jobId: { in: jobIds } } },
+      select: { assetId: true },
+    });
+    const candidateIds = [...new Set(sources.map((source) => source.assetId))];
+
+    let deletableIds = candidateIds;
+    const skippedShared: string[] = [];
+
+    if (skipShared && candidateIds.length > 0) {
+      const allSources = await this.prisma.assetSource.findMany({
+        where: { assetId: { in: candidateIds } },
+        select: {
+          assetId: true,
+          ingestionFile: {
+            select: { job: { select: { rootFolderId: true } } },
+          },
+        },
+      });
+
+      const rootsByAsset = new Map<string, Set<string>>();
+      for (const source of allSources) {
+        const roots = rootsByAsset.get(source.assetId) ?? new Set<string>();
+        roots.add(source.ingestionFile.job.rootFolderId);
+        rootsByAsset.set(source.assetId, roots);
+      }
+
+      deletableIds = [];
+      for (const assetId of candidateIds) {
+        const roots = rootsByAsset.get(assetId) ?? new Set<string>();
+        if (roots.size === 1 && roots.has(rootFolderId)) {
+          deletableIds.push(assetId);
+        } else {
+          skippedShared.push(assetId);
+        }
+      }
+    }
+
+    const baseResult = {
+      rootFolderId,
+      dryRun,
+      jobCount: jobIds.length,
+      candidateAssetCount: candidateIds.length,
+      assetsToDelete: deletableIds.length,
+      skippedSharedAssetCount: skippedShared.length,
+      skippedSharedAssetIds: skippedShared.slice(0, CLEANUP_SAMPLE_LIMIT),
+      assetIdsSample: deletableIds.slice(0, CLEANUP_SAMPLE_LIMIT),
+      deleteJobs,
+      aiUsagePreserved: true,
+      s3Deleted: false,
+      note: 'AiUsage rows are preserved (assetId set to null). S3 objects are not deleted.',
+    };
+
+    if (dryRun) {
+      this.logger.log('Folder cleanup dry-run', {
+        root_folder_id: rootFolderId,
+        job_count: jobIds.length,
+        assets_to_delete: deletableIds.length,
+        skipped_shared: skippedShared.length,
+        status: 'dry_run',
+      });
+      return { ...baseResult, assetsDeleted: 0, jobsDeleted: 0 };
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (deletableIds.length > 0) {
+        await tx.aiUsage.updateMany({
+          where: { assetId: { in: deletableIds } },
+          data: { assetId: null },
+        });
+
+        await tx.ingestionFile.updateMany({
+          where: { assetId: { in: deletableIds } },
+          data: { assetId: null },
+        });
+
+        await tx.asset.deleteMany({
+          where: { id: { in: deletableIds } },
+        });
+      }
+
+      let jobsDeleted = 0;
+      if (deleteJobs) {
+        const deletedJobs = await tx.ingestionJob.deleteMany({
+          where: { id: { in: jobIds } },
+        });
+        jobsDeleted = deletedJobs.count;
+      }
+
+      return {
+        assetsDeleted: deletableIds.length,
+        jobsDeleted,
+      };
+    });
+
+    this.logger.log('Folder cleanup completed', {
+      root_folder_id: rootFolderId,
+      assets_deleted: result.assetsDeleted,
+      jobs_deleted: result.jobsDeleted,
+      skipped_shared: skippedShared.length,
+      status: 'completed',
+    });
+
+    return {
+      ...baseResult,
+      dryRun: false,
+      assetsDeleted: result.assetsDeleted,
+      jobsDeleted: result.jobsDeleted,
+    };
   }
 
   /**
