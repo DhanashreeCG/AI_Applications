@@ -125,11 +125,11 @@ const EDITOR_BRIDGE = `
     var fromAttr = el.getAttribute('data-image-slot') || '';
     if (fromAttr) return fromAttr;
     var oc = el.getAttribute('onclick') || '';
-    var match = oc.match(/selectWorksheetImage\(\s*['"]([^'"]+)['"]/);
+    var match = oc.match(/selectWorksheetImage\\(\\s*['"]([^'"]+)['"]/);
     return match ? match[1] : '';
   }
   function inferItemPath(slotId) {
-    var n = String(slotId || '').match(/^(?:item|image|img|slot)_?(\d+)$/i);
+    var n = String(slotId || '').match(/^(?:item|image|img|slot)_?(\\d+)$/i);
     return n ? ('items[' + (Number(n[1]) - 1) + ']') : '';
   }
   function selectImage(slotId, path, img) {
@@ -140,11 +140,20 @@ const EDITOR_BRIDGE = `
       path: path || (img && img.getAttribute('data-field-path')) || inferItemPath(slotId) || 'image'
     });
   }
-  window.selectWorksheetImage = function (itemId) {
+  function selectWorksheetImageBridge(itemId) {
     if (!document.body.classList.contains('edit-mode')) return;
     var img = document.querySelector('img[data-image-slot="' + String(itemId || '').replace(/"/g, '') + '"]');
     selectImage(itemId, inferItemPath(itemId) || (img && img.getAttribute('data-field-path')), img);
-  };
+  }
+  // Prototype templates declare their own selectWorksheetImage() later in the
+  // body, which would shadow this one, so claim the name again after parsing.
+  window.selectWorksheetImage = selectWorksheetImageBridge;
+  document.addEventListener('DOMContentLoaded', function () {
+    window.selectWorksheetImage = selectWorksheetImageBridge;
+  });
+  window.addEventListener('load', function () {
+    window.selectWorksheetImage = selectWorksheetImageBridge;
+  });
   document.addEventListener('click', function (event) {
     var target = event.target;
     if (!(target instanceof Element)) return;
@@ -389,7 +398,9 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
     (_full, attrs: string, slotId: string) => {
       const resolved = slotUrl(structure, slotId);
       const existingSrc = attrs.match(/\bsrc=(["'])(.*?)\1/i)?.[2] ?? '';
-      let next = attrs.replace(/\s*\bsrc=(["']).*?\1/i, '');
+      let next = attrs
+        .replace(/\s*\bsrc=(["']).*?\1/i, '')
+        .replace(/\s*\/\s*$/, '');
       const src = isUsableSrc(resolved.src)
         ? resolved.src
         : existingSrc;

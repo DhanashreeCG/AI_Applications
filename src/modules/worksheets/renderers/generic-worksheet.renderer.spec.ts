@@ -414,6 +414,24 @@ NULL
     expect(html).not.toContain('"target_sight_word"');
   });
 
+  it('emits a syntactically valid editor bridge script', () => {
+    const html = renderer.render({
+      templateHtml: '<html><head></head><body><div data-editable="topic">x</div></body></html>',
+      structure: { topic: 'Farm' },
+      mode: 'editor',
+    });
+
+    const script = html.match(
+      /<script data-editor-bridge="true">([\s\S]*?)<\/script>/,
+    )?.[1];
+    expect(script).toBeTruthy();
+    // Regex literals lose their backslashes if the bridge template string is
+    // not double-escaped, which throws at parse time and kills all editing.
+    expect(() => new Function(script as string)).not.toThrow();
+    expect(script).toContain("selectWorksheetImage\\(");
+    expect(script).toContain('(\\d+)$');
+  });
+
   it('places look-and-say quadrant images and highlights target letters', () => {
     const html = renderer.render({
       templateHtml: `

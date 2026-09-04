@@ -2366,8 +2366,16 @@
       els.imagePickerModal.classList.add('show');
       searchImages();
     }
-    window.openImagePicker = function (path, slotId) {
-      openImagePicker(path, slotId, state.imagePickFromAi);
+    // Prototype template scripts call parent.openImagePicker() with no args.
+    // Keep a reference first: the declaration above *is* window.openImagePicker,
+    // so assigning to it without this would make the alias call itself.
+    const openImagePickerFn = openImagePicker;
+    window.openImagePicker = function (path, slotId, fromAi) {
+      return openImagePickerFn(
+        path,
+        slotId,
+        fromAi === undefined ? state.imagePickFromAi : fromAi,
+      );
     };
 
     function resolveImagePath(path, slotId) {
