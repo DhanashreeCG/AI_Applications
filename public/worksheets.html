@@ -918,6 +918,102 @@
       gap: 8px;
     }
 
+    .btn-regen {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 999px;
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+      background: linear-gradient(90deg, #7b1fa2 0%, #e85d04 100%);
+      box-shadow: 0 4px 12px rgba(123, 31, 162, 0.22);
+    }
+
+    .aip-question-actions {
+      display: none;
+      gap: 12px;
+      margin: 4px 0 6px;
+    }
+
+    .aip-question-actions.show {
+      display: flex;
+    }
+
+    .btn-grammar,
+    .btn-save-changes {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 16px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .btn-grammar {
+      background: #fff;
+      border: 1.5px solid #7b1fa2;
+      color: #7b1fa2;
+    }
+
+    .btn-save-changes {
+      background: #6d28d9;
+      border: 1.5px solid #6d28d9;
+      color: #fff;
+    }
+
+    .aip-or-sep {
+      display: none;
+      position: relative;
+      text-align: center;
+      margin: 18px 0 14px;
+    }
+
+    .aip-or-sep.show {
+      display: block;
+    }
+
+    .aip-or-sep::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      border-top: 1px solid #e4def3;
+    }
+
+    .aip-or-sep span {
+      position: relative;
+      background: #fff;
+      padding: 0 10px;
+      color: #b0a8c4;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+    }
+
+    #regenBoxTitle {
+      margin: 0 0 8px;
+      color: var(--primary);
+      font-size: 16px;
+    }
+
+    #regenBoxTitle.aip-new-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+      color: #7b1fa2;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
     .aip-q-linked {
       background: #f5f2fd;
       border: 0.5px solid #ddd5f5;
@@ -1404,10 +1500,21 @@
       </div>
       <div class="ai-panel-body">
         <div id="aiQuestionCards" style="display:none"></div>
+        <div class="aip-question-actions" id="aiQuestionActions">
+          <button class="btn-grammar" id="aiCorrectGrammarBtn" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18 10a2.8 2.8 0 0 0-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>
+            Correct Grammar
+          </button>
+          <button class="btn-save-changes" id="aiSaveChangesBtn" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+            Save Changes
+          </button>
+        </div>
+        <div class="aip-or-sep" id="aiOrSeparator"><span>OR</span></div>
         <div id="aiTemplatePopup" style="display:none"></div>
         <div id="aiFieldsList"></div>
         <div class="regen-box">
-          <h3 id="regenBoxTitle" style="margin:0 0 8px; color:var(--primary);">Regenerate whole worksheet</h3>
+          <h3 class="aip-new-link" id="regenBoxTitle">GENERATE A BRAND-NEW WORKSHEET</h3>
           <div id="regenFallbackWrap">
             <p class="image-tip" style="margin-bottom:10px;">Keep this template and generate new text and images from your
               requirements.</p>
@@ -1527,6 +1634,10 @@
       aiEditTitle: el('aiEditTitle'),
       aiEditSubtitle: el('aiEditSubtitle'),
       aiQuestionCards: el('aiQuestionCards'),
+      aiQuestionActions: el('aiQuestionActions'),
+      aiCorrectGrammarBtn: el('aiCorrectGrammarBtn'),
+      aiSaveChangesBtn: el('aiSaveChangesBtn'),
+      aiOrSeparator: el('aiOrSeparator'),
       aiTemplatePopup: el('aiTemplatePopup'),
       aiFieldsList: el('aiFieldsList'),
       regenBoxTitle: el('regenBoxTitle'),
@@ -2679,9 +2790,10 @@
             <div class="aip-q-prompt-wrap">
               <textarea class="aip-q-prompt" data-ai-q-prompt="question_${n}" rows="2" placeholder="Enter prompt to regenerate… (leave blank to auto-regenerate)"></textarea>
               <div class="aip-q-row-btns">
-                <button class="btn-soft" type="button" data-ai-q-save="question_${n}" style="padding:6px 13px;font-size:12px;">Save changes</button>
-                <button class="btn-soft" type="button" data-ai-q-grammar="question_${n}" style="padding:6px 13px;font-size:12px;">Correct grammar</button>
-                <button class="btn-primary" type="button" data-ai-q-regen="question_${n}" style="padding:6px 13px;font-size:12px;">✦ Re-Generate</button>
+                <button class="btn-regen" type="button" data-ai-q-regen="question_${n}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+                  Re-Generate
+                </button>
               </div>
             </div>
           </div>`;
@@ -2691,20 +2803,23 @@
       return true;
     }
 
-    async function rewriteField(path, instruction) {
+    async function rewriteField(path, instruction, options) {
+      const persist = options?.persist !== false;
       const payload = { fieldPath: path, instruction };
-      if (isTempWorksheetId(state.worksheetId)) {
+      const draftOnly = options?.draft === true || !persist;
+      if (draftOnly || isTempWorksheetId(state.worksheetId)) {
         payload.templateId = state.preview?.template?.id || state.preview?.template?.slug;
-        payload.structure = state.preview?.structure;
+        payload.structure = options?.structure || state.preview?.structure;
       }
-      const res = await apiFetch(`/${encodeURIComponent(state.worksheetId)}/edit`, {
+      const worksheetId = draftOnly ? 'temp-ai-draft' : state.worksheetId;
+      const res = await apiFetch(`/${encodeURIComponent(worksheetId)}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(friendlyError(body, 'AI edit failed'));
-      if (body.structure) {
+      if (persist && body.structure) {
         state.preview = { ...state.preview, ...body, id: body.id || state.worksheetId };
         persistPreviewToItems();
       }
@@ -2712,6 +2827,43 @@
     }
 
     const GRAMMAR_INSTRUCTION = 'Correct grammar and spelling only. Keep the same meaning, length, and age level.';
+
+    function collectQuestionDraftFields() {
+      const fields = [];
+      els.aiQuestionCards.querySelectorAll('[data-ai-question]').forEach((node) => {
+        fields.push({ path: node.getAttribute('data-ai-question'), value: (node.textContent || '').trim() });
+      });
+      els.aiQuestionCards.querySelectorAll('[data-ai-option]').forEach((node) => {
+        fields.push({ path: node.getAttribute('data-ai-option'), value: (node.value || '').trim() });
+      });
+      return fields;
+    }
+
+    function draftStructureFromModal() {
+      const structure = JSON.parse(JSON.stringify(state.preview?.structure || {}));
+      collectQuestionDraftFields().forEach(({ path, value }) => {
+        const qMatch = path.match(/^question_(\d+)$/i);
+        if (qMatch && Array.isArray(structure.questions) && structure.questions[Number(qMatch[1]) - 1]) {
+          structure.questions[Number(qMatch[1]) - 1].question = value;
+        }
+        const oMatch = path.match(/^option_(\d+)$/i);
+        if (oMatch && Array.isArray(structure.questions)) {
+          const parent = structure.questions.find((item) => Array.isArray(item.options));
+          if (parent?.options?.[Number(oMatch[1]) - 1]) {
+            parent.options[Number(oMatch[1]) - 1].text = value;
+          }
+        }
+      });
+      return structure;
+    }
+
+    function applyDraftTextToCard(path, text) {
+      if (!text) return;
+      const qBox = els.aiQuestionCards.querySelector(`[data-ai-question="${path}"]`);
+      if (qBox) qBox.textContent = text;
+      const oBox = els.aiQuestionCards.querySelector(`[data-ai-option="${path}"]`);
+      if (oBox) oBox.value = text;
+    }
 
     function isAnswerAndColourTemplate(template) {
       const slug = String(template?.slug || '').trim().toLowerCase();
@@ -2837,37 +2989,34 @@
       }
       if (els.aiEditSubtitle) {
         els.aiEditSubtitle.textContent = hasQuestions
-          ? 'Regenerate questions, then generate a new worksheet'
+          ? 'Regenerate questions, then save all changes at once'
           : popupHtml
             ? 'Fill the fields, then regenerate this worksheet'
             : 'Regenerate this worksheet from new requirements';
+      }
+      if (els.aiQuestionActions) els.aiQuestionActions.classList.toggle('show', hasQuestions);
+      if (els.aiOrSeparator) els.aiOrSeparator.classList.toggle('show', hasQuestions);
+      if (els.regenBoxTitle) {
+        els.regenBoxTitle.textContent = hasQuestions
+          ? 'GENERATE A BRAND-NEW WORKSHEET'
+          : popupHtml
+            ? 'Generate new worksheet'
+            : 'Regenerate whole worksheet';
+        els.regenBoxTitle.classList.toggle('aip-new-link', hasQuestions);
       }
       if (popupHtml) {
         els.aiTemplatePopup.innerHTML = popupHtml;
         els.aiTemplatePopup.style.display = 'block';
         if (els.regenFallbackWrap) els.regenFallbackWrap.style.display = 'none';
-        if (els.regenBoxTitle) els.regenBoxTitle.textContent = 'Generate new worksheet';
         runInjectedPopupScripts(els.aiTemplatePopup);
         const topic = state.preview?.structure?.topic || state.preview?.request?.topic || '';
         const topicField = els.aiTemplatePopup.querySelector('[data-field="topic"], #aiField_topic');
         if (topicField && !topicField.value && topic) topicField.value = topic;
-        if (els.aiTemplatePopup.querySelector('.ai-structured-field, [data-field]')
-          && !els.aiTemplatePopup.querySelector('[data-ai-popup-save]')) {
-          const row = document.createElement('div');
-          row.className = 'aip-q-row-btns';
-          row.style.marginTop = '12px';
-          row.innerHTML = `
-            <button class="btn-soft" type="button" data-ai-popup-save="true" style="padding:6px 13px;font-size:12px;">Save changes</button>
-            <button class="btn-soft" type="button" data-ai-popup-grammar="true" style="padding:6px 13px;font-size:12px;">Correct grammar</button>
-          `;
-          els.aiTemplatePopup.appendChild(row);
-        }
         return;
       }
       els.aiTemplatePopup.innerHTML = '';
       els.aiTemplatePopup.style.display = 'none';
       if (els.regenFallbackWrap) els.regenFallbackWrap.style.display = '';
-      if (els.regenBoxTitle) els.regenBoxTitle.textContent = 'Regenerate whole worksheet';
     }
 
     function applyTextInFrame(path, value) {
@@ -3350,48 +3499,6 @@
     });
 
     els.aiQuestionCards.addEventListener('click', async (event) => {
-      const saveBtn = event.target.closest('[data-ai-q-save]');
-      if (saveBtn) {
-        const path = saveBtn.getAttribute('data-ai-q-save');
-        const card = saveBtn.closest('.aip-q-card');
-        const questionText = card?.querySelector(`[data-ai-question="${path}"]`)?.textContent ?? '';
-        const fields = [{ path, value: questionText.trim() }];
-        card?.querySelectorAll('[data-ai-option]').forEach((box) => {
-          fields.push({ path: box.getAttribute('data-ai-option'), value: (box.value || '').trim() });
-        });
-        saveBtn.disabled = true;
-        els.fieldEditError.style.display = 'none';
-        try {
-          await persistFieldList(fields);
-          toast(isTempWorksheetId(state.worksheetId) ? 'Changes saved locally' : 'Changes saved');
-        } catch (error) {
-          els.fieldEditError.textContent = friendlyError(error, 'Could not save changes');
-          els.fieldEditError.style.display = 'block';
-        } finally {
-          saveBtn.disabled = false;
-        }
-        return;
-      }
-      const grammarBtn = event.target.closest('[data-ai-q-grammar]');
-      if (grammarBtn) {
-        const path = grammarBtn.getAttribute('data-ai-q-grammar');
-        grammarBtn.disabled = true;
-        els.fieldEditError.style.display = 'none';
-        try {
-          const body = await rewriteField(path, GRAMMAR_INSTRUCTION);
-          const text = fieldTextFromStructure(body.structure, path);
-          const current = els.aiQuestionCards.querySelector(`[data-ai-question="${path}"]`);
-          if (current && text) current.textContent = text;
-          applyQuestionToFrame(path, text);
-          toast('Grammar corrected');
-        } catch (error) {
-          els.fieldEditError.textContent = friendlyError(error, 'Could not correct grammar');
-          els.fieldEditError.style.display = 'block';
-        } finally {
-          grammarBtn.disabled = false;
-        }
-        return;
-      }
       const regenBtn = event.target.closest('[data-ai-q-regen]');
       if (!regenBtn) return;
       const path = regenBtn.getAttribute('data-ai-q-regen');
@@ -3400,30 +3507,26 @@
       regenBtn.disabled = true;
       els.fieldEditError.style.display = 'none';
       try {
-        const body = await rewriteField(path, instruction);
-        const questions = body.structure?.questions;
-        const index = Number(path.replace(/\D/g, '')) - 1;
-        const text = questions?.[index]?.question || '';
-        const current = els.aiQuestionCards.querySelector(`[data-ai-question="${path}"]`);
-        if (current) current.textContent = text;
-        applyQuestionToFrame(path, text);
+        const body = await rewriteField(path, instruction, {
+          persist: false,
+          draft: true,
+          structure: draftStructureFromModal(),
+        });
+        const text = fieldTextFromStructure(body.structure, path);
+        applyDraftTextToCard(path, text);
         if (path === 'question_3') {
           for (const optionKey of ['option_1', 'option_2']) {
             try {
               const linked = await rewriteField(
                 optionKey,
                 `Write a short tick-box option that fits this question: ${text}`,
+                { persist: false, draft: true, structure: body.structure || draftStructureFromModal() },
               );
-              const parent = linked.structure?.questions?.find((item) => Array.isArray(item.options));
-              const oi = Number(optionKey.replace(/\D/g, '')) - 1;
-              const optionText = parent?.options?.[oi]?.text || '';
-              const box = els.aiQuestionCards.querySelector(`[data-ai-option="${optionKey}"]`);
-              if (box) box.value = optionText;
-              applyQuestionToFrame(optionKey, optionText);
+              applyDraftTextToCard(optionKey, fieldTextFromStructure(linked.structure, optionKey));
             } catch { }
           }
         }
-        toast('Question updated');
+        toast('Question updated in editor. Save changes to apply.');
       } catch (error) {
         els.fieldEditError.textContent = friendlyError(error, 'AI edit failed');
         els.fieldEditError.style.display = 'block';
@@ -3432,50 +3535,49 @@
       }
     });
 
-    els.aiTemplatePopup.addEventListener('click', async (event) => {
-      const saveBtn = event.target.closest('[data-ai-popup-save]');
-      const grammarBtn = event.target.closest('[data-ai-popup-grammar]');
-      if (!saveBtn && !grammarBtn) return;
-      const fields = [];
-      els.aiTemplatePopup.querySelectorAll('.ai-structured-field, [data-field]').forEach((node) => {
-        const key = node.getAttribute('data-field') || node.id?.replace(/^aiField_/, '');
-        if (!key) return;
-        fields.push({ path: key, value: (node.value || '').trim() });
-      });
-      els.fieldEditError.style.display = 'none';
-      if (saveBtn) {
-        saveBtn.disabled = true;
+    if (els.aiCorrectGrammarBtn) {
+      els.aiCorrectGrammarBtn.addEventListener('click', async () => {
+        const fields = collectQuestionDraftFields().filter((item) => item.value);
+        if (!fields.length) return;
+        els.aiCorrectGrammarBtn.disabled = true;
+        els.fieldEditError.style.display = 'none';
         try {
-          await persistFieldList(fields);
+          let structure = draftStructureFromModal();
+          for (const field of fields) {
+            const body = await rewriteField(field.path, GRAMMAR_INSTRUCTION, {
+              persist: false,
+              draft: true,
+              structure,
+            });
+            const text = fieldTextFromStructure(body.structure, field.path);
+            applyDraftTextToCard(field.path, text);
+            if (body.structure) structure = body.structure;
+          }
+          toast('Grammar corrected in editor. Save changes to apply.');
+        } catch (error) {
+          els.fieldEditError.textContent = friendlyError(error, 'Could not correct grammar');
+          els.fieldEditError.style.display = 'block';
+        } finally {
+          els.aiCorrectGrammarBtn.disabled = false;
+        }
+      });
+    }
+
+    if (els.aiSaveChangesBtn) {
+      els.aiSaveChangesBtn.addEventListener('click', async () => {
+        els.aiSaveChangesBtn.disabled = true;
+        els.fieldEditError.style.display = 'none';
+        try {
+          await persistFieldList(collectQuestionDraftFields());
           toast(isTempWorksheetId(state.worksheetId) ? 'Changes saved locally' : 'Changes saved');
         } catch (error) {
           els.fieldEditError.textContent = friendlyError(error, 'Could not save changes');
           els.fieldEditError.style.display = 'block';
         } finally {
-          saveBtn.disabled = false;
+          els.aiSaveChangesBtn.disabled = false;
         }
-        return;
-      }
-      grammarBtn.disabled = true;
-      try {
-        for (const field of fields) {
-          if (!field.value) continue;
-          const body = await rewriteField(field.path, GRAMMAR_INSTRUCTION);
-          const text = fieldTextFromStructure(body.structure, field.path);
-          if (!text) continue;
-          const input = els.aiTemplatePopup.querySelector(`[data-field="${field.path}"], #aiField_${field.path}`);
-          if (input) input.value = text;
-          applyLocalField(field.path, text);
-        }
-        persistPreviewToItems();
-        toast('Grammar corrected');
-      } catch (error) {
-        els.fieldEditError.textContent = friendlyError(error, 'Could not correct grammar');
-        els.fieldEditError.style.display = 'block';
-      } finally {
-        grammarBtn.disabled = false;
-      }
-    });
+      });
+    }
 
     els.aiFieldsList.addEventListener('click', async (event) => {
       const replaceBtn = event.target.closest('[data-ai-replace]');
