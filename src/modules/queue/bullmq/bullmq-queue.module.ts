@@ -1,6 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import {
+  createRedisConnection,
+  normalizeBullMqPrefix,
+  readRedisConnectionSettings,
+} from '../../../common/redis/redis-connection.util';
 import { QUEUE_NAMES } from '../queue-topology.constants';
 import { BullmqQueueService } from './bullmq-queue.service';
 
@@ -19,15 +24,14 @@ const QUEUE_REGISTRATIONS = [
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        const password = configService.get<string>('redis.password');
+        const settings = readRedisConnectionSettings(configService);
         return {
-          prefix: configService.get<string>('queueWorker.prefix') || 'asset-ingestion',
-          connection: {
-            host: configService.get<string>('redis.host') || 'localhost',
-            port: configService.get<number>('redis.port') || 6379,
-            password: password || undefined,
+          prefix: normalizeBullMqPrefix(
+            configService.get<string>('queueWorker.prefix'),
+          ),
+          connection: createRedisConnection(settings, {
             maxRetriesPerRequest: null,
-          },
+          }),
         };
       },
     }),

@@ -77,7 +77,7 @@ describe('RedisCacheService', () => {
 
   it('should flush search cache keys by pattern', async () => {
     mockRedisInstance.scan.mockResolvedValueOnce(['0', ['search:1', 'search:2']]);
-    mockRedisInstance.del.mockResolvedValue(2);
+    mockRedisInstance.del.mockResolvedValue(1);
 
     const deleted = await service.flushSearchCache();
 
@@ -88,6 +88,38 @@ describe('RedisCacheService', () => {
       'COUNT',
       100,
     );
+    expect(mockRedisInstance.del).toHaveBeenCalledWith('search:1');
+    expect(mockRedisInstance.del).toHaveBeenCalledWith('search:2');
     expect(deleted).toBe(2);
+  });
+
+  it('should return null and not throw when get fails', async () => {
+    mockRedisInstance.get.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.get('search:abc')).resolves.toBeNull();
+  });
+
+  it('should swallow set failures', async () => {
+    mockRedisInstance.set.mockRejectedValue(new Error('timeout'));
+
+    await expect(service.set('search:abc', { total: 1 }, 300)).resolves.toBeUndefined();
+  });
+
+  it('should stay available after a failed startup connect for later reconnect', async () => {
+    mockRedisInstance.connect.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    mockRedisInstance.status = 'wait';
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        RedisCacheService,
+        { provide: ConfigService, useValue: mockConfigService },
+      ],
+    }).compile();
+    const recovering = module.get<RedisCacheService>(RedisCacheService);
+    await recovering.onModuleInit();
+
+    expect(recovering.isAvailable()).toBe(false);
+    mockRedisInstance.status = 'ready';
+    expect(recovering.isAvailable()).toBe(true);
   });
 });

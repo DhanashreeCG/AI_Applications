@@ -1,3 +1,5 @@
+import { normalizeBullMqPrefix } from '../common/redis/redis-connection.util';
+
 export interface AppConfig {
   nodeEnv: string;
   port: number;
@@ -13,8 +15,12 @@ export interface AppConfig {
   redis: {
     host: string;
     port: number;
+    username?: string;
     password?: string;
     enabled: boolean;
+    tls: boolean;
+    cluster: boolean;
+    db: number;
     searchCacheTtlSeconds: number;
     assetMetadataCacheTtlSeconds: number;
   };
@@ -202,8 +208,12 @@ export default (): AppConfig => ({
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD,
+    username: process.env.REDIS_USERNAME || undefined,
+    password: process.env.REDIS_PASSWORD || undefined,
     enabled: process.env.REDIS_ENABLED !== 'false',
+    tls: process.env.REDIS_TLS === 'true',
+    cluster: process.env.REDIS_CLUSTER === 'true',
+    db: parseInt(process.env.REDIS_DB || '0', 10),
     searchCacheTtlSeconds: parseInt(
       process.env.REDIS_SEARCH_CACHE_TTL_SECONDS || '300',
       10,
@@ -277,7 +287,7 @@ export default (): AppConfig => ({
       'SQS_WORKER_SHUTDOWN_TIMEOUT_MS',
       30000,
     ),
-    prefix: process.env.BULLMQ_PREFIX || 'asset-ingestion',
+    prefix: normalizeBullMqPrefix(process.env.BULLMQ_PREFIX),
   },
   flashcards: {
     gyanApiBaseUrl: envTrim('GYAN_API_BASE_URL') || 'https://gyan-api.creativegalileo.com',
