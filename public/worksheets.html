@@ -1694,7 +1694,8 @@
 
     function configuredApiBase() {
       const env = window.__ENV__ || {};
-      const url = env.WORKSHEETS_API_URL || env.API_URL || '';
+      // Prefer worksheets-specific URL; fall back to shared Nest API used by flashcards.
+      const url = env.WORKSHEETS_API_URL || env.FLASHCARDS_API_URL || env.API_URL || '';
       return String(url).trim().replace(/\/+$/, '');
     }
 
