@@ -159,4 +159,20 @@ describe('alias field paths', () => {
       ),
     ).toBe('pairs[1].right_image');
   });
+
+  it('maps left/right letter editables and scene image aliases', () => {
+    const structure = {
+      image: { id: 'scene_image', imageQuery: 'ant' },
+      left_letters: [{ letter: 'i' }],
+      right_letters: [{ letter: 'a' }],
+    };
+    expect(resolveAliasFieldPath(structure, 'left_letter_1')).toBe(
+      'left_letters[0].letter',
+    );
+    expect(resolveAliasFieldPath(structure, 'right_letter_1')).toBe(
+      'right_letters[0].letter',
+    );
+    expect(resolveAliasImagePath(structure, 'scene_image')).toBe('image');
+    expect(resolveAliasImagePath(structure, 'SCENE')).toBe('image');
+  });
 });

@@ -601,6 +601,15 @@ export function resolveAliasFieldPath(
               : 'caption';
     return `items[${index}].${key}`;
   }
+  const columnLetter = fieldPath.match(/^(left|right)_letter_(\d+)$/i);
+  if (columnLetter) {
+    const side = columnLetter[1].toLowerCase();
+    const index = Number(columnLetter[2]) - 1;
+    const key = `${side}_letters`;
+    if (Array.isArray(root[key])) {
+      return `${key}[${index}].letter`;
+    }
+  }
   return fieldPath;
 }
 
@@ -626,7 +635,15 @@ export function resolveAliasImagePath(
   if (numbered && Array.isArray(root.items)) {
     return `items[${Number(numbered[1]) - 1}]`;
   }
-  if (needle === 'main_image' || needle === 'goat' || needle === 'hero' || needle === 'primary') {
+  if (
+    needle === 'main_image' ||
+    needle === 'goat' ||
+    needle === 'hero' ||
+    needle === 'primary' ||
+    needle === 'scene' ||
+    needle === 'scene_image' ||
+    /^scene(_image)?$/i.test(needle)
+  ) {
     return isRecord(root.image) ? 'image' : needle;
   }
   return needle;

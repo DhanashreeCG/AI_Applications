@@ -341,6 +341,39 @@ NULL
     expect(html).toMatch(/class="name-item"[^>]*top:335px/);
   });
 
+  it('fills matching_single_letter column letters and places the scene image in its zone', () => {
+    const html = renderer.render({
+      templateHtml: `
+        <div class="col-letter" data-editable="left_letter_1">{{LEFT_1}}</div>
+        <div class="col-letter" data-editable="right_letter_1">{{RIGHT_1}}</div>
+        {{SCENE_IMAGE}}
+        <div class="img-zone-box" onclick="selectWorksheetImage('scene_image')"
+          style="left:300px;top:720px;width:430px;height:380px;"></div>
+      `,
+      structure: {
+        worksheet_type: 'matching_single_letter',
+        target_letter: 'A',
+        left_letters: [{ id: 'left_1', letter: 'i', is_match: false }],
+        right_letters: [{ id: 'right_1', letter: 'a', is_match: true }],
+        image: {
+          id: 'scene_image',
+          imageQuery: 'ant and alligator',
+          assetUrl: '/worksheets/assets/scene/image',
+        },
+      },
+    });
+
+    expect(html).toContain('>i<');
+    expect(html).toContain('>a<');
+    expect(html).not.toContain('{{LEFT_1}}');
+    expect(html).not.toContain('{{SCENE_IMAGE}}');
+    expect(html).toMatch(
+      /data-image-slot="scene_image"[^>]*src="\/worksheets\/assets\/scene\/image"/,
+    );
+    expect(html).toMatch(/left:300px;top:720px;width:430px;height:380px/);
+    expect(html).not.toMatch(/left:70px;top:300px/);
+  });
+
   it('renders match-the-pairs images from {{PAIR_IMAGES}} without touching number-name pairs', () => {
     const html = renderer.render({
       templateHtml:

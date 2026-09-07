@@ -445,11 +445,24 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
       if (name === 'BACKGROUND_IMAGE') {
         return full;
       }
-      const slotId = name.replace(/_IMAGE$/i, '');
-      if (htmlHasImageSlot(withTokens, slotId)) {
+      const base = name.replace(/_IMAGE$/i, '');
+      const resolved = slotUrl(structure, base);
+      const slotId = resolved.slotId || base;
+      // Prefer explicit ids like scene_image over bare SCENE so zone boxes match.
+      const zoneKeys = [
+        slotId,
+        base,
+        `${base.toLowerCase()}_image`,
+        'scene_image',
+        'image',
+      ];
+      if (zoneKeys.some((id) => htmlHasImageSlot(withTokens, id))) {
         return '';
       }
-      return imageTag(slotId, slotUrl(structure, slotId), true);
+      const zone =
+        zoneKeys.map((id) => imageZoneForSlot(withTokens, id)).find(Boolean) ||
+        undefined;
+      return imageTag(slotId, resolved, true, zone);
     },
   );
 

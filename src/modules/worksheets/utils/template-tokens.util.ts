@@ -65,6 +65,12 @@ export function flattenTemplateTokens(
           if (field === 'question') {
             addToken(tokens, `QUESTION_${n}`, value);
           }
+          // matching_single_letter: {{LEFT_1}} / {{RIGHT_1}} from left_letters[].letter
+          const column = key.match(/^(left|right)_letters$/i);
+          if (column && (field === 'letter' || field === 'text' || field === 'value')) {
+            addToken(tokens, `${column[1]}_${n}`, value);
+            addToken(tokens, `${column[1].toUpperCase()}_${n}`, value);
+          }
         }
         if (field === 'options' && Array.isArray(value)) {
           value.forEach((option) => {
@@ -627,11 +633,22 @@ export function resolveImageSlot(
   if (exact) {
     return exact;
   }
-  if (['goat', 'main', 'main_image', 'hero', 'primary'].includes(needle)) {
+  if (
+    [
+      'goat',
+      'main',
+      'main_image',
+      'hero',
+      'primary',
+      'scene',
+      'scene_image',
+    ].includes(needle)
+  ) {
     return (
       slots.find(
         (slot) =>
           slot.slotId === 'main_image' ||
+          slot.slotId === 'scene_image' ||
           slot.path === 'image' ||
           slot.path.endsWith('.image'),
       ) || null

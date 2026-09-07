@@ -25,6 +25,14 @@ describe('resolveImageSlot', () => {
     expect(resolveImageSlot(structure, 'main_image')?.path).toBe('image');
   });
 
+  it('maps scene / SCENE aliases onto the root image slot', () => {
+    const scene = {
+      image: { id: 'scene_image', imageQuery: 'ant and alligator' },
+    };
+    expect(resolveImageSlot(scene, 'SCENE')?.path).toBe('image');
+    expect(resolveImageSlot(scene, 'scene_image')?.slotId).toBe('scene_image');
+  });
+
   it('maps item_1 / item_2 to distinct items', () => {
     expect(resolveImageSlot(structure, 'item_1')?.path).toBe('items[0]');
     expect(resolveImageSlot(structure, 'item_2')?.path).toBe('items[1]');

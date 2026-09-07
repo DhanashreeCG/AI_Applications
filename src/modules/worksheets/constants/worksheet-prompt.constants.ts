@@ -228,6 +228,14 @@ export function buildWorksheetContentPrompt(input: {
       '- Do not put JSON in topic or instruction_text. Keep worksheet_type as "number_names".',
       ''
     ] : []),
+    ...(input.templateSlug === 'matching_single_letter' ? [
+      'For matching_single_letter worksheets:',
+      '- One target_letter (uppercase). left_letters and right_letters are arrays of 5 objects each: { id, letter, is_match }.',
+      '- letter values in the columns are lowercase. Several boxes should match target_letter (is_match true); others are distractors.',
+      '- Keep topic like "Letter A" (or the chosen letter). badge_label stays "Letters and Sounds" unless the user changes it.',
+      '- image is the vocabulary scene illustration (imageQuery phrase, not a filename). Keep worksheet_type as matching_single_letter.',
+      ''
+    ] : []),
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',
