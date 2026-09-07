@@ -175,4 +175,15 @@ describe('alias field paths', () => {
     expect(resolveAliasImagePath(structure, 'scene_image')).toBe('image');
     expect(resolveAliasImagePath(structure, 'SCENE')).toBe('image');
   });
+
+  it('maps circle letter and vocab word editables', () => {
+    const structure = {
+      circle_letters: [{ letter: 'A' }],
+      items: [{ word: 'ant' }],
+    };
+    expect(resolveAliasFieldPath(structure, 'cl_1')).toBe(
+      'circle_letters[0].letter',
+    );
+    expect(resolveAliasFieldPath(structure, 'word_1')).toBe('items[0].word');
+  });
 });

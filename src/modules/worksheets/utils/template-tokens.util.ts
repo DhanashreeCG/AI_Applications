@@ -71,6 +71,14 @@ export function flattenTemplateTokens(
             addToken(tokens, `${column[1]}_${n}`, value);
             addToken(tokens, `${column[1].toUpperCase()}_${n}`, value);
           }
+          // look_and_say_circle_the_letters: {{CL_1}}… from circle_letters[].letter
+          if (
+            /^circle_letters$/i.test(key) &&
+            (field === 'letter' || field === 'text' || field === 'value')
+          ) {
+            addToken(tokens, `CL_${n}`, value);
+            addToken(tokens, `cl_${n}`, value);
+          }
         }
         if (field === 'options' && Array.isArray(value)) {
           value.forEach((option) => {
@@ -95,6 +103,27 @@ export function flattenTemplateTokens(
       tokens[key] = value;
       walkArray(key, value);
     }
+  }
+
+  // look_and_say_circle_the_letters: {{TARGET_LETTER_UPPER}} / {{TARGET_LETTER_LOWER}}
+  const rawTarget =
+    (typeof tokens.letter_upper === 'string' && tokens.letter_upper) ||
+    (typeof tokens.target_letter === 'string' && tokens.target_letter) ||
+    (typeof tokens.TARGET_LETTER === 'string' && tokens.TARGET_LETTER) ||
+    '';
+  const upper =
+    (typeof tokens.letter_upper === 'string' && tokens.letter_upper) ||
+    (typeof tokens.LETTER_UPPER === 'string' && tokens.LETTER_UPPER) ||
+    (rawTarget ? String(rawTarget).toUpperCase() : '');
+  const lower =
+    (typeof tokens.letter_lower === 'string' && tokens.letter_lower) ||
+    (typeof tokens.LETTER_LOWER === 'string' && tokens.LETTER_LOWER) ||
+    (rawTarget ? String(rawTarget).toLowerCase() : '');
+  if (upper) {
+    addToken(tokens, 'TARGET_LETTER_UPPER', upper);
+  }
+  if (lower) {
+    addToken(tokens, 'TARGET_LETTER_LOWER', lower);
   }
 
   return tokens;
@@ -939,28 +968,56 @@ export function injectLookAndSayCaptions(
   html: string,
   structure: Record<string, unknown>,
 ): string {
-  if (!/class=["'][^"']*\bcaption\b/i.test(html)) {
-    return html;
-  }
   const items = Array.isArray(structure.items) ? structure.items : [];
   const target =
     typeof structure.target_letter === 'string' ? structure.target_letter : '';
-  return html.replace(
-    /(<div\b[^>]*class=["'][^"']*\bcaption\b[^>]*>)([\s\S]*?)(<\/div>)/gi,
-    (full, open: string, inner: string, close: string) => {
-      const editable = open.match(/data-editable=["']([^"']+)["']/i)?.[1] || '';
-      const indexMatch = editable.match(/item[_-]?(\d+)/i);
-      const index = indexMatch ? Number(indexMatch[1]) - 1 : -1;
-      const item = index >= 0 && isRecord(items[index]) ? items[index] : null;
-      const letter =
-        (item && typeof item.letter === 'string' && item.letter) || target;
-      const caption =
-        (item && typeof item.caption === 'string' && item.caption) ||
-        inner.replace(/<[^>]+>/g, '').trim();
-      if (!caption || !letter) {
-        return full;
-      }
-      return `${open}${highlightCaptionLetter(caption, letter)}${close}`;
-    },
-  );
+  let next = html;
+
+  if (/class=["'][^"']*\bcaption\b/i.test(next)) {
+    next = next.replace(
+      /(<div\b[^>]*class=["'][^"']*\bcaption\b[^>]*>)([\s\S]*?)(<\/div>)/gi,
+      (full, open: string, inner: string, close: string) => {
+        const editable = open.match(/data-editable=["']([^"']+)["']/i)?.[1] || '';
+        const indexMatch = editable.match(/item[_-]?(\d+)/i);
+        const index = indexMatch ? Number(indexMatch[1]) - 1 : -1;
+        const item = index >= 0 && isRecord(items[index]) ? items[index] : null;
+        const letter =
+          (item && typeof item.letter === 'string' && item.letter) || target;
+        const caption =
+          (item && typeof item.caption === 'string' && item.caption) ||
+          inner.replace(/<[^>]+>/g, '').trim();
+        if (!caption || !letter) {
+          return full;
+        }
+        return `${open}${highlightCaptionLetter(caption, letter)}${close}`;
+      },
+    );
+  }
+
+  // look_and_say_circle_the_letters: first letter of each vocab word in red
+  if (/class=["'][^"']*\bvocab-word\b/i.test(next)) {
+    next = next.replace(
+      /(<div\b[^>]*class=["'][^"']*\bvocab-word\b[^>]*>)([\s\S]*?)(<\/div>)/gi,
+      (full, open: string, inner: string, close: string) => {
+        if (/hl-letter/i.test(inner)) {
+          return full;
+        }
+        const editable = open.match(/data-editable=["']([^"']+)["']/i)?.[1] || '';
+        const indexMatch = editable.match(/word[_-]?(\d+)/i);
+        const index = indexMatch ? Number(indexMatch[1]) - 1 : -1;
+        const item = index >= 0 && isRecord(items[index]) ? items[index] : null;
+        const text =
+          (item && typeof item.word === 'string' && item.word.trim()) ||
+          inner.replace(/<[^>]+>/g, '').trim();
+        if (!text) {
+          return full;
+        }
+        const first = escapeHtml(text.charAt(0));
+        const rest = escapeHtml(text.slice(1));
+        return `${open}<span class="hl-letter">${first}</span>${rest}${close}`;
+      },
+    );
+  }
+
+  return next;
 }

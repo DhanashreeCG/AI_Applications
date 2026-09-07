@@ -236,6 +236,16 @@ export function buildWorksheetContentPrompt(input: {
       '- image is the vocabulary scene illustration (imageQuery phrase, not a filename). Keep worksheet_type as matching_single_letter.',
       ''
     ] : []),
+    ...(input.templateSlug === 'look_and_say_circle_the_letters' ? [
+      'For look_and_say_circle_the_letters worksheets:',
+      '- Set target_letter (uppercase), letter_upper, and letter_lower for the Read aloud section.',
+      '- pill_circle should be like "Circle the letter Aa" matching the target.',
+      '- circle_letters is exactly 6 objects { id, letter, is_target }: mostly the target letter (mixed case), plus 2 distractors.',
+      '- items[] has exactly 4 vocabulary clouds: id item_1..item_4, word (lowercase, starts with target), imageQuery (visual phrase, not filename).',
+      '- All 4 words must be distinct and start with the target letter. Keep worksheet_type as look_and_say_circle_the_letters.',
+      '- topic should be "Letters" or "Letter X", not an unrelated theme name.',
+      ''
+    ] : []),
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',

@@ -374,6 +374,48 @@ NULL
     expect(html).not.toMatch(/left:70px;top:300px/);
   });
 
+  it('fills look_and_say_circle_the_letters read-aloud, circle box, and vocab highlights', () => {
+    const html = renderer.render({
+      templateHtml: `
+        <div class="upper-letter">{{TARGET_LETTER_UPPER}}</div>
+        <div class="lower-letter">{{TARGET_LETTER_LOWER}}</div>
+        <div class="cl-letter" data-editable="cl_1">{{CL_1}}</div>
+        <div class="cl-letter" data-editable="cl_2">{{CL_2}}</div>
+        <div class="vocab-word" data-editable="word_1">{{WORD_1}}</div>
+        {{IMAGE_1}}
+        <div class="img-zone-box" onclick="selectWorksheetImage('item_1')"
+          style="left:387px;top:715px;width:219px;height:155px;"></div>
+      `,
+      structure: {
+        worksheet_type: 'look_and_say_circle_the_letters',
+        target_letter: 'A',
+        letter_upper: 'A',
+        letter_lower: 'a',
+        circle_letters: [
+          { id: 'cl_1', letter: 'A', is_target: true },
+          { id: 'cl_2', letter: 'b', is_target: false },
+        ],
+        items: [
+          {
+            id: 'item_1',
+            word: 'ant',
+            imageQuery: 'red ant',
+            assetUrl: '/worksheets/assets/ant/image',
+          },
+        ],
+      },
+    });
+
+    expect(html).toContain('>A<');
+    expect(html).toContain('>a<');
+    expect(html).toContain('>b<');
+    expect(html).not.toContain('{{TARGET_LETTER_UPPER}}');
+    expect(html).not.toContain('{{CL_1}}');
+    expect(html).toContain('<span class="hl-letter">a</span>nt');
+    expect(html).toMatch(/data-image-slot="item_1"[^>]*src="\/worksheets\/assets\/ant\/image"/);
+    expect(html).toMatch(/left:387px;top:715px;width:219px;height:155px/);
+  });
+
   it('renders match-the-pairs images from {{PAIR_IMAGES}} without touching number-name pairs', () => {
     const html = renderer.render({
       templateHtml:

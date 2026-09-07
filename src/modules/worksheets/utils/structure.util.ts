@@ -610,6 +610,24 @@ export function resolveAliasFieldPath(
       return `${key}[${index}].letter`;
     }
   }
+  const circleLetter = fieldPath.match(/^cl_(\d+)$/i);
+  if (circleLetter && Array.isArray(root.circle_letters)) {
+    return `circle_letters[${Number(circleLetter[1]) - 1}].letter`;
+  }
+  const vocabWord = fieldPath.match(/^word_(\d+)$/i);
+  if (vocabWord && Array.isArray(root.items)) {
+    const index = Number(vocabWord[1]) - 1;
+    const rec = isRecord(root.items[index]) ? root.items[index] : null;
+    const key =
+      rec && typeof rec.word === 'string'
+        ? 'word'
+        : rec && typeof rec.caption === 'string'
+          ? 'caption'
+          : rec && typeof rec.label === 'string'
+            ? 'label'
+            : 'word';
+    return `items[${index}].${key}`;
+  }
   return fieldPath;
 }
 
