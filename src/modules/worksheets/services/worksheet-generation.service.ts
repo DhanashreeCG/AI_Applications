@@ -266,22 +266,31 @@ export class WorksheetGenerationService {
         },
         completeMetadata: (selected) => {
           const outcome = (selected as any)._aiOutcome;
+          const selectionTelemetry = (selected as any)._selectionTelemetry;
           return {
             templateId: selected.id,
             templateSlug: selected.slug,
             rendererType: selected.rendererType,
             category: selected.category,
             explicitTemplateId: analyzed.explicitTemplateId,
-            selectionMode: analyzed.explicitTemplateId
-              ? 'explicit'
-              : outcome?.usedFallback
-                ? 'deterministic'
-                : outcome?.result
-                  ? 'ai'
-                  : 'deterministic',
+            selectionMode:
+              selectionTelemetry?.selectionMode ??
+              (analyzed.explicitTemplateId
+                ? 'explicit'
+                : outcome?.usedFallback
+                  ? 'deterministic'
+                  : outcome?.result
+                    ? 'ai'
+                    : 'deterministic'),
             aiConfidence: outcome?.result?.confidenceScore,
             aiReasoning: outcome?.result?.reasoning,
             aiFallbackReason: outcome?.fallbackReason,
+            ageBand: selectionTelemetry?.ageBand ?? null,
+            ageFilteredCount: selectionTelemetry?.ageFilteredCount ?? null,
+            stage2Classification: selectionTelemetry?.stage2Classification ?? null,
+            rerankTopScores: selectionTelemetry?.rerankTopScores ?? null,
+            scoreMargin: selectionTelemetry?.scoreMargin ?? null,
+            selectionReason: selectionTelemetry?.selectionReason ?? null,
           };
         },
       },

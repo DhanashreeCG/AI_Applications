@@ -10,14 +10,22 @@ import { AiUsageService } from '../../ai/services/ai-usage.service';
 import { CircuitBreaker } from '../../ai/utils/circuit-breaker.util';
 import { RateLimiter } from '../../ai/utils/rate-limiter.util';
 import {
+  WORKSHEET_TEMPLATE_CLASSIFY_AI_PURPOSE,
+  WORKSHEET_TEMPLATE_CLASSIFY_AI_STAGE,
+  WORKSHEET_TEMPLATE_CLASSIFY_PROMPT_VERSION,
+  WORKSHEET_TEMPLATE_CLASSIFY_RESPONSE_SCHEMA,
+  WORKSHEET_TEMPLATE_CLASSIFY_SYSTEM_PROMPT,
   WORKSHEET_TEMPLATE_SELECTION_AI_PURPOSE,
   WORKSHEET_TEMPLATE_SELECTION_AI_STAGE,
   WORKSHEET_TEMPLATE_SELECTION_PROMPT_VERSION,
   WORKSHEET_TEMPLATE_SELECTION_RESPONSE_SCHEMA,
   WORKSHEET_TEMPLATE_SELECTION_SYSTEM_PROMPT,
+  buildWorksheetTemplateClassifyGeminiSchema,
   buildWorksheetTemplateSelectionGeminiSchema,
 } from '../constants/worksheet-prompt.constants';
 import {
+  WorksheetTemplateClassifyInput,
+  WorksheetTemplateIntentClassification,
   WorksheetTemplateSelectionAiFallbackReason,
   WorksheetTemplateSelectionAiOutcome,
   WorksheetTemplateSelectionAiResult,
@@ -101,6 +109,161 @@ export class WorksheetTemplateSelectionAiService {
     }
   }
 
+  /**
+   * Stage 2 — classify query/topic into theme / subTopic / activityIntent / difficulty.
+   * Independent of the template catalog. Returns null-ish fallback on any failure.
+   */
+  public async classify(
+    input: WorksheetTemplateClassifyInput,
+  ): Promise<WorksheetTemplateIntentClassification> {
+    const empty: WorksheetTemplateIntentClassification = {
+      theme: null,
+      subTopic: input.topic?.trim() || null,
+      activityIntent: null,
+      difficulty: this.normalizeDifficulty(input.difficulty),
+      confidence: 0,
+    };
+
+    if (!this.enabled) {
+      return empty;
+    }
+    if (this.provider === 'openai' && !this.openaiClient) {
+      return empty;
+    }
+    if (this.provider === 'gemini' && !this.client) {
+      return empty;
+    }
+
+    try {
+      this.circuitBreaker.beforeRequest();
+    } catch {
+      return empty;
+    }
+
+    const userPayload = {
+      query: input.query ?? null,
+      topic: input.topic ?? null,
+      difficulty: input.difficulty ?? null,
+      ageBand: input.ageBand,
+      useClosedTaxonomy: input.useClosedTaxonomy,
+      themes: input.themes,
+      subTopics: input.subTopics,
+      activityTypes: input.activityTypes,
+      promptVersion: WORKSHEET_TEMPLATE_CLASSIFY_PROMPT_VERSION,
+    };
+    const userContent = JSON.stringify(userPayload);
+    const promptHash = createHash('sha256')
+      .update(WORKSHEET_TEMPLATE_CLASSIFY_SYSTEM_PROMPT)
+      .update('\n')
+      .update(userContent)
+      .digest('hex');
+
+    const invocationId = randomUUID();
+    const startedAt = new Date();
+    const providerName = this.provider === 'openai' ? 'openai' : 'google-gemini';
+    const storeAiPayload = this.configService.get<boolean>('pipelineTracking.storeAiPayload') === true;
+
+    if (input.telemetry) {
+      this.emitter.emitAiStarted({
+        ...input.telemetry,
+        invocationId,
+        stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+        provider: providerName,
+        model: this.modelName,
+        purpose: WORKSHEET_TEMPLATE_CLASSIFY_AI_PURPOSE,
+        promptHash,
+        promptPayload: storeAiPayload
+          ? {
+              systemPromptVersion: WORKSHEET_TEMPLATE_CLASSIFY_PROMPT_VERSION,
+              user: userPayload,
+            }
+          : undefined,
+      });
+    }
+
+    try {
+      await this.rateLimiter.acquire();
+      const { text, usage, requestId } = await this.withTimeout(
+        this.callClassifyProvider({ userContent }),
+        this.timeoutMs,
+      );
+      const latencyMs = Date.now() - startedAt.getTime();
+      const parsed = this.parseClassifyResponse(text);
+      if (!parsed) {
+        this.circuitBreaker.recordFailure();
+        await this.recordClassifyFailure({
+          startedAt,
+          latencyMs,
+          requestId,
+          errorType: 'malformed_json',
+          usage,
+          telemetry: input.telemetry,
+          invocationId,
+        });
+        return empty;
+      }
+
+      // Prefer explicit request difficulty when present.
+      if (empty.difficulty) {
+        parsed.difficulty = empty.difficulty;
+      }
+
+      this.circuitBreaker.recordSuccess();
+      const estimatedCost = this.estimateCost(usage);
+      await this.aiUsageService.record({
+        stage: WORKSHEET_TEMPLATE_CLASSIFY_AI_STAGE,
+        provider: providerName,
+        model: this.modelName,
+        requestId,
+        startedAt,
+        completedAt: new Date(),
+        latencyMs,
+        inputTokens: usage.inputTokens,
+        cachedInputTokens: usage.cachedInputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: usage.totalTokens,
+        estimatedCost,
+        status: 'success',
+        retryCount: 0,
+      });
+
+      if (input.telemetry) {
+        this.emitter.emitAiCompleted({
+          ...input.telemetry,
+          invocationId,
+          stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+          status: 'success',
+          responseHash: hashPayload(parsed),
+          responsePayload: storeAiPayload ? parsed : undefined,
+          inputTokens: usage.inputTokens,
+          cachedInputTokens: usage.cachedInputTokens,
+          outputTokens: usage.outputTokens,
+          totalTokens: usage.totalTokens,
+          estimatedCost,
+          durationMs: latencyMs,
+        });
+      }
+
+      return parsed;
+    } catch (error) {
+      const latencyMs = Date.now() - startedAt.getTime();
+      const errorType = this.classifyError(error);
+      this.circuitBreaker.recordFailure();
+      await this.recordClassifyFailure({
+        startedAt,
+        latencyMs,
+        errorType,
+        telemetry: input.telemetry,
+        invocationId,
+        errorMessage: getErrorMessage(error),
+      });
+      this.logger.warn(
+        `Worksheet Stage 2 classify failed (${errorType}): ${getErrorMessage(error)}`,
+      );
+      return empty;
+    }
+  }
+
   public async select(input: WorksheetTemplateSelectionAiSelectInput): Promise<WorksheetTemplateSelectionAiOutcome> {
     if (!this.enabled) {
       return this.fallback('disabled');
@@ -128,7 +291,8 @@ export class WorksheetTemplateSelectionAiService {
     }
 
     const templates = await this.templateService.listActive();
-    const catalogBlock = this.buildCatalogBlock(templates);
+    const candidates = templates.filter((t) => allowed.includes(t.id));
+    const catalogBlock = this.buildCatalogBlock(candidates.length ? candidates : templates);
     const catalogHash = createHash('sha256').update(catalogBlock).digest('hex');
 
     const userPayload = {
@@ -138,6 +302,7 @@ export class WorksheetTemplateSelectionAiService {
       grade: input.grade ?? null,
       subject: input.subject ?? null,
       difficulty: input.difficulty ?? null,
+      classification: input.classification ?? null,
       allowedTemplateIds: [...allowed].sort(),
       promptVersion: WORKSHEET_TEMPLATE_SELECTION_PROMPT_VERSION,
     };
@@ -318,12 +483,154 @@ export class WorksheetTemplateSelectionAiService {
         category: t.category,
         subjects: meta.subjects,
         topics: meta.topics,
+        theme: meta.theme,
+        subTopics: meta.subTopics,
+        activityType: meta.activityType,
         difficulty: meta.difficulty,
         ageMin: meta.ageMin,
         ageMax: meta.ageMax,
       };
     });
     return `TEMPLATE CATALOG:\n${JSON.stringify(list, null, 2)}`;
+  }
+
+  private async callClassifyProvider(input: {
+    userContent: string;
+  }): Promise<{ text: string; usage: ProviderUsage; requestId?: string }> {
+    if (this.provider === 'openai') {
+      const response = await this.openaiClient!.chat.completions.create({
+        model: this.modelName,
+        temperature: 0,
+        messages: [
+          { role: 'system', content: WORKSHEET_TEMPLATE_CLASSIFY_SYSTEM_PROMPT },
+          { role: 'user', content: input.userContent },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: WORKSHEET_TEMPLATE_CLASSIFY_RESPONSE_SCHEMA.name,
+            strict: WORKSHEET_TEMPLATE_CLASSIFY_RESPONSE_SCHEMA.strict,
+            schema: WORKSHEET_TEMPLATE_CLASSIFY_RESPONSE_SCHEMA.schema as Record<string, unknown>,
+          },
+        },
+      } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+
+      const text = response.choices[0]?.message?.content?.trim() ?? '';
+      const cachedTokens = (response.usage as any)?.prompt_tokens_details?.cached_tokens ?? undefined;
+      return {
+        text,
+        requestId: response.id,
+        usage: {
+          inputTokens: response.usage?.prompt_tokens,
+          cachedInputTokens: cachedTokens,
+          outputTokens: response.usage?.completion_tokens,
+          totalTokens: response.usage?.total_tokens,
+        },
+      };
+    }
+
+    const response = await this.client!.models.generateContent({
+      model: this.modelName,
+      contents: [{ role: 'user', parts: [{ text: input.userContent }] }],
+      config: {
+        temperature: 0,
+        systemInstruction: WORKSHEET_TEMPLATE_CLASSIFY_SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+        responseSchema: buildWorksheetTemplateClassifyGeminiSchema(),
+      },
+    });
+
+    const text = response.text?.trim() ?? '';
+    const geminiUsage = (response as any).usageMetadata;
+    return {
+      text,
+      requestId: (response as any).responseId,
+      usage: {
+        inputTokens: geminiUsage?.promptTokenCount,
+        cachedInputTokens: geminiUsage?.cachedContentTokenCount,
+        outputTokens: geminiUsage?.candidatesTokenCount,
+        totalTokens: geminiUsage?.totalTokenCount,
+      },
+    };
+  }
+
+  private parseClassifyResponse(text: string): WorksheetTemplateIntentClassification | null {
+    if (!text) return null;
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const confidence = Number(parsed.confidence);
+      if (!Number.isFinite(confidence)) {
+        return null;
+      }
+      return {
+        theme: typeof parsed.theme === 'string' ? parsed.theme.trim() || null : null,
+        subTopic: typeof parsed.subTopic === 'string' ? parsed.subTopic.trim() || null : null,
+        activityIntent:
+          typeof parsed.activityIntent === 'string'
+            ? parsed.activityIntent.trim() || null
+            : null,
+        difficulty: this.normalizeDifficulty(
+          typeof parsed.difficulty === 'string' ? parsed.difficulty : null,
+        ),
+        confidence,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeDifficulty(
+    value: string | null | undefined,
+  ): 'easy' | 'medium' | 'hard' | null {
+    const raw = value?.trim().toLowerCase();
+    if (raw === 'easy' || raw === 'medium' || raw === 'hard') {
+      return raw;
+    }
+    return null;
+  }
+
+  private async recordClassifyFailure(input: {
+    startedAt: Date;
+    latencyMs: number;
+    requestId?: string;
+    errorType: WorksheetTemplateSelectionAiFallbackReason;
+    usage?: ProviderUsage;
+    telemetry?: WorksheetTemplateClassifyInput['telemetry'];
+    invocationId: string;
+    errorMessage?: string;
+  }): Promise<void> {
+    const providerName = this.provider === 'openai' ? 'openai' : 'google-gemini';
+    await this.aiUsageService.record({
+      stage: WORKSHEET_TEMPLATE_CLASSIFY_AI_STAGE,
+      provider: providerName,
+      model: this.modelName,
+      requestId: input.requestId,
+      startedAt: input.startedAt,
+      completedAt: new Date(),
+      latencyMs: input.latencyMs,
+      inputTokens: input.usage?.inputTokens,
+      cachedInputTokens: input.usage?.cachedInputTokens,
+      outputTokens: input.usage?.outputTokens,
+      totalTokens: input.usage?.totalTokens,
+      estimatedCost: input.usage ? this.estimateCost(input.usage) : undefined,
+      status: 'failed',
+      retryCount: 0,
+      errorType: input.errorType,
+    });
+    if (input.telemetry) {
+      this.emitter.emitAiCompleted({
+        ...input.telemetry,
+        invocationId: input.invocationId,
+        stageName: PIPELINE_STAGES.TEMPLATE_SELECTION,
+        status: 'failed',
+        inputTokens: input.usage?.inputTokens,
+        cachedInputTokens: input.usage?.cachedInputTokens,
+        outputTokens: input.usage?.outputTokens,
+        totalTokens: input.usage?.totalTokens,
+        durationMs: input.latencyMs,
+        errorMessage: input.errorMessage ?? input.errorType,
+      });
+    }
   }
 
   private async callProvider(input: {

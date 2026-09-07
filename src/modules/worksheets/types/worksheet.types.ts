@@ -26,7 +26,15 @@ export interface WorksheetTemplateMeta {
   grades?: string[];
   subjects?: string[];
   topics?: string[];
+  /** Closed-vocabulary theme for FS0–FS2 templates. */
+  theme?: string;
+  /** Leaf topics under `theme` (FS0–FS2). */
+  subTopics?: string[];
+  /** One or more of the 15-item activity taxonomy. */
+  activityType?: string[];
+  /** Required for auto-select eligibility (Stage 1). */
   ageMin?: number;
+  /** Required for auto-select eligibility (Stage 1). */
   ageMax?: number;
   difficulty?: string[];
 }
