@@ -336,6 +336,9 @@ NULL
     expect(html).not.toContain('"pairs"');
     expect(html).toContain('</body></html>');
     expect(html).not.toMatch(/<\/body>\s*<\/html>\s*<\/body>/);
+    // Digits sit 8px below name-pill tops so they center in the circles.
+    expect(html).toMatch(/class="number-item"[^>]*top:343px/);
+    expect(html).toMatch(/class="name-item"[^>]*top:335px/);
   });
 
   it('renders match-the-pairs images from {{PAIR_IMAGES}} without touching number-name pairs', () => {

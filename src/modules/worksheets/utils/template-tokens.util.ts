@@ -142,7 +142,13 @@ function isNumberNamesTemplate(structure: Record<string, unknown>): boolean {
 export function matchingPairLayout(
   structure: Record<string, unknown>,
   pairCount: number,
-): { startTop: number; numberLeft: number; nameLeft: number; rowHeight: number } {
+): {
+  startTop: number;
+  numberTop: number;
+  numberLeft: number;
+  nameLeft: number;
+  rowHeight: number;
+} {
   const layout = isRecord(structure.layout) ? structure.layout : {};
   const count = Math.max(pairCount, 1);
   const isNumberNames = structure.worksheet_type === 'number_names';
@@ -152,8 +158,15 @@ export function matchingPairLayout(
   // that is vertically+horizontally centered via CSS flex (see .number-item /
   // .name-item in the template). If the background artwork changes, re-measure
   // pill/circle centers and update these four numbers together.
+  // numberTop is 8px below startTop so digits sit in the circle centers
+  // (font metrics sit high without this nudge; name pills keep startTop).
+  const startTop = Number(layout.start_top) || (isNumberNames ? 335 : 280);
+  const numberTop =
+    Number(layout.number_top) ||
+    (isNumberNames ? startTop + 8 : startTop);
   return {
-    startTop: Number(layout.start_top) || (isNumberNames ? 335 : 280),
+    startTop,
+    numberTop,
     numberLeft: Number(layout.number_left) || (isNumberNames ? 208 : 95),
     nameLeft: Number(layout.name_left) || (isNumberNames ? 607 : 620),
     rowHeight: Number(layout.row_height) || (isNumberNames ? 143 : Math.min(88, Math.max(64, 900 / count))),
@@ -204,7 +217,7 @@ export function positionMatchingPairItems(
   if (pairs.length === 0 || !/number-item|name-item/.test(html)) {
     return html;
   }
-  const { startTop, numberLeft, nameLeft, rowHeight } = matchingPairLayout(
+  const { startTop, numberTop, numberLeft, nameLeft, rowHeight } = matchingPairLayout(
     structure,
     pairs.length,
   );
@@ -218,7 +231,7 @@ export function positionMatchingPairItems(
       const isNumber = /number-item/.test(attrs);
       const index = isNumber ? numberIndex++ : nameIndex++;
       const renderIndex = isNumber ? index : nameIndices.indexOf(index);
-      const top = startTop + renderIndex * rowHeight;
+      const top = (isNumber ? numberTop : startTop) + renderIndex * rowHeight;
       const left = isNumber ? numberLeft : nameLeft;
       const color = !isNumber && !isNumberNamesTemplate(structure)
         ? pairField(pairs[index], 'color') || undefined
@@ -242,7 +255,7 @@ export function buildMatchingPairMarkup(
     return { numbers: '', names: '' };
   }
   const nameFontSize = isNumberNamesTemplate(structure) ? 28 : 32;
-  const { startTop, numberLeft, nameLeft, rowHeight } = matchingPairLayout(
+  const { startTop, numberTop, numberLeft, nameLeft, rowHeight } = matchingPairLayout(
     structure,
     pairs.length,
   );
@@ -257,7 +270,7 @@ export function buildMatchingPairMarkup(
 
   const numbers = pairs
     .map((item, index) => {
-      const top = startTop + index * rowHeight;
+      const top = numberTop + index * rowHeight;
       const path = `pairs[${index}].number`;
       const value = escapeHtml(pairField(item, 'number'));
       return `<div class="number-item" style="top:${top}px;left:${numberLeft}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, numberLeft + 76)}`;
