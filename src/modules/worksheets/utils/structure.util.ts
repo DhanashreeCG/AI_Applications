@@ -329,12 +329,26 @@ export function normalizeImageQueryFields(
         next[key] = child;
         continue;
       }
-      if (PAIR_IMAGE_KEYS.has(key) && typeof child === 'string' && child.trim()) {
-        next[key] = {
-          image_name: child.trim(),
-          imageQuery: filenameToSearchQuery(child.trim()),
-        };
-        continue;
+      if (PAIR_IMAGE_KEYS.has(key)) {
+        const side = key.startsWith('left') ? 'left' : 'right';
+        const hintKey = `${side}_hint`;
+        const hint =
+          typeof node[hintKey] === 'string' ? String(node[hintKey]).trim() : '';
+        if (typeof child === 'string' && child.trim()) {
+          next[key] = {
+            image_name: child.trim(),
+            imageQuery: hint || filenameToSearchQuery(child.trim()),
+          };
+          continue;
+        }
+        if (
+          (child == null || child === '') &&
+          hint &&
+          !looksLikeImageFileName(hint)
+        ) {
+          next[key] = { imageQuery: hint };
+          continue;
+        }
       }
       next[key] = walk(child);
     }
@@ -590,7 +604,7 @@ export function resolveAliasFieldPath(
   return fieldPath;
 }
 
-/** Map prototype image ids (item_1, IMAGE_2) onto the item object path. */
+/** Map prototype image ids (item_1, IMAGE_2_LEFT) onto structure paths. */
 export function resolveAliasImagePath(
   root: Record<string, unknown>,
   slotId: string,
@@ -601,6 +615,12 @@ export function resolveAliasImagePath(
   }
   if (/^[a-zA-Z_]\w*(\[\d+](\.[a-zA-Z_]\w*)*)+$/.test(needle) || /^\w+\[\d+]/.test(needle)) {
     return needle;
+  }
+  const pairSide =
+    needle.match(/^IMAGE[_-]?(\d+)[_-](left|right)$/i) ||
+    needle.match(/^pair[_-]?(\d+)[_./-](left|right)(?:_image)?$/i);
+  if (pairSide && Array.isArray(root.pairs)) {
+    return `pairs[${Number(pairSide[1]) - 1}].${pairSide[2].toLowerCase()}_image`;
   }
   const numbered = needle.match(/^(?:item|image|img|slot)_?(\d+)$/i);
   if (numbered && Array.isArray(root.items)) {

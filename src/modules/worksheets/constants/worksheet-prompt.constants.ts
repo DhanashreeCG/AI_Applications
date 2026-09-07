@@ -207,6 +207,17 @@ export function buildWorksheetContentPrompt(input: {
       '- Choose concrete, picture-friendly nouns young children know. Keep worksheet_type as look_and_say_letters_and_sounds.',
       ''
     ] : []),
+    ...(input.templateSlug === 'tracing' ? [
+      'For tracing worksheets:',
+      '- Return exactly 4 pairs[] (pair_1..pair_4). Do not unwrap pairs into separate worksheets.',
+      '- Each pair needs: id, section (1 or 2), line (1 or 2), size ("big" or "small"), left_image and right_image.',
+      '- left_image and right_image must be objects with imageQuery as a visual phrase (e.g. "small red bird"), never a filename.',
+      '- Section 1 (pairs 1-2) and section 2 (pairs 3-4) each teach one compare/match idea (big/small, animal/home, etc.).',
+      '- Within a section the two pairs must contrast size: one size "small", one size "big", with matching left↔right concepts.',
+      '- instruction_1 describes section 1; instruction_2 describes section 2. Keep worksheet_type as tracing.',
+      '- All 8 imageQuery values must be distinct and age-appropriate.',
+      ''
+    ] : []),
     ...(input.templateSlug === 'number_names' ? [
       'For number_names matching worksheets:',
       '- Output pairs[], not items[]. Each pair has number (left column string) and name (right column string).',

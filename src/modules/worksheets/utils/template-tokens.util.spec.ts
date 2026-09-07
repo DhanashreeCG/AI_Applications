@@ -33,6 +33,19 @@ describe('resolveImageSlot', () => {
   it('maps IMAGE_1 to the first item slot', () => {
     expect(resolveImageSlot(structure, 'IMAGE_1')?.path).toBe('items[0]');
   });
+
+  it('maps IMAGE_1_LEFT to pairs[0].left_image', () => {
+    const pairs = {
+      pairs: [
+        {
+          left_image: { imageQuery: 'small bird' },
+          right_image: { imageQuery: 'small nest' },
+        },
+      ],
+    };
+    expect(resolveImageSlot(pairs, 'IMAGE_1_LEFT')?.path).toBe('pairs[0].left_image');
+    expect(resolveImageSlot(pairs, 'IMAGE_1_RIGHT')?.path).toBe('pairs[0].right_image');
+  });
 });
 
 describe('look-and-say template helpers', () => {
@@ -42,6 +55,16 @@ describe('look-and-say template helpers', () => {
       <div class="img-zone-box" onclick="selectWorksheetImage('item_1')" style="left:50px;top:260px;width:300px;height:230px;"></div>
     `);
     expect(zones.item_1).toEqual({ left: 50, top: 260, width: 300, height: 230 });
+  });
+
+  it('parses tracing selectPairImage zone boxes with side-specific sizes', () => {
+    const zones = parseImageZoneBoxes(`
+      <div class="img-zone-box" onclick="selectPairImage('pair_1', 'left')" style="left:235px;top:370px;width:115px;height:105px;"></div>
+      <div class="img-zone-box" onclick="selectPairImage('pair_2', 'left')" style="left:185px;top:505px;width:175px;height:175px;"></div>
+    `);
+    expect(zones.IMAGE_1_LEFT).toEqual({ left: 235, top: 370, width: 115, height: 105 });
+    expect(zones['pairs[0].left_image']).toEqual({ left: 235, top: 370, width: 115, height: 105 });
+    expect(zones.IMAGE_2_LEFT).toEqual({ left: 185, top: 505, width: 175, height: 175 });
   });
 
   it('highlights the target letter in captions', () => {

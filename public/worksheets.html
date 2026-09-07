@@ -2354,9 +2354,38 @@
     function openImagePicker(path, slotId, fromAi) {
       if (!state.editMode && !fromAi && !state.imagePickFromAi) return;
       state.imagePickFromAi = Boolean(fromAi || state.imagePickFromAi);
-      const fallbackId = slotId || path || window.selectedImageItemId || state.selectedImageSlotId;
+      const side = window.selectedImageSide || null;
+      const pairId = window.selectedImageItemId || null;
+      let fallbackId = slotId || path || state.selectedImageSlotId;
+      if ((!fallbackId || fallbackId === 'undefined') && pairId && side) {
+        const n = String(pairId).match(/(\d+)$/);
+        fallbackId = n
+          ? `IMAGE_${n[1]}_${String(side).toUpperCase()}`
+          : `${pairId}_${side}`;
+      } else if ((!fallbackId || fallbackId === 'undefined') && pairId) {
+        fallbackId = pairId;
+      }
+      if (pairId && side && Array.isArray(state.preview?.structure?.pairs)) {
+        const n = String(pairId).match(/(\d+)$/);
+        if (n) {
+          state.selectedImagePath = `pairs[${Number(n[1]) - 1}].${String(side).toLowerCase()}_image`;
+          state.selectedImageSlotId = fallbackId || `IMAGE_${n[1]}_${String(side).toUpperCase()}`;
+          window.selectedImageSide = null;
+          window.selectedImageItemId = null;
+          state.selectedSearchItem = null;
+          setImagePickerTab('search');
+          const query = imageSearchQueryFor(state.preview?.structure, state.selectedImagePath);
+          els.imageQuery.value = query;
+          els.imageBank.innerHTML = '';
+          els.imageResultsCount.textContent = 'Searching…';
+          els.imagePickerModal.classList.add('show');
+          searchImages();
+          return;
+        }
+      }
       state.selectedImageSlotId = fallbackId;
       state.selectedImagePath = resolveImagePath(path || fallbackId, fallbackId);
+      window.selectedImageSide = null;
       state.selectedSearchItem = null;
       setImagePickerTab('search');
       const query = imageSearchQueryFor(state.preview?.structure, state.selectedImagePath);
@@ -2395,6 +2424,11 @@
         const itemIndex = needle.match(/^(?:item|image|img|slot)[_-]?(\d+)$/i);
         if (itemIndex && Array.isArray(structure.items)) {
           return `items[${Number(itemIndex[1]) - 1}]`;
+        }
+        const pairSide = needle.match(/^IMAGE[_-]?(\d+)[_-](left|right)$/i)
+          || needle.match(/^pair[_-]?(\d+)[_./-](left|right)/i);
+        if (pairSide && Array.isArray(structure.pairs)) {
+          return `pairs[${Number(pairSide[1]) - 1}].${pairSide[2].toLowerCase()}_image`;
         }
       }
       if (needle === 'main_image' || needle === 'goat' || needle === 'hero' || needle === 'primary') {

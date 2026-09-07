@@ -125,10 +125,20 @@ const EDITOR_BRIDGE = `
     var fromAttr = el.getAttribute('data-image-slot') || '';
     if (fromAttr) return fromAttr;
     var oc = el.getAttribute('onclick') || '';
+    var pair = oc.match(/selectPairImage\\(\\s*['"]([^'"]+)['"]\\s*,\\s*['"](left|right)['"]/);
+    if (pair) {
+      var pn = String(pair[1]).match(/(\\d+)$/);
+      return pn ? ('IMAGE_' + pn[1] + '_' + String(pair[2]).toUpperCase()) : (pair[1] + '_' + pair[2]);
+    }
     var match = oc.match(/selectWorksheetImage\\(\\s*['"]([^'"]+)['"]/);
     return match ? match[1] : '';
   }
   function inferItemPath(slotId) {
+    var pair = String(slotId || '').match(/^IMAGE_?(\\d+)_(LEFT|RIGHT)$/i)
+      || String(slotId || '').match(/^pair[_-]?(\\d+)[_./-](left|right)/i);
+    if (pair) {
+      return 'pairs[' + (Number(pair[1]) - 1) + '].' + String(pair[2]).toLowerCase() + '_image';
+    }
     var n = String(slotId || '').match(/^(?:item|image|img|slot)_?(\\d+)$/i);
     return n ? ('items[' + (Number(n[1]) - 1) + ']') : '';
   }
@@ -145,14 +155,25 @@ const EDITOR_BRIDGE = `
     var img = document.querySelector('img[data-image-slot="' + String(itemId || '').replace(/"/g, '') + '"]');
     selectImage(itemId, inferItemPath(itemId) || (img && img.getAttribute('data-field-path')), img);
   }
-  // Prototype templates declare their own selectWorksheetImage() later in the
-  // body, which would shadow this one, so claim the name again after parsing.
+  function selectPairImageBridge(pairId, side) {
+    if (!document.body.classList.contains('edit-mode')) return;
+    var n = String(pairId || '').match(/(\\d+)$/);
+    var slotId = n ? ('IMAGE_' + n[1] + '_' + String(side || 'left').toUpperCase()) : (String(pairId) + '_' + side);
+    var path = inferItemPath(slotId);
+    var img = document.querySelector('img[data-image-slot="' + slotId.replace(/"/g, '') + '"], img[data-field-path="' + String(path).replace(/"/g, '') + '"]');
+    selectImage(slotId, path, img);
+  }
+  // Prototype templates declare their own select* helpers later in the body,
+  // which would shadow these, so reclaim the names after parsing.
   window.selectWorksheetImage = selectWorksheetImageBridge;
+  window.selectPairImage = selectPairImageBridge;
   document.addEventListener('DOMContentLoaded', function () {
     window.selectWorksheetImage = selectWorksheetImageBridge;
+    window.selectPairImage = selectPairImageBridge;
   });
   window.addEventListener('load', function () {
     window.selectWorksheetImage = selectWorksheetImageBridge;
+    window.selectPairImage = selectPairImageBridge;
   });
   document.addEventListener('click', function (event) {
     var target = event.target;
@@ -273,7 +294,16 @@ function itemNodeBySlot(
   structure: Record<string, unknown>,
   slotId: string,
 ): unknown {
-  const n = slotId.match(/(\d+)$/)?.[1];
+  const pairSide = slotId.match(
+    /^IMAGE[_-]?(\d+)[_-](left|right)$/i,
+  ) || slotId.match(/^pair[_-]?(\d+)[_./-](left|right)/i);
+  if (pairSide && Array.isArray(structure.pairs)) {
+    const pair = structure.pairs[Number(pairSide[1]) - 1];
+    if (isRecord(pair)) {
+      return pair[`${pairSide[2].toLowerCase()}_image`];
+    }
+  }
+  const n = slotId.match(/^(?:item|image|img|slot)_?(\d+)$/i)?.[1];
   if (!n || !Array.isArray(structure.items)) {
     return undefined;
   }
@@ -297,10 +327,17 @@ function slotUrl(
     replacement ||
     (typeof record.assetUrl === 'string' && record.assetUrl) ||
     '';
-  const numbered = slotId.match(/(\d+)$/);
-  const fallbackPath =
-    numbered && Array.isArray(structure.items)
-      ? `items[${Number(numbered[1]) - 1}]`
+  const pairSide = slotId.match(/^IMAGE[_-]?(\d+)[_-](left|right)$/i);
+  const itemNumbered = slotId.match(/^(?:item|image|img|slot)_?(\d+)$/i);
+  const fallbackPath = pairSide
+    ? `pairs[${Number(pairSide[1]) - 1}].${pairSide[2].toLowerCase()}_image`
+    : itemNumbered && Array.isArray(structure.items)
+      ? `items[${Number(itemNumbered[1]) - 1}]`
+      : slotId;
+  const fallbackSlot = pairSide
+    ? `IMAGE_${pairSide[1]}_${pairSide[2].toUpperCase()}`
+    : itemNumbered
+      ? `item_${itemNumbered[1]}`
       : slotId;
   return {
     src: isUsableSrc(rawSrc) ? rawSrc : '',
@@ -310,7 +347,7 @@ function slotUrl(
       visualQueryFromImageRecord(record) ||
       slotId,
     path: match?.path || fallbackPath,
-    slotId: match?.slotId || (numbered ? `item_${numbered[1]}` : slotId),
+    slotId: match?.slotId || fallbackSlot,
   };
 }
 
@@ -332,9 +369,16 @@ function imageTag(
 }
 
 function htmlHasImageSlot(html: string, slotId: string): boolean {
-  const n = slotId.match(/(\d+)$/)?.[1];
+  const pairSide = slotId.match(/^IMAGE[_-]?(\d+)[_-](left|right)$/i);
+  const n = slotId.match(/^(?:item|image|img|slot)_?(\d+)$/i)?.[1];
   const aliases = [
     slotId,
+    pairSide
+      ? `pairs[${Number(pairSide[1]) - 1}].${pairSide[2].toLowerCase()}_image`
+      : '',
+    pairSide
+      ? `IMAGE_${pairSide[1]}_${pairSide[2].toUpperCase()}`
+      : '',
     n ? `item_${n}` : '',
     n ? `IMAGE_${n}` : '',
     n ? `items[${Number(n) - 1}]` : '',
@@ -351,10 +395,10 @@ function htmlHasImageSlot(html: string, slotId: string): boolean {
 }
 
 function applyImageSlots(html: string, structure: Record<string, unknown>): string {
-  const withNumbered = html.replace(
-    /\{\{\s*IMAGE[_:](\d+)\s*\}\}/gi,
-    (_match, n: string) => {
-      const slotId = `item_${n}`;
+  const withPairSides = html.replace(
+    /\{\{\s*IMAGE[_:]?(\d+)[_-](LEFT|RIGHT)\s*\}\}/gi,
+    (_match, n: string, side: string) => {
+      const slotId = `IMAGE_${n}_${side.toUpperCase()}`;
       if (htmlHasImageSlot(html, slotId)) {
         return '';
       }
@@ -363,6 +407,22 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
         slotUrl(structure, slotId),
         true,
         imageZoneForSlot(html, slotId),
+      );
+    },
+  );
+
+  const withNumbered = withPairSides.replace(
+    /\{\{\s*IMAGE[_:](\d+)\s*\}\}/gi,
+    (_match, n: string) => {
+      const slotId = `item_${n}`;
+      if (htmlHasImageSlot(withPairSides, slotId)) {
+        return '';
+      }
+      return imageTag(
+        slotId,
+        slotUrl(structure, slotId),
+        true,
+        imageZoneForSlot(withPairSides, slotId),
       );
     },
   );
@@ -635,19 +695,13 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
 
     return withSections.replace(/\{\{([^#/][^}]*)\}\}/g, (_match, rawPath: string) => {
       const path = rawPath.trim();
-      if (
-        !path ||
-        path.includes('(') ||
-        path.includes(';') ||
+      const isImageToken =
         path.startsWith('IMAGE:') ||
         /^IMAGE_\d+$/i.test(path) ||
-        (/_IMAGE$/i.test(path) && path !== 'BACKGROUND_IMAGE')
-      ) {
-        return path.startsWith('IMAGE:') ||
-          /^IMAGE_\d+$/i.test(path) ||
-          (/_IMAGE$/i.test(path) && path !== 'BACKGROUND_IMAGE')
-          ? `{{${path}}}`
-          : '';
+        /^IMAGE_\d+_(LEFT|RIGHT)$/i.test(path) ||
+        (/_IMAGE$/i.test(path) && path !== 'BACKGROUND_IMAGE');
+      if (!path || path.includes('(') || path.includes(';') || isImageToken) {
+        return isImageToken ? `{{${path}}}` : '';
       }
       return stringifyValue(lookup(context, path));
     });

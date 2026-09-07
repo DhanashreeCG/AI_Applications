@@ -624,6 +624,18 @@ export function resolveImageSlot(
       ) || null
     );
   }
+  const pairSide = parsePairSideSlot(needle);
+  if (pairSide) {
+    const path = `pairs[${pairSide.index}].${pairSide.side}_image`;
+    return (
+      slots.find((slot) => slot.path === path) || {
+        slotId: path,
+        path,
+        assetId: null,
+        imageQuery: '',
+      }
+    );
+  }
   const indexMatch = needle.match(/^(?:item|image|img|slot)[_-]?(\d+)$/);
   if (indexMatch) {
     const index = Number(indexMatch[1]) - 1;
@@ -635,6 +647,26 @@ export function resolveImageSlot(
     );
   }
   return null;
+}
+
+/** IMAGE_1_LEFT / pair_2.right / pairs[0].left_image → { index, side }. */
+export function parsePairSideSlot(
+  slotId: string,
+): { index: number; side: 'left' | 'right' } | null {
+  const needle = slotId.trim().toLowerCase();
+  const match =
+    needle.match(/^image[_-]?(\d+)[_-](left|right)$/i) ||
+    needle.match(/^pair[_-]?(\d+)[_./-](left|right)(?:_image)?$/i) ||
+    needle.match(/^pairs\[(\d+)\]\.(left|right)_image$/i);
+  if (!match) {
+    return null;
+  }
+  const fromPairsPath = /^pairs\[/i.test(needle);
+  const index = fromPairsPath ? Number(match[1]) : Number(match[1]) - 1;
+  if (!Number.isFinite(index) || index < 0) {
+    return null;
+  }
+  return { index, side: match[2].toLowerCase() as 'left' | 'right' };
 }
 
 export type ImageZoneBox = {
@@ -663,58 +695,128 @@ function stylePx(style: string, prop: string): number | undefined {
 }
 
 /**
- * Quadrant image boxes from prototype .img-zone-box overlays.
+ * Image boxes from prototype .img-zone-box overlays
+ * (selectWorksheetImage / selectPairImage).
  */
 export function parseImageZoneBoxes(html: string): Record<string, ImageZoneBox> {
   const zones: Record<string, ImageZoneBox> = {};
-  const tagRe = /<div\b[^>]*class=["'][^"']*\bimg-zone-box\b[^>]*>/gi;
+  const tagRe = /<(?:div|button)\b[^>]*class=["'][^"']*\b(?:img-zone-box|img-camera-btn)\b[^>]*>/gi;
   let match: RegExpExecArray | null;
   while ((match = tagRe.exec(html))) {
     const tag = match[0];
-    const id =
-      tag.match(/selectWorksheetImage\(\s*['"]([^'"]+)['"]\s*\)/i)?.[1] ||
-      tag.match(/data-image-slot=["']([^"']+)["']/i)?.[1] ||
-      tag.match(/data-item-id=["']([^'"]+)["']/i)?.[1];
+    const pairCall = tag.match(
+      /selectPairImage\(\s*['"]([^'"]+)['"]\s*,\s*['"](left|right)['"]\s*\)/i,
+    );
+    const worksheetCall = tag.match(
+      /selectWorksheetImage\(\s*['"]([^'"]+)['"]\s*\)/i,
+    );
+    const dataSlot = tag.match(/data-image-slot=["']([^"']+)["']/i)?.[1];
+    const dataItem = tag.match(/data-item-id=["']([^'"]+)["']/i)?.[1];
     const style = tag.match(/\bstyle=["']([^"']+)["']/i)?.[1] || '';
     const left = stylePx(style, 'left');
     const top = stylePx(style, 'top');
     const width = stylePx(style, 'width');
     const height = stylePx(style, 'height');
-    if (!id || ![left, top, width, height].every(Number.isFinite)) {
+    // camera buttons only carry left/top — skip unless a zone box already set size
+    const hasBox = [left, top, width, height].every(Number.isFinite);
+    if (!hasBox && !pairCall && !worksheetCall && !dataSlot) {
       continue;
     }
-    const box = { left: left!, top: top!, width: width!, height: height! };
-    zones[id] = box;
-    const n = id.match(/(\d+)$/)?.[1];
-    if (n) {
-      zones[`item_${n}`] = box;
-      zones[`IMAGE_${n}`] = box;
+
+    const keys: string[] = [];
+    if (pairCall) {
+      const pairId = pairCall[1];
+      const side = pairCall[2].toLowerCase() as 'left' | 'right';
+      const n = pairId.match(/(\d+)$/)?.[1];
+      keys.push(`${pairId}.${side}`, `${pairId}_${side}`);
+      if (n) {
+        keys.push(
+          `IMAGE_${n}_${side.toUpperCase()}`,
+          `image_${n}_${side}`,
+          `pairs[${Number(n) - 1}].${side}_image`,
+        );
+      }
+    }
+    const id = worksheetCall?.[1] || dataSlot || dataItem;
+    if (id) {
+      keys.push(id);
+      const n = id.match(/(\d+)$/)?.[1];
+      if (n) {
+        keys.push(`item_${n}`, `IMAGE_${n}`);
+      }
+    }
+
+    if (!keys.length || !Number.isFinite(left) || !Number.isFinite(top)) {
+      continue;
+    }
+    if (hasBox) {
+      const box = { left: left!, top: top!, width: width!, height: height! };
+      for (const key of keys) {
+        zones[key] = box;
+        zones[key.toLowerCase()] = box;
+      }
     }
   }
   return zones;
 }
+
+/** Fallback zones from the tracing prototype (big/small sizes baked in). */
+const DEFAULT_TRACING_ZONES: Record<string, ImageZoneBox> = {
+  IMAGE_1_LEFT: { left: 235, top: 370, width: 115, height: 105 },
+  IMAGE_1_RIGHT: { left: 655, top: 340, width: 125, height: 135 },
+  IMAGE_2_LEFT: { left: 185, top: 505, width: 175, height: 175 },
+  IMAGE_2_RIGHT: { left: 635, top: 485, width: 195, height: 215 },
+  IMAGE_3_LEFT: { left: 160, top: 875, width: 190, height: 165 },
+  IMAGE_3_RIGHT: { left: 645, top: 870, width: 155, height: 175 },
+  IMAGE_4_LEFT: { left: 215, top: 1100, width: 130, height: 115 },
+  IMAGE_4_RIGHT: { left: 665, top: 1095, width: 115, height: 125 },
+};
 
 export function imageZoneForSlot(
   html: string,
   slotId: string,
 ): ImageZoneBox | undefined {
   const zones = parseImageZoneBoxes(html);
-  const n = slotId.match(/(\d+)$/)?.[1];
-  const parsed = zones[slotId] || (n ? zones[`item_${n}`] : undefined);
-  if (parsed) {
-    return parsed;
+  const pairSide = parsePairSideSlot(slotId);
+  const aliases = [
+    slotId,
+    slotId.toLowerCase(),
+    pairSide
+      ? `IMAGE_${pairSide.index + 1}_${pairSide.side.toUpperCase()}`
+      : '',
+    pairSide ? `pairs[${pairSide.index}].${pairSide.side}_image` : '',
+    pairSide ? `pair_${pairSide.index + 1}.${pairSide.side}` : '',
+  ].filter(Boolean);
+
+  for (const key of aliases) {
+    if (zones[key]) {
+      return zones[key];
+    }
   }
+
+  const n = slotId.match(/^(?:item|image|img|slot)[_-]?(\d+)$/i)?.[1];
+  if (n && zones[`item_${n}`]) {
+    return zones[`item_${n}`];
+  }
+
+  for (const key of aliases) {
+    const fallback =
+      DEFAULT_TRACING_ZONES[key] ||
+      DEFAULT_TRACING_ZONES[key.toUpperCase()] ||
+      DEFAULT_LOOK_AND_SAY_ZONES[key];
+    if (fallback) {
+      return fallback;
+    }
+  }
+
   const isLookAndSay =
-    /\{\{\s*IMAGE[_:]\d+/i.test(html) ||
+    /\{\{\s*IMAGE[_:]\d+\s*\}\}/i.test(html) ||
     /caption-q[1-4]/i.test(html) ||
     /look_and_say/i.test(html);
-  if (!isLookAndSay) {
-    return undefined;
+  if (isLookAndSay && n) {
+    return DEFAULT_LOOK_AND_SAY_ZONES[`item_${n}`];
   }
-  return (
-    DEFAULT_LOOK_AND_SAY_ZONES[slotId] ||
-    (n ? DEFAULT_LOOK_AND_SAY_ZONES[`item_${n}`] : undefined)
-  );
+  return undefined;
 }
 
 export function highlightCaptionLetter(text: string, letter: string): string {
@@ -745,6 +847,23 @@ export function bindGenericEditorHooks(
   let next = html.replace(
     /<(div|button|span)(\s[^>]*?(?:img-zone-box|img-camera-btn)[^>]*)>/gi,
     (full, tag: string, attrs: string) => {
+      const pairCall = attrs.match(
+        /selectPairImage\(\s*['"]([^'"]+)['"]\s*,\s*['"](left|right)['"]\s*\)/i,
+      );
+      if (pairCall) {
+        const pairId = pairCall[1];
+        const side = pairCall[2].toLowerCase();
+        const n = pairId.match(/(\d+)$/)?.[1];
+        const path = n
+          ? `pairs[${Number(n) - 1}].${side}_image`
+          : resolveAliasImagePath(structure, `${pairId}.${side}`);
+        const slotId = n
+          ? `IMAGE_${n}_${side.toUpperCase()}`
+          : `${pairId}_${side}`;
+        let out = upsertHtmlAttr(attrs, 'data-image-slot', slotId);
+        out = upsertHtmlAttr(out, 'data-field-path', path);
+        return `<${tag}${out}>`;
+      }
       const id =
         attrs.match(/selectWorksheetImage\(\s*['"]([^'"]+)['"]/i)?.[1] ||
         attrs.match(/data-image-slot=["']([^"']+)["']/i)?.[1];

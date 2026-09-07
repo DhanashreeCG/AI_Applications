@@ -30,6 +30,23 @@ describe('normalizeImageQueryFields pair images', () => {
       'pairs[0].left_image',
     );
   });
+
+  it('prefers left_hint over filename when normalizing pair images', () => {
+    const next = normalizeImageQueryFields({
+      pairs: [
+        {
+          id: 'pair_1',
+          left_hint: 'small red bird',
+          left_image: 'Birds/sparrow.png',
+          right_hint: 'small birdhouse',
+          right_image: null,
+        },
+      ],
+    });
+    const pair = (next.pairs as Array<Record<string, unknown>>)[0];
+    expect((pair.left_image as { imageQuery: string }).imageQuery).toBe('small red bird');
+    expect((pair.right_image as { imageQuery: string }).imageQuery).toBe('small birdhouse');
+  });
 });
 
 describe('normalizeLlmWorksheetPayload', () => {
@@ -132,5 +149,14 @@ describe('alias field paths', () => {
     expect(resolveAliasImagePath(structure, 'item_1')).toBe('items[0]');
     expect(resolveAliasImagePath(structure, 'IMAGE_1')).toBe('items[0]');
     expect(resolveAliasFieldPath(structure, 'question_1')).toBe('questions[0].question');
+  });
+
+  it('maps IMAGE_2_RIGHT onto pairs[1].right_image', () => {
+    expect(
+      resolveAliasImagePath(
+        { pairs: [{}, {}] },
+        'IMAGE_2_RIGHT',
+      ),
+    ).toBe('pairs[1].right_image');
   });
 });
