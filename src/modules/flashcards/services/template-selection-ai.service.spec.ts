@@ -52,11 +52,11 @@ describe('TemplateSelectionAiService fallbacks', () => {
       'ai.geminiMaxRps': 2,
       'ai.circuitFailureThreshold': 5,
       'ai.circuitCooldownMs': 60000,
-      'ai.openaiApiKey':
+      'flashcards.openaiApiKey':
         overrides && 'openaiApiKey' in overrides
           ? overrides.openaiApiKey
           : 'sk-test',
-      'ai.geminiApiKey':
+      'flashcards.geminiApiKey':
         overrides && 'geminiApiKey' in overrides
           ? overrides.geminiApiKey
           : 'gemini-test',

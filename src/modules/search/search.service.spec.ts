@@ -117,6 +117,7 @@ describe('SearchService', () => {
 
     expect(mockEmbeddingProvider.generateEmbedding).toHaveBeenCalledWith(
       'red cat on sofa',
+      { billingScope: 'platform' },
     );
     expect(mockRedisCache.set).toHaveBeenCalled();
     expect(response.total).toBe(1);
@@ -426,10 +427,10 @@ describe('SearchService', () => {
       retrieval: true,
     });
 
-    expect(mockEmbeddingProvider.generateEmbeddings).toHaveBeenCalledWith([
-      'red apple',
-      'yellow banana',
-    ]);
+    expect(mockEmbeddingProvider.generateEmbeddings).toHaveBeenCalledWith(
+      ['red apple', 'yellow banana'],
+      { billingScope: 'platform' },
+    );
     expect(mockEmbeddingProvider.generateEmbedding).not.toHaveBeenCalled();
     expect(responses.get('red apple')?.results[0].assetId).toBe('asset-001');
     expect(responses.get('yellow banana')?.results[0].assetId).toBe('asset-001');

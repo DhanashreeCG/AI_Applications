@@ -115,8 +115,8 @@ export class TemplateSelectionAiService {
     );
     this.emitter = new FlashcardPipelineEmitter(eventEmitter);
 
-    const geminiApiKey = this.configService.get<string>('ai.geminiApiKey');
-    const openaiApiKey = this.configService.get<string>('ai.openaiApiKey');
+    const geminiApiKey = this.configService.get<string>('flashcards.geminiApiKey');
+    const openaiApiKey = this.configService.get<string>('flashcards.openaiApiKey');
     this.client = geminiApiKey
       ? new GoogleGenAI({ apiKey: geminiApiKey })
       : null;
@@ -127,11 +127,11 @@ export class TemplateSelectionAiService {
     if (this.enabled) {
       if (this.provider === 'openai' && !openaiApiKey) {
         this.logger.warn(
-          'OPENAI_API_KEY missing; template selection AI will fall back to deterministic ranking.',
+          'FLASHCARD_OPENAI_API_KEY (or OPENAI_API_KEY fallback) missing; template selection AI will fall back to deterministic ranking.',
         );
       } else if (this.provider === 'gemini' && !geminiApiKey) {
         this.logger.warn(
-          'GEMINI_API_KEY missing; template selection AI will fall back to deterministic ranking.',
+          'FLASHCARD_GEMINI_API_KEY (or GEMINI_API_KEY fallback) missing; template selection AI will fall back to deterministic ranking.',
         );
       }
     }

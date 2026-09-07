@@ -27,7 +27,11 @@ describe('OpenAiEmbeddingProvider', () => {
     get: jest.fn((key: string) => {
       switch (key) {
         case 'ai.openaiApiKey':
-          return 'test-openai-key';
+          return 'platform-openai-key';
+        case 'flashcards.openaiApiKey':
+          return 'flashcard-openai-key';
+        case 'worksheets.openaiApiKey':
+          return 'worksheet-openai-key';
         case 'ai.openaiEmbeddingModel':
           return 'text-embedding-3-small';
         case 'ai.openaiMaxRps':
@@ -102,7 +106,9 @@ describe('OpenAiEmbeddingProvider', () => {
 
     await expect(
       unconfiguredProvider.generateEmbedding('test query'),
-    ).rejects.toThrow('OpenAI embedding client is not initialized');
+    ).rejects.toThrow(
+      'OpenAI embedding client is not initialized for billing scope "platform"',
+    );
   });
 
   it('should reject empty input text', async () => {

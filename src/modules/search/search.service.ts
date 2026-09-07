@@ -153,7 +153,9 @@ export class SearchService {
       return results;
     }
 
-    const embeddings = await this.embeddingProvider.generateEmbeddings(uncached);
+    const embeddings = await this.embeddingProvider.generateEmbeddings(uncached, {
+      billingScope: options.embeddingBilling ?? 'platform',
+    });
     const embeddingUsage = this.embeddingProvider.getLastUsage();
     const batchUsage: SearchEmbeddingUsage = {
       inputTokens: embeddingUsage?.inputTokens,
@@ -268,7 +270,9 @@ export class SearchService {
       embeddingVector = precomputed.embedding;
       usage = precomputed.usage;
     } else {
-      const embedding = await this.embeddingProvider.generateEmbedding(query);
+      const embedding = await this.embeddingProvider.generateEmbedding(query, {
+        billingScope: dto.embeddingBilling ?? 'platform',
+      });
       const embeddingUsage = this.embeddingProvider.getLastUsage();
       usage = {
         inputTokens: embeddingUsage?.inputTokens,

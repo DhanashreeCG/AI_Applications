@@ -74,8 +74,8 @@ export class FlashcardContentService {
     private readonly aiUsageService: AiUsageService,
     eventEmitter: EventEmitter2,
   ) {
-    const geminiApiKey = this.configService.get<string>('ai.geminiApiKey');
-    const openaiApiKey = this.configService.get<string>('ai.openaiApiKey');
+    const geminiApiKey = this.configService.get<string>('flashcards.geminiApiKey');
+    const openaiApiKey = this.configService.get<string>('flashcards.openaiApiKey');
 
     this.provider =
       this.configService.get<string>('ai.flashcardContentProvider') || 'gemini';
@@ -121,11 +121,11 @@ export class FlashcardContentService {
 
     if (this.provider === 'gemini' && !geminiApiKey) {
       this.logger.warn(
-        'GEMINI_API_KEY not provided. FlashcardContentService is unavailable for Gemini.',
+        'FLASHCARD_GEMINI_API_KEY (or GEMINI_API_KEY fallback) not provided. FlashcardContentService is unavailable for Gemini.',
       );
     } else if (this.provider === 'openai' && !openaiApiKey) {
       this.logger.warn(
-        'OPENAI_API_KEY not provided. FlashcardContentService is unavailable for OpenAI.',
+        'FLASHCARD_OPENAI_API_KEY (or OPENAI_API_KEY fallback) not provided. FlashcardContentService is unavailable for OpenAI.',
       );
     }
   }

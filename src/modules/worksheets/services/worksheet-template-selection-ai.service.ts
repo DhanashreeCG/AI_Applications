@@ -95,16 +95,20 @@ export class WorksheetTemplateSelectionAiService {
     );
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
 
-    const geminiApiKey = this.configService.get<string>('ai.geminiApiKey');
-    const openaiApiKey = this.configService.get<string>('ai.openaiApiKey');
+    const geminiApiKey = this.configService.get<string>('worksheets.geminiApiKey');
+    const openaiApiKey = this.configService.get<string>('worksheets.openaiApiKey');
     this.client = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
     this.openaiClient = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
 
     if (this.enabled) {
       if (this.provider === 'openai' && !openaiApiKey) {
-        this.logger.warn('OPENAI_API_KEY missing; worksheet AI selection will fall back to deterministic.');
+        this.logger.warn(
+          'WORKSHEET_OPENAI_API_KEY (or OPENAI_API_KEY fallback) missing; worksheet AI selection will fall back to deterministic.',
+        );
       } else if (this.provider === 'gemini' && !geminiApiKey) {
-        this.logger.warn('GEMINI_API_KEY missing; worksheet AI selection will fall back to deterministic.');
+        this.logger.warn(
+          'WORKSHEET_GEMINI_API_KEY (or GEMINI_API_KEY fallback) missing; worksheet AI selection will fall back to deterministic.',
+        );
       }
     }
   }

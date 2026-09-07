@@ -36,6 +36,10 @@ export interface AppConfig {
     apiKey?: string;
   };
   ai: {
+    /**
+     * Shared/platform keys: asset ingestion (Gemini vision) + embeddings (image search).
+     * Prefer GEMINI_API_KEY / OPENAI_API_KEY; falls back to flashcard product keys.
+     */
     geminiApiKey?: string;
     geminiModel: string;
     geminiPromptVersion: string;
@@ -65,6 +69,10 @@ export interface AppConfig {
     prefix: string;
   };
   flashcards: {
+    /** Flashcard-only Gemini key (content, template selection, image-query refinement). */
+    geminiApiKey?: string;
+    /** Flashcard-only OpenAI key (content, template selection, image-query refinement). */
+    openaiApiKey?: string;
     gyanApiBaseUrl: string;
     parentOrigin: string;
     imageConcurrency: number;
@@ -118,6 +126,10 @@ export interface AppConfig {
     };
   };
   worksheets: {
+    /** Worksheet-only Gemini key (content generation, template selection). */
+    geminiApiKey?: string;
+    /** Worksheet-only OpenAI key (template selection when provider=openai). */
+    openaiApiKey?: string;
     apiBaseUrl: string;
     apiPrefix: string;
     parentOrigin: string;
@@ -180,6 +192,17 @@ function envTrim(name: string, fallback = ''): string {
     return fallback;
   }
   return raw.trim();
+}
+
+/** First non-empty trimmed env var (for product-scoped API key fallbacks). */
+function firstEnv(...names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function parseWorksheetAgeGroups(raw: string | undefined): AppConfig['worksheets']['ageGroups'] {
@@ -278,7 +301,9 @@ export default (): AppConfig => ({
     apiKey: process.env.GOOGLE_DRIVE_API_KEY,
   },
   ai: {
-    geminiApiKey: process.env.GEMINI_API_KEY,
+    // Shared platform: ingestion vision + embeddings. Prefer dedicated shared keys;
+    // fall back to flashcard product keys so a 4-key setup still works.
+    geminiApiKey: firstEnv('GEMINI_API_KEY', 'FLASHCARD_GEMINI_API_KEY'),
     geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     geminiPromptVersion: process.env.GEMINI_PROMPT_VERSION || 'v1',
     flashcardPromptVersion: process.env.FLASHCARD_PROMPT_VERSION || 'v1',
@@ -287,7 +312,7 @@ export default (): AppConfig => ({
     geminiFlashcardModel:
       process.env.FLASHCARD_GEMINI_MODEL || 'gemini-2.5-flash',
     openaiFlashcardModel: process.env.OPENAI_FLASHCARD_MODEL || 'gpt-4o-mini',
-    openaiApiKey: process.env.OPENAI_API_KEY,
+    openaiApiKey: firstEnv('OPENAI_API_KEY', 'FLASHCARD_OPENAI_API_KEY'),
     openaiEmbeddingModel:
       process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
     costGeminiPerImageUsd: parseFloat(
@@ -338,6 +363,8 @@ export default (): AppConfig => ({
     prefix: normalizeBullMqPrefix(process.env.BULLMQ_PREFIX),
   },
   flashcards: {
+    geminiApiKey: firstEnv('FLASHCARD_GEMINI_API_KEY', 'GEMINI_API_KEY'),
+    openaiApiKey: firstEnv('FLASHCARD_OPENAI_API_KEY', 'OPENAI_API_KEY'),
     gyanApiBaseUrl: envTrim('GYAN_API_BASE_URL') || 'https://gyan-api.creativegalileo.com',
     parentOrigin: envTrim('PARENT_ORIGIN') || '*',
     imageConcurrency: parseInt(
@@ -470,6 +497,8 @@ export default (): AppConfig => ({
     },
   },
   worksheets: {
+    geminiApiKey: firstEnv('WORKSHEET_GEMINI_API_KEY', 'GEMINI_API_KEY'),
+    openaiApiKey: firstEnv('WORKSHEET_OPENAI_API_KEY', 'OPENAI_API_KEY'),
     apiBaseUrl: envTrim('WORKSHEET_API_BASE_URL').replace(/\/$/, ''),
     apiPrefix: envTrim('WORKSHEET_API_PREFIX', '/worksheets').replace(/\/$/, '') || '/worksheets',
     parentOrigin: envTrim('WORKSHEET_PARENT_ORIGIN', '*') || '*',

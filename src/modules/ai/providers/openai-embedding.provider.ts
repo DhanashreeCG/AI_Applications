@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import {
+  EmbeddingBillingScope,
+  EmbeddingCallOptions,
   EmbeddingProvider,
   EmbeddingResult,
 } from '../../../common/interfaces/embedding-provider.interface';
@@ -28,13 +30,12 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions = OPENAI_EMBEDDING_DIMENSIONS;
 
   private readonly logger = new Logger(OpenAiEmbeddingProvider.name);
-  private client: OpenAI | null;
+  private readonly clients = new Map<EmbeddingBillingScope, OpenAI>();
   private readonly rateLimiter: RateLimiter;
   private readonly circuitBreaker: CircuitBreaker;
   private lastUsage: OpenAiUsageMetrics | null = null;
 
   constructor(private readonly configService: ConfigService) {
-    const apiKey = this.configService.get<string>('ai.openaiApiKey');
     this.modelName =
       this.configService.get<string>('ai.openaiEmbeddingModel') ||
       DEFAULT_OPENAI_EMBEDDING_MODEL;
@@ -52,35 +53,57 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
       cooldownMs,
     );
 
-    if (apiKey) {
-      this.client = new OpenAI({ apiKey });
-      this.logger.log(
-        `OpenAI embedding provider initialized with model ${this.modelName}`,
+    for (const scope of ['platform', 'flashcards', 'worksheets'] as const) {
+      const apiKey = this.resolveApiKey(scope);
+      if (apiKey) {
+        this.clients.set(scope, new OpenAI({ apiKey }));
+      }
+    }
+
+    if (this.clients.size === 0) {
+      this.logger.warn(
+        'No OpenAI API keys configured for embeddings (OPENAI_API_KEY / FLASHCARD_OPENAI_API_KEY / WORKSHEET_OPENAI_API_KEY).',
       );
     } else {
-      this.client = null;
-      this.logger.warn(
-        'OPENAI_API_KEY not provided. OpenAiEmbeddingProvider is unavailable.',
+      this.logger.log(
+        `OpenAI embedding provider initialized with model ${this.modelName}; scopes=[${[...this.clients.keys()].join(', ')}]`,
       );
     }
   }
 
+  /** Test helper — replaces the platform client (and any missing scopes). */
   public setClient(client: OpenAI): void {
-    this.client = client;
+    this.clients.set('platform', client);
+    if (!this.clients.has('flashcards')) {
+      this.clients.set('flashcards', client);
+    }
+    if (!this.clients.has('worksheets')) {
+      this.clients.set('worksheets', client);
+    }
   }
 
   public getLastUsage(): OpenAiUsageMetrics | null {
     return this.lastUsage;
   }
 
-  public async generateEmbedding(text: string): Promise<EmbeddingResult> {
-    const [result] = await this.generateEmbeddings([text]);
+  public async generateEmbedding(
+    text: string,
+    options?: EmbeddingCallOptions,
+  ): Promise<EmbeddingResult> {
+    const [result] = await this.generateEmbeddings([text], options);
     return result;
   }
 
-  public async generateEmbeddings(texts: string[]): Promise<EmbeddingResult[]> {
-    if (!this.client) {
-      throw new Error('OpenAI embedding client is not initialized');
+  public async generateEmbeddings(
+    texts: string[],
+    options?: EmbeddingCallOptions,
+  ): Promise<EmbeddingResult[]> {
+    const scope: EmbeddingBillingScope = options?.billingScope ?? 'platform';
+    const client = this.clients.get(scope);
+    if (!client) {
+      throw new Error(
+        `OpenAI embedding client is not initialized for billing scope "${scope}"`,
+      );
     }
 
     const normalized = texts.map((text) => text.trim());
@@ -97,7 +120,7 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
     const startedAt = Date.now();
 
     try {
-      const response = await this.client.embeddings.create({
+      const response = await client.embeddings.create({
         model: this.modelName,
         input: normalized.length === 1 ? normalized[0] : normalized,
       });
@@ -142,6 +165,18 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
       };
       this.circuitBreaker.recordFailure();
       throw error;
+    }
+  }
+
+  private resolveApiKey(scope: EmbeddingBillingScope): string | undefined {
+    switch (scope) {
+      case 'flashcards':
+        return this.configService.get<string>('flashcards.openaiApiKey');
+      case 'worksheets':
+        return this.configService.get<string>('worksheets.openaiApiKey');
+      case 'platform':
+      default:
+        return this.configService.get<string>('ai.openaiApiKey');
     }
   }
 }

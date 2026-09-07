@@ -76,7 +76,12 @@ describe('WorksheetAssetService', () => {
     expect(searchService.searchMany).toHaveBeenCalledTimes(1);
     expect(searchService.searchMany).toHaveBeenCalledWith(
       ['red apples', 'yellow bananas'],
-      expect.objectContaining({ limit: 1, retrieval: true, concurrency: 2 }),
+      expect.objectContaining({
+        limit: 1,
+        retrieval: true,
+        concurrency: 2,
+        embeddingBilling: 'worksheets',
+      }),
     );
     expect(slots.map((slot) => slot.assetId)).toEqual(['asset-123', 'asset-456']);
     expect(structure).toEqual({
@@ -120,7 +125,11 @@ describe('WorksheetAssetService', () => {
 
     expect(searchService.searchMany).toHaveBeenCalledWith(
       ['cute jumping dolphins in the ocean'],
-      expect.objectContaining({ retrieval: true, concurrency: 2 }),
+      expect.objectContaining({
+        retrieval: true,
+        concurrency: 2,
+        embeddingBilling: 'worksheets',
+      }),
     );
     expect(slots).toEqual([
       {
@@ -254,7 +263,7 @@ describe('WorksheetAssetService', () => {
 
     expect(searchService.searchMany).toHaveBeenCalledWith(
       ['two goats lineart'],
-      expect.objectContaining({ retrieval: true }),
+      expect.objectContaining({ retrieval: true, embeddingBilling: 'worksheets' }),
     );
     expect(slots[0].imageQuery).toBe('two goats lineart');
     expect(slots[0].assetId).toBe('goat-lineart');
@@ -312,7 +321,11 @@ describe('WorksheetAssetService', () => {
     expect(searchService.searchMany).toHaveBeenCalledTimes(1);
     expect(searchService.searchMany).toHaveBeenCalledWith(
       ['red apple', 'yellow banana'],
-      expect.objectContaining({ retrieval: true, concurrency: 2 }),
+      expect.objectContaining({
+        retrieval: true,
+        concurrency: 2,
+        embeddingBilling: 'worksheets',
+      }),
     );
     expect(results[0].structure).toEqual({
       items: [{ imageQuery: 'red apple', assetId: 'asset-apple' }],

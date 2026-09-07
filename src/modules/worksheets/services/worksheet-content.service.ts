@@ -46,7 +46,7 @@ export class WorksheetContentService {
     private readonly validationService: WorksheetValidationService,
     eventEmitter: EventEmitter2,
   ) {
-    const apiKey = this.configService.get<string>('ai.geminiApiKey');
+    const apiKey = this.configService.get<string>('worksheets.geminiApiKey');
     this.modelName =
       this.configService.get<string>('worksheets.geminiModel') ||
       'gemini-2.5-flash';
@@ -62,7 +62,7 @@ export class WorksheetContentService {
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
     if (!apiKey) {
       this.logger.warn(
-        'GEMINI_API_KEY not provided. WorksheetContentService is unavailable.',
+        'WORKSHEET_GEMINI_API_KEY (or GEMINI_API_KEY fallback) not provided. WorksheetContentService is unavailable.',
       );
     }
   }

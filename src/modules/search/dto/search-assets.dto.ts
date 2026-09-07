@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { EmbeddingBillingScope } from '../../../common/interfaces/embedding-provider.interface';
 
 export class SearchMetadataFiltersDto {
   @ApiPropertyOptional()
@@ -57,4 +58,10 @@ export class SearchAssetsDto {
 
   /** Skip per-asset Redis metadata writes after hydrate. */
   skipMetadataCacheWrite?: boolean;
+
+  /**
+   * Which OpenAI key to bill for query embeddings.
+   * Defaults to platform (OPENAI_API_KEY). Flashcard/worksheet flows pass their scope.
+   */
+  embeddingBilling?: EmbeddingBillingScope;
 }

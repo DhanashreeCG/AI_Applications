@@ -402,6 +402,7 @@ export class WorksheetAssetService {
           filters,
           retrieval: true,
           concurrency: this.concurrency,
+          embeddingBilling: 'worksheets',
         });
       } catch (error) {
         lastError = error;
@@ -444,6 +445,7 @@ export class WorksheetAssetService {
           limit: this.searchLimit,
           filters,
           retrieval: true,
+          embeddingBilling: 'worksheets',
         });
       } catch (error) {
         lastError = error;
@@ -561,6 +563,7 @@ export class WorksheetAssetService {
     const response = await this.searchService.search({
       query: trimmed,
       limit: limit ?? this.pickerLimit,
+      embeddingBilling: 'worksheets',
       ...(countryCode ? { countryCode } : {}),
     });
     return response.results.map((hit) => ({

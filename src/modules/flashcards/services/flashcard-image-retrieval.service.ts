@@ -282,6 +282,7 @@ export class FlashcardImageRetrievalService {
         return await this.searchService.search({
           query,
           limit: this.searchLimit,
+          embeddingBilling: 'flashcards',
           ...(countryCode ? { countryCode } : {}),
         });
       } catch (error) {
@@ -386,6 +387,7 @@ export class FlashcardImageRetrievalService {
     const response = await this.searchService.search({
       query: trimmed,
       limit: limit ?? this.pickerLimit,
+      embeddingBilling: 'flashcards',
       ...(countryCode ? { countryCode } : {}),
     });
     return response.results.map((hit) => ({

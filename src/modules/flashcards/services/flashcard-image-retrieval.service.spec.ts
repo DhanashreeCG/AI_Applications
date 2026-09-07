@@ -89,6 +89,7 @@ describe('FlashcardImageRetrievalService', () => {
     expect(searchService.search).toHaveBeenCalledWith({
       query: 'carrot vegetable',
       limit: 8,
+      embeddingBilling: 'flashcards',
     });
     expect(result.status).toBe('found');
     expect(result.assetId).toBe('asset-1');
@@ -142,6 +143,7 @@ describe('FlashcardImageRetrievalService', () => {
     expect(searchService.search).toHaveBeenCalledWith({
       query: 'apple',
       limit: 8,
+      embeddingBilling: 'flashcards',
     });
     expect(result.status).toBe('found');
     expect(result.assetId).toBe('top');
@@ -267,6 +269,7 @@ describe('FlashcardImageRetrievalService', () => {
     expect(searchService.search).toHaveBeenCalledWith({
       query: 'broccoli',
       limit: 8,
+      embeddingBilling: 'flashcards',
     });
     expect(result.status).toBe('found');
     expect(result.assetId).toBe('asset-b');
