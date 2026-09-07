@@ -760,16 +760,20 @@ export function parseImageZoneBoxes(html: string): Record<string, ImageZoneBox> 
   return zones;
 }
 
-/** Fallback zones from the tracing prototype (big/small sizes baked in). */
+/**
+ * Tracing image boxes — square per pair (1:1), shared top so left/right
+ * stay horizontally center-aligned on the pair line. Columns centered on
+ * x≈252 / x≈764. Pairs 1–2 are 15px below the original prototype tops.
+ */
 const DEFAULT_TRACING_ZONES: Record<string, ImageZoneBox> = {
-  IMAGE_1_LEFT: { left: 235, top: 370, width: 115, height: 105 },
-  IMAGE_1_RIGHT: { left: 655, top: 340, width: 125, height: 135 },
-  IMAGE_2_LEFT: { left: 185, top: 505, width: 175, height: 175 },
-  IMAGE_2_RIGHT: { left: 635, top: 485, width: 195, height: 215 },
-  IMAGE_3_LEFT: { left: 160, top: 875, width: 190, height: 165 },
-  IMAGE_3_RIGHT: { left: 645, top: 870, width: 155, height: 175 },
-  IMAGE_4_LEFT: { left: 215, top: 1100, width: 130, height: 115 },
-  IMAGE_4_RIGHT: { left: 665, top: 1095, width: 115, height: 125 },
+  IMAGE_1_LEFT: { left: 205, top: 370, width: 95, height: 95 },
+  IMAGE_1_RIGHT: { left: 717, top: 370, width: 95, height: 95 },
+  IMAGE_2_LEFT: { left: 187, top: 520, width: 130, height: 130 },
+  IMAGE_2_RIGHT: { left: 699, top: 520, width: 130, height: 130 },
+  IMAGE_3_LEFT: { left: 187, top: 885, width: 130, height: 130 },
+  IMAGE_3_RIGHT: { left: 699, top: 885, width: 130, height: 130 },
+  IMAGE_4_LEFT: { left: 205, top: 1090, width: 95, height: 95 },
+  IMAGE_4_RIGHT: { left: 717, top: 1090, width: 95, height: 95 },
 };
 
 export function imageZoneForSlot(

@@ -436,13 +436,13 @@ NULL
     const html = renderer.render({
       templateHtml: `
 {{IMAGE_1_LEFT}}
-<div class="img-zone-box" onclick="selectPairImage('pair_1', 'left')" style="left:235px;top:370px;width:115px;height:105px;"></div>
+<div class="img-zone-box" onclick="selectPairImage('pair_1', 'left')" style="left:205px;top:370px;width:95px;height:95px;"></div>
 {{IMAGE_1_RIGHT}}
-<div class="img-zone-box" onclick="selectPairImage('pair_1', 'right')" style="left:655px;top:340px;width:125px;height:135px;"></div>
+<div class="img-zone-box" onclick="selectPairImage('pair_1', 'right')" style="left:717px;top:370px;width:95px;height:95px;"></div>
 {{IMAGE_2_LEFT}}
-<div class="img-zone-box" onclick="selectPairImage('pair_2', 'left')" style="left:185px;top:505px;width:175px;height:175px;"></div>
+<div class="img-zone-box" onclick="selectPairImage('pair_2', 'left')" style="left:187px;top:520px;width:130px;height:130px;"></div>
 {{IMAGE_2_RIGHT}}
-<div class="img-zone-box" onclick="selectPairImage('pair_2', 'right')" style="left:635px;top:485px;width:195px;height:215px;"></div>
+<div class="img-zone-box" onclick="selectPairImage('pair_2', 'right')" style="left:699px;top:520px;width:130px;height:130px;"></div>
 `,
       structure: {
         worksheet_type: 'tracing',
@@ -480,8 +480,10 @@ NULL
     expect(html).toContain('src="/worksheets/assets/bird-s/image"');
     expect(html).toContain('src="/worksheets/assets/house-s/image"');
     expect(html).toContain('src="/worksheets/assets/bird-b/image"');
-    expect(html).toContain('left:235px;top:370px;width:115px;height:105px');
-    expect(html).toContain('left:185px;top:505px;width:175px;height:175px');
+    expect(html).toContain('left:205px;top:370px;width:95px;height:95px');
+    expect(html).toContain('left:187px;top:520px;width:130px;height:130px');
+    expect(html).toContain('left:717px;top:370px;width:95px;height:95px');
+    expect(html).toContain('left:699px;top:520px;width:130px;height:130px');
     expect(html).toContain('data-field-path="pairs[0].left_image"');
     expect(html).toContain('data-field-path="pairs[1].right_image"');
     expect(html).not.toContain('{{IMAGE_1_LEFT}}');

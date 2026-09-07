@@ -59,12 +59,43 @@ describe('look-and-say template helpers', () => {
 
   it('parses tracing selectPairImage zone boxes with side-specific sizes', () => {
     const zones = parseImageZoneBoxes(`
-      <div class="img-zone-box" onclick="selectPairImage('pair_1', 'left')" style="left:235px;top:370px;width:115px;height:105px;"></div>
-      <div class="img-zone-box" onclick="selectPairImage('pair_2', 'left')" style="left:185px;top:505px;width:175px;height:175px;"></div>
+      <div class="img-zone-box" onclick="selectPairImage('pair_1', 'left')" style="left:205px;top:370px;width:95px;height:95px;"></div>
+      <div class="img-zone-box" onclick="selectPairImage('pair_2', 'left')" style="left:187px;top:520px;width:130px;height:130px;"></div>
     `);
-    expect(zones.IMAGE_1_LEFT).toEqual({ left: 235, top: 370, width: 115, height: 105 });
-    expect(zones['pairs[0].left_image']).toEqual({ left: 235, top: 370, width: 115, height: 105 });
-    expect(zones.IMAGE_2_LEFT).toEqual({ left: 185, top: 505, width: 175, height: 175 });
+    expect(zones.IMAGE_1_LEFT).toEqual({ left: 205, top: 370, width: 95, height: 95 });
+    expect(zones['pairs[0].left_image']).toEqual({ left: 205, top: 370, width: 95, height: 95 });
+    expect(zones.IMAGE_2_LEFT).toEqual({ left: 187, top: 520, width: 130, height: 130 });
+  });
+
+  it('keeps default tracing zones inside the blue and yellow capsules', () => {
+    const blue = { left: 150, top: 330, right: 860, bottom: 690 };
+    const yellow = { left: 150, top: 860, right: 860, bottom: 1220 };
+    const slots = [
+      'IMAGE_1_LEFT',
+      'IMAGE_1_RIGHT',
+      'IMAGE_2_LEFT',
+      'IMAGE_2_RIGHT',
+      'IMAGE_3_LEFT',
+      'IMAGE_3_RIGHT',
+      'IMAGE_4_LEFT',
+      'IMAGE_4_RIGHT',
+    ];
+    slots.forEach((slot) => {
+      const zone = imageZoneForSlot('tracing', slot);
+      expect(zone).toBeDefined();
+      expect(zone!.width).toBe(zone!.height);
+      const oval = slot.startsWith('IMAGE_1') || slot.startsWith('IMAGE_2') ? blue : yellow;
+      expect(zone!.left).toBeGreaterThanOrEqual(oval.left);
+      expect(zone!.top).toBeGreaterThanOrEqual(oval.top);
+      expect(zone!.left + zone!.width).toBeLessThanOrEqual(oval.right);
+      expect(zone!.top + zone!.height).toBeLessThanOrEqual(oval.bottom);
+    });
+    // same pair shares size and top (horizontally center-aligned)
+    const p1L = imageZoneForSlot('tracing', 'IMAGE_1_LEFT')!;
+    const p1R = imageZoneForSlot('tracing', 'IMAGE_1_RIGHT')!;
+    expect(p1L.width).toBe(p1R.width);
+    expect(p1L.height).toBe(p1R.height);
+    expect(p1L.top).toBe(p1R.top);
   });
 
   it('highlights the target letter in captions', () => {
