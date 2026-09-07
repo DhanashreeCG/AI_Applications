@@ -245,10 +245,17 @@ function envInt(primary: string, fallback: string, defaultValue: number): number
 function parseCorsOrigins(): string[] {
   const listed = (process.env.CORS_ORIGINS || '')
     .split(',')
-    .map((value) => value.trim().replace(/\/$/, ''))
+    .map((value) =>
+      value
+        .trim()
+        .replace(/^['"]+|['"]+$/g, '') // strip wrapping quotes from platform env injectors
+        .replace(/\/$/, ''),
+    )
     .filter((value) => value.length > 0 && value !== '*');
 
-  const parent = envTrim('PARENT_ORIGIN').replace(/\/$/, '');
+  const parent = envTrim('PARENT_ORIGIN')
+    .replace(/^['"]+|['"]+$/g, '')
+    .replace(/\/$/, '');
   if (parent && parent !== '*' && /^https?:\/\//i.test(parent)) {
     listed.push(parent);
   }
