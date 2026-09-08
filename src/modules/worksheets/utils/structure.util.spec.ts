@@ -47,6 +47,33 @@ describe('normalizeImageQueryFields pair images', () => {
     expect((pair.left_image as { imageQuery: string }).imageQuery).toBe('small red bird');
     expect((pair.right_image as { imageQuery: string }).imageQuery).toBe('small birdhouse');
   });
+
+  it('coerces left_imageQuery / right_imageQuery into left_image / right_image slots', () => {
+    const next = normalizeImageQueryFields({
+      pairs: [
+        {
+          id: 'pair_1',
+          label: 'red planet',
+          left_imageQuery: 'red planet cartoon',
+          right_imageQuery: 'red planet cartoon',
+        },
+      ],
+    });
+    const pair = (next.pairs as Array<Record<string, unknown>>)[0];
+    expect(pair.left_imageQuery).toBeUndefined();
+    expect(pair.right_imageQuery).toBeUndefined();
+    expect((pair.left_image as { imageQuery: string }).imageQuery).toBe(
+      'red planet cartoon',
+    );
+    expect((pair.right_image as { imageQuery: string }).imageQuery).toBe(
+      'red planet cartoon',
+    );
+    const slots = collectImageSlots(next);
+    expect(slots.map((s) => s.path).sort()).toEqual([
+      'pairs[0].left_image',
+      'pairs[0].right_image',
+    ]);
+  });
 });
 
 describe('normalizeLlmWorksheetPayload', () => {

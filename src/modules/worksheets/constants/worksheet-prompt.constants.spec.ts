@@ -92,4 +92,18 @@ describe('worksheet regen prompt', () => {
     });
     expect(withoutNote).not.toContain('Template adaptation guidance');
   });
+
+  it('asks match_the_pairs for left_image/right_image objects, not left_imageQuery fields', () => {
+    const prompt = buildWorksheetContentPrompt({
+      request: { topic: 'planets', ageGroup: '4-5' },
+      templateName: 'Match the Pairs',
+      templateSlug: 'match_the_pairs',
+      structureDefinition: { type: 'object' },
+      meta: {},
+    });
+    expect(prompt).toContain('left_image');
+    expect(prompt).toContain('right_image');
+    expect(prompt).toContain('imageQuery');
+    expect(prompt).toContain('Do NOT invent left_imageQuery / right_imageQuery');
+  });
 });

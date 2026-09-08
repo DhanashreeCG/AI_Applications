@@ -323,8 +323,11 @@ export function normalizeImageQueryFields(
     if (!isRecord(node)) {
       return node;
     }
+    // LLM sometimes emits left_imageQuery / right_imageQuery instead of
+    // left_image / right_image objects — coerce before pair-image handling.
+    const source = coercePairImageQueryAliases(node);
     const next: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(node)) {
+    for (const [key, child] of Object.entries(source)) {
       if (SKIP_IMAGE_WALK_KEYS.has(key)) {
         next[key] = child;
         continue;
@@ -333,7 +336,9 @@ export function normalizeImageQueryFields(
         const side = key.startsWith('left') ? 'left' : 'right';
         const hintKey = `${side}_hint`;
         const hint =
-          typeof node[hintKey] === 'string' ? String(node[hintKey]).trim() : '';
+          typeof source[hintKey] === 'string'
+            ? String(source[hintKey]).trim()
+            : '';
         if (typeof child === 'string' && child.trim()) {
           next[key] = {
             image_name: child.trim(),
@@ -363,6 +368,40 @@ export function normalizeImageQueryFields(
     return next;
   };
   return asStructureRecord(walk(structure));
+}
+
+/**
+ * Maps mistaken LLM keys left_imageQuery / right_imageQuery onto left_image /
+ * right_image slots expected by asset resolution and the match_the_pairs renderer.
+ */
+function coercePairImageQueryAliases(
+  node: Record<string, unknown>,
+): Record<string, unknown> {
+  let changed = false;
+  const next: Record<string, unknown> = { ...node };
+  for (const side of ['left', 'right'] as const) {
+    const aliasKey = `${side}_imageQuery`;
+    const imageKey = `${side}_image`;
+    const alias = next[aliasKey];
+    if (typeof alias !== 'string' || !alias.trim()) {
+      continue;
+    }
+    const phrase = alias.trim();
+    const existing = next[imageKey];
+    if (existing == null || existing === '') {
+      next[imageKey] = { imageQuery: phrase };
+      changed = true;
+    } else if (typeof existing === 'string' && !existing.trim()) {
+      next[imageKey] = { imageQuery: phrase };
+      changed = true;
+    } else if (isRecord(existing) && !visualQueryFromImageRecord(existing)) {
+      next[imageKey] = { ...existing, imageQuery: phrase };
+      changed = true;
+    }
+    delete next[aliasKey];
+    changed = true;
+  }
+  return changed ? next : node;
 }
 
 const ANSWER_AND_COLOUR_SLUGS = new Set([
