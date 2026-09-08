@@ -622,8 +622,8 @@ const DEFAULT_MAZE_POSITIONS_BY_ROLE: Record<string, AbsoluteBox> = {
   // inside the maze so it does not cover the white walls.
   start_character: { left: 35, top: 910, width: 200, height: 140 },
   start: { left: 35, top: 910, width: 200, height: 140 },
-  story_element: { left: 590, top: 530, width: 155, height: 155 },
-  obstacle: { left: 590, top: 530, width: 155, height: 155 },
+  story_element: { left: 630, top: 560, width: 155, height: 155 },
+  obstacle: { left: 630, top: 560, width: 155, height: 155 },
   goal: { left: 840, top: 905, width: 125, height: 145 },
   finish: { left: 840, top: 905, width: 125, height: 145 },
 };

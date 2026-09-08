@@ -250,7 +250,7 @@ export function buildWorksheetContentPrompt(input: {
       'For storytime_maze worksheets:',
       '- Exactly 3 items[]: item_start (start_character), item_obstacle (story_element), item_finish (goal).',
       '- Each item needs id, role, label, imageQuery (visual phrase, not filename), and position { left, top, width, height }.',
-      '- Keep positions near the sample anchors: start bottom-left (~35,910,200x140), obstacle compact in-maze (~590,530,155x155), finish bottom-right (~840,905,125x145).',
+      '- Keep positions near the sample anchors: start bottom-left (~35,910,200x140), obstacle compact in-maze (~630,560,155x155), finish bottom-right (~840,905,125x145).',
       '- instruction_text should tell the child to help the start character reach the goal without disturbing the obstacle.',
       '- Keep worksheet_type as storytime_maze.',
       ''

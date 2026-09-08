@@ -455,7 +455,7 @@ NULL
     expect(html).toContain('data-image-slot="item_obstacle"');
     expect(html).toContain('data-image-slot="item_finish"');
     expect(html).toMatch(/left:35px;top:910px;width:200px;height:140px/);
-    expect(html).toMatch(/left:590px;top:530px;width:155px;height:155px/);
+    expect(html).toMatch(/left:630px;top:560px;width:155px;height:155px/);
     expect(html).toMatch(/left:840px;top:905px;width:125px;height:145px/);
     expect(html).toContain('mix-blend-mode:multiply');
     expect(html).toContain('background:transparent');
