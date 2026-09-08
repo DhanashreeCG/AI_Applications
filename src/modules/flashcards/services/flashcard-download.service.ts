@@ -48,6 +48,7 @@ export class FlashcardDownloadService {
         fileName: captured.fileName,
       };
     } catch (error) {
+      console.log('error', error);
       throw new FlashcardException(
         'DOWNLOAD_NOT_IMPLEMENTED',
         error instanceof Error

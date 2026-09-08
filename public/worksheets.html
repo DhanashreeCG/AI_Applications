@@ -1347,6 +1347,12 @@
       </label>
       <div class="age-grid" role="radiogroup" aria-labelledby="ageLabel" id="ageGroup"></div>
 
+      <label class="field-label" style="margin-top: 24px; display: none;" id="flowTypeLabel">
+        Select flow type<span class="req">*</span>
+      </label>
+      <div class="age-grid" role="radiogroup" aria-labelledby="flowTypeLabel" id="flowTypeGroup" style="display: none;">
+      </div>
+
       <div class="extra-row">
         <label for="templateSelect">Template</label>
         <select id="templateSelect">
@@ -1569,6 +1575,8 @@
         { id: '4-5', label: '4-5 years (FS 2)', age: 5, grade: 'FS 2' },
       ],
       ageGroup: '3-4',
+      selectedGrade: null, // { id, name, levelId }
+      selectedFlowType: null,
       countryCode: '',
       page: 1,
       pageSize: 10,
@@ -1846,6 +1854,9 @@
         const isSelected = age.id === state.ageGroup;
         btn.setAttribute('aria-checked', isSelected ? 'true' : 'false');
         btn.dataset.age = age.id;
+        btn.dataset.gradeId = age.gradeId || '';
+        btn.dataset.gradeName = age.grade || age.name || '';
+        btn.dataset.levelId = age.levelId || '';
         btn.innerHTML = `
             <span class="radio" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
@@ -1853,6 +1864,15 @@
             ${escapeHtml(age.label || age.id)}`;
         btn.addEventListener('click', () => {
           state.ageGroup = age.id;
+          if (age.gradeId || age.grade || age.name) {
+            state.selectedGrade = {
+              id: age.gradeId || '',
+              name: age.grade || age.name || '',
+              levelId: age.levelId || '',
+            };
+          } else {
+            state.selectedGrade = null;
+          }
           renderAges();
         });
         els.ageGroup.appendChild(btn);
@@ -1861,6 +1881,98 @@
 
     function selectedAge() {
       return state.ages.find((item) => item.id === state.ageGroup) || state.ages[0];
+    }
+
+    async function initDynamicGrades() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const schoolId = params.get('schoolId');
+        const auth = params.get('auth');
+        if (!schoolId || !auth) return;
+
+        const url = apiBase() + '/flashcards/grades?pageSize=50&paginated=true&pageNo=1&schoolId=' + encodeURIComponent(schoolId);
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: {
+            accept: 'application/json, text/plain, */*',
+            'accept-language': 'en-US,en;q=0.9',
+            authorization: 'Bearer ' + auth,
+          },
+        });
+
+        if (!res.ok) throw new Error('Failed to fetch grades');
+        const json = await res.json();
+
+        if (json.success && json.data && Array.isArray(json.data.grade) && json.data.grade.length > 0) {
+          state.ages = json.data.grade.map((grade) => {
+            const ageVal = grade.minAge + '-' + grade.maxAge;
+            return {
+              id: ageVal,
+              label: grade.minAge + '-' + grade.maxAge + ' years (' + grade.name + ')',
+              age: grade.maxAge,
+              grade: grade.name || '',
+              gradeId: grade.id || '',
+              name: grade.name || '',
+              levelId: grade.levelId || '',
+            };
+          });
+          const first = state.ages[0];
+          state.ageGroup = first.id;
+          state.selectedGrade = {
+            id: first.gradeId || '',
+            name: first.grade || first.name || '',
+            levelId: first.levelId || '',
+          };
+          renderAges();
+        }
+      } catch (err) {
+        console.warn('Could not load dynamic grades:', err);
+      }
+    }
+
+    async function initFlowTypes() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const schoolId = params.get('schoolId');
+        const auth = params.get('auth');
+        if (!schoolId || !auth) return;
+
+        const url = apiBase() + '/flashcards/flow-type?schoolId=' + encodeURIComponent(schoolId);
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: {
+            accept: 'application/json, text/plain, */*',
+            'accept-language': 'en-US,en;q=0.9',
+            authorization: 'Bearer ' + auth,
+          },
+        });
+
+        if (!res.ok) throw new Error('Failed to fetch flow types');
+        const json = await res.json();
+
+        if (json.success && json.data && Array.isArray(json.data.rows) && json.data.rows.length > 0) {
+          const container = el('flowTypeGroup');
+          container.innerHTML = '';
+          el('flowTypeLabel').style.display = 'block';
+          container.style.display = 'grid';
+
+          json.data.rows.forEach((row, i) => {
+            const isFirst = i === 0;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'age-pill';
+            btn.setAttribute('role', 'radio');
+            btn.setAttribute('aria-checked', isFirst ? 'true' : 'false');
+            btn.dataset.flowType = row.flowType || '';
+            btn.dataset.displayName = row.displayName || '';
+            if (isFirst) state.selectedFlowType = row.flowType || '';
+            btn.innerHTML = `<span class="radio" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>${escapeHtml(row.displayName || row.flowType || '')}`;
+            container.appendChild(btn);
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load dynamic flow types:', err);
+      }
     }
 
     function snapshotPreviewHtml() {
@@ -3386,7 +3498,7 @@
         structure: item.structure,
         request: item.request || { topic: els.topicInput.value },
         auth: new URLSearchParams(window.location.search).get('auth'),
-        grade: state.ageGroup || null,
+        grade: state.selectedGrade || undefined,
       };
     }
 
@@ -3414,7 +3526,8 @@
           cards.push(...rows);
         }
         window.parent.postMessage({
-          grade: state.ageGroup || null,
+          grade: state.selectedGrade || null,
+          flowType: state.selectedFlowType || null,
           cards,
           query: els.topicInput.value || '',
         }, parentOrigin());
@@ -3916,6 +4029,16 @@
         if (q) els.topicInput.value = q;
         if (a) {
           state.ageGroup = a;
+          const age = state.ages.find((item) => item.id === a);
+          if (age && (age.gradeId || age.grade || age.name)) {
+            state.selectedGrade = {
+              id: age.gradeId || '',
+              name: age.grade || age.name || '',
+              levelId: age.levelId || '',
+            };
+          } else {
+            state.selectedGrade = null;
+          }
           renderAges();
         }
       });
@@ -3924,9 +4047,24 @@
     el('apiBase').value = configuredApiBase() || defaultApiBase();
     renderAges();
     fillCountOptions(state.defaultCount, state.maxCount);
+
+    if (el('flowTypeGroup')) {
+      el('flowTypeGroup').addEventListener('click', (event) => {
+        const pill = event.target.closest('.age-pill');
+        if (!pill) return;
+        state.selectedFlowType = pill.dataset.flowType || null;
+        el('flowTypeGroup')
+          .querySelectorAll('.age-pill')
+          .forEach((node) => node.setAttribute('aria-checked', node === pill ? 'true' : 'false'));
+      });
+    }
+
     loadSettings()
       .then(() => {
         renderAges();
+        return Promise.all([initDynamicGrades(), initFlowTypes()]);
+      })
+      .then(() => {
         loadTemplates();
         const params = new URLSearchParams(location.search);
         if (params.get('id')) return openPreview(params.get('id'));
