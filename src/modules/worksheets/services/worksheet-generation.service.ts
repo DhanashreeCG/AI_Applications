@@ -31,7 +31,10 @@ import { WorksheetAssetService } from './worksheet-asset.service';
 import { WorksheetContentService } from './worksheet-content.service';
 import { WorksheetRenderService } from './worksheet-render.service';
 import { WorksheetTemplateSelectionService } from './worksheet-template-selection.service';
-import { WorksheetTemplateService } from './worksheet-template.service';
+import {
+  TEMPLATE_WITH_SELECTION_PROFILE,
+  WorksheetTemplateService,
+} from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
 
 export interface GenerateWorksheetProgress {
@@ -484,7 +487,9 @@ export class WorksheetGenerationService {
         take,
         orderBy: { createdAt: 'desc' },
         include: {
-          template: true,
+          template: {
+            include: TEMPLATE_WITH_SELECTION_PROFILE,
+          },
         },
       }),
       this.prisma.worksheet.count(),
@@ -514,7 +519,9 @@ export class WorksheetGenerationService {
     const row = await this.prisma.worksheet.findUnique({
       where: { id: worksheetId },
       include: {
-        template: true,
+        template: {
+          include: TEMPLATE_WITH_SELECTION_PROFILE,
+        },
       },
     });
     if (!row) {

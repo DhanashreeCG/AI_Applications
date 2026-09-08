@@ -69,4 +69,27 @@ describe('worksheet regen prompt', () => {
     expect(prompt).toContain('no "Ant" + "ant"');
     expect(prompt).toContain('All 4 imageQuery values must be different');
   });
+
+  it('includes adaptationNote when provided and omits the block when absent', () => {
+    const withNote = buildWorksheetContentPrompt({
+      request: { topic: 'big and small', ageGroup: '3-4' },
+      templateName: 'Tracing',
+      templateSlug: 'tracing',
+      structureDefinition: { type: 'object' },
+      meta: {},
+      adaptationNote:
+        'Keep the dotted-line tracing interaction, but change the illustrated objects.',
+    });
+    expect(withNote).toContain('Template adaptation guidance');
+    expect(withNote).toContain('Keep the dotted-line tracing interaction');
+
+    const withoutNote = buildWorksheetContentPrompt({
+      request: { topic: 'big and small', ageGroup: '3-4' },
+      templateName: 'Tracing',
+      templateSlug: 'tracing',
+      structureDefinition: { type: 'object' },
+      meta: {},
+    });
+    expect(withoutNote).not.toContain('Template adaptation guidance');
+  });
 });

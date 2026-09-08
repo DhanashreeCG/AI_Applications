@@ -99,6 +99,7 @@ export class WorksheetContentService {
             count: targetCount,
             systemPrompt: extras?.systemPrompt,
             currentStructure: extras?.currentStructure,
+            adaptationNote: template.selectionProfile?.adaptationNote ?? null,
           }),
         {
           completeMetadata: {

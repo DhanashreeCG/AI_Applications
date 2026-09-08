@@ -75,6 +75,8 @@ export function buildWorksheetContentPrompt(input: {
   count?: number;
   systemPrompt?: string | null;
   currentStructure?: Record<string, unknown> | null;
+  /** From WorksheetTemplateSelectionProfile — how to adapt the layout to the topic. */
+  adaptationNote?: string | null;
 }): string {
   const request = input.request;
   const count = Math.max(1, input.count ?? (request.count ? Number(request.count) : 1));
@@ -128,6 +130,13 @@ export function buildWorksheetContentPrompt(input: {
       ].join('\n')
     : '';
 
+  const adaptationBlock = input.adaptationNote?.trim()
+    ? [
+        'Template adaptation guidance (follow while keeping the same interaction pattern):',
+        input.adaptationNote.trim(),
+      ].join('\n')
+    : '';
+
   return [
     input.systemPrompt?.trim() || 'You generate educational worksheet CONTENT only.',
     formatInstruction,
@@ -150,6 +159,7 @@ export function buildWorksheetContentPrompt(input: {
     '',
     `Template: ${input.templateName} (${input.templateSlug})`,
     input.templateDescription ? `Description: ${input.templateDescription}` : '',
+    adaptationBlock,
     '',
     'Educational request:',
     userRequest || 'Generate age-appropriate worksheet content for the selected template.',
@@ -330,7 +340,7 @@ export function buildWorksheetGrammarPrompt(input: {
   ].join('\n');
 }
 
-export const WORKSHEET_TEMPLATE_SELECTION_PROMPT_VERSION = 'v2-three-stage';
+export const WORKSHEET_TEMPLATE_SELECTION_PROMPT_VERSION = 'v3.1-activity-identity';
 
 export const WORKSHEET_TEMPLATE_SELECTION_AI_STAGE = 'worksheet_template_selection';
 
@@ -410,7 +420,8 @@ in allowedTemplateIds for each request.
 INPUT YOU WILL RECEIVE
 - A static TEMPLATE CATALOG (system message) describing candidate templates:
   id, name, category, subjects, topics, theme, subTopics, activityType,
-  difficulty, ageMin, ageMax.
+  difficulty, ageMin, ageMax, and when present a selection profile:
+  primaryUse, canBeUsedFor, exampleTopics, skillsPracticed.
 - A per-request user JSON with:
   - query: the original user request, verbatim.
   - topic: the subject/skill the worksheets should teach.
@@ -420,9 +431,27 @@ INPUT YOU WILL RECEIVE
     Prefer these over re-deriving intent from raw query/topic.
   - optional: grade, subject, difficulty.
 
+SELECTION PROFILE RULES (when present on a catalog entry)
+- canBeUsedFor and exampleTopics are ILLUSTRATIVE, not exhaustive. A request topic
+  that is not literally listed can still be an excellent fit if it matches the same
+  underlying pedagogical pattern.
+- Prefer matching the request's topic/intent against primaryUse first (general purpose),
+  then treat canBeUsedFor / exampleTopics as confirming evidence — do not string-match
+  example topics too literally.
+- Factor skillsPracticed in only when the request explicitly cares about a skill
+  (e.g. "fine motor", "phonics") or when two templates are otherwise tied.
+- ACTIVITY FORMAT BEATS TOPIC-ONLY FIT: when the query names an activity pattern
+  (e.g. "match the pairs", "match pairs of …", "circle the …", "trace …", "maze"),
+  prefer the template whose name/slug/primaryUse matches that activity format.
+  Example: "match the pairs of planets" → a matching/two-column template
+  (match_the_pairs), NOT a circle-to-classify template — even if both could involve planets.
+  Do not treat circle_the_things as a default for every thematic topic.
+
 DECISION PROCEDURE
-Trust classification hints when present. Use query/topic only to break ties
-among templates that already match those hints.
+Trust classification hints when present. Use query/topic and selection-profile
+fields to break ties among templates that already match those hints.
+When classification.activityIntent is "Match the Pairs" (or the query says match/pairs),
+prefer match_the_pairs over circle/classification layouts.
 
 CONSTRAINTS
 - You MUST return a selectedTemplateId that appears in allowedTemplateIds,

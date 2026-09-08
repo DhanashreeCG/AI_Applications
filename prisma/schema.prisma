@@ -424,9 +424,33 @@ model WorksheetTemplate {
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   worksheets          Worksheet[]
+  selectionProfile    WorksheetTemplateSelectionProfile?
 
   @@index([status])
   @@index([category])
+}
+
+/// Per-template selection profile: pedagogical fit metadata for auto-select (optional 1:1).
+model WorksheetTemplateSelectionProfile {
+  id              String            @id @default(cuid())
+  templateId      String            @unique
+  template        WorksheetTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  /// Denormalized — must equal template.slug at write time (drift-checked by script).
+  templateSlug    String
+  templateType    String
+  description     String            @db.Text
+
+  primaryUse      String            @db.Text
+  canBeUsedFor    String[]
+  exampleTopics   String[]
+  adaptationNote  String            @db.Text
+  skillsPracticed String[]
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([templateSlug])
 }
 
 /// Generated worksheet instance. Structure is user-specific content, not the template schema.

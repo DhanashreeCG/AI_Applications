@@ -30,6 +30,18 @@ import {
 import { WorksheetTemplateSelectionAiService } from './worksheet-template-selection-ai.service';
 import { PipelineTelemetryContext } from '../../../common/events/pipeline-tracker.events';
 
+const ACTIVITY_IDENTITY_STOPWORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'into',
+  'from',
+  'single',
+  'look',
+  'say',
+]);
+
 @Injectable()
 export class WorksheetTemplateSelectionService {
   private readonly logger = new Logger(WorksheetTemplateSelectionService.name);
@@ -253,6 +265,11 @@ export class WorksheetTemplateSelectionService {
       this.matchesActivity(meta.activityType, classification.activityIntent)
     ) {
       score += 10;
+    } else if (
+      this.matchesActivityIdentity(template, request, classification)
+    ) {
+      // Many DB templates omit meta.activityType — still honor query/intent vs name/slug.
+      score += 10;
     }
     if (request.subject && this.includesInsensitive(meta.subjects, request.subject)) {
       score += 8;
@@ -267,9 +284,143 @@ export class WorksheetTemplateSelectionService {
       score += 4;
     }
 
+    if (this.matchesSelectionProfileTopics(template, request)) {
+      score += 6;
+    }
+
     return score;
   }
 
+  /**
+   * Fuzzy overlap between request query/topic and selectionProfile canBeUsedFor / exampleTopics.
+   */
+  public matchesSelectionProfileTopics(
+    template: WorksheetTemplateRecord,
+    request: GenerateWorksheetRequest,
+  ): boolean {
+    const profile = template.selectionProfile;
+    if (!profile) {
+      return false;
+    }
+    const haystack = [
+      ...(profile.canBeUsedFor ?? []),
+      ...(profile.exampleTopics ?? []),
+    ];
+    if (!haystack.length) {
+      return false;
+    }
+    const needles = [request.query, request.topic]
+      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+      .map((v) => v.trim().toLowerCase());
+    if (!needles.length) {
+      return false;
+    }
+
+    return haystack.some((entry) => {
+      const phrase = entry.trim().toLowerCase();
+      if (!phrase) return false;
+      return needles.some(
+        (needle) =>
+          needle.includes(phrase) ||
+          phrase.includes(needle) ||
+          this.keywordOverlap(needle, phrase),
+      );
+    });
+  }
+
+  /**
+   * When meta.activityType is missing, match activity from classification intent
+   * and/or query phrasing against template name / slug (e.g. "match the pairs of planets").
+   */
+  public matchesActivityIdentity(
+    template: WorksheetTemplateRecord,
+    request: GenerateWorksheetRequest,
+    classification?: WorksheetTemplateIntentClassification | null,
+  ): boolean {
+    const name = (template.name ?? '').trim().toLowerCase();
+    const slugPhrase = template.slug.replace(/_/g, ' ').trim().toLowerCase();
+    const intent = classification?.activityIntent?.trim().toLowerCase() ?? '';
+
+    if (intent) {
+      if (name === intent || slugPhrase === intent) {
+        return true;
+      }
+      // Require 2+ shared tokens so "Match the Pairs" does not boost
+      // "Matching Single Letter" on the lone token "match".
+      const intentTokens = this.tokenizeForOverlap(intent);
+      const identityTokens = this.tokenizeForOverlap(
+        [name, slugPhrase].filter(Boolean).join(' '),
+      );
+      const shared = [...intentTokens].filter((t) => identityTokens.has(t));
+      if (shared.length >= 2) {
+        return true;
+      }
+    }
+
+    const requestText = [request.query, request.topic]
+      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+      .join(' ')
+      .toLowerCase();
+    if (!requestText) {
+      return false;
+    }
+
+    const slugTokens = template.slug
+      .split('_')
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length > 2 && !ACTIVITY_IDENTITY_STOPWORDS.has(t));
+    if (!slugTokens.length) {
+      return false;
+    }
+
+    const requestTokens = this.tokenizeForOverlap(requestText);
+    const hits = slugTokens.filter((token) =>
+      requestTokens.has(this.stemToken(token)),
+    );
+    // Require 2+ slug tokens in the query (e.g. "match" + "pairs") to avoid
+    // boosting match_the_pairs on any query that merely says "match".
+    return hits.length >= 2;
+  }
+
+  private keywordOverlap(a: string, b: string): boolean {
+    const tokensA = this.tokenizeForOverlap(a);
+    const tokensB = this.tokenizeForOverlap(b);
+    if (!tokensA.size || !tokensB.size) {
+      return false;
+    }
+    for (const t of tokensA) {
+      if (tokensB.has(t)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private tokenizeForOverlap(text: string): Set<string> {
+    return new Set(
+      text
+        .split(/[^a-z0-9]+/)
+        .filter((t) => t.length > 3)
+        .map((t) => this.stemToken(t)),
+    );
+  }
+
+  /** Cheap English stem so "planets"↔"planet", "matching"↔"match". */
+  private stemToken(token: string): string {
+    if (token.length > 5 && token.endsWith('ing')) {
+      return token.slice(0, -3);
+    }
+    if (token.length > 4 && token.endsWith('ies')) {
+      return `${token.slice(0, -3)}y`;
+    }
+    if (token.length > 4 && token.endsWith('ses')) {
+      return token.slice(0, -2);
+    }
+    if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) {
+      return token.slice(0, -1);
+    }
+    return token;
+  }
   private filterByAge(
     templates: WorksheetTemplateRecord[],
     ageBand: AgeBand | null,

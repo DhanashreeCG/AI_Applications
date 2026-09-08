@@ -34,10 +34,17 @@ function template(
     aiConfig: null,
     fieldPrompts: null,
     aiSystemPrompt: null,
+    aiEditConfigJs: null,
+    aiEditPopupHtml: null,
+    aiEditPanelJs: null,
+    editorJs: null,
+    fieldEditorJs: null,
+    rendererJs: null,
     backgroundAssetId: null,
     sampleAssetId: null,
     createdAt: new Date('2024-01-01'),
     updatedAt: overrides.updatedAt ?? new Date('2024-06-01'),
+    selectionProfile: overrides.selectionProfile ?? null,
   } as WorksheetTemplateRecord;
 }
 
@@ -322,6 +329,134 @@ describe('WorksheetTemplateSelectionService (three-stage)', () => {
       );
       // theme +12, activity +10, subject +8, grade +6, difficulty +4
       expect(score).toBe(12 + 10 + 8 + 6 + 4);
+    });
+
+    it('adds +6 when request paraphrases selectionProfile exampleTopics (not literal match)', () => {
+      const tracing = template({
+        id: 'tracing',
+        slug: 'tracing',
+        meta: { ageMin: 3, ageMax: 5 },
+        selectionProfile: {
+          id: 'prof-1',
+          templateId: 'tracing',
+          templateSlug: 'tracing',
+          templateType: 'visual_tracing',
+          description: 'tracing',
+          primaryUse: 'Pre-math, visual correspondence and fine-motor tracing activities.',
+          canBeUsedFor: ['Big and small', 'Animal matching'],
+          exampleTopics: ['Small animal to small house', 'Big fruit to big basket'],
+          adaptationNote: 'Keep the dotted-line tracing interaction.',
+          skillsPracticed: ['Fine motor skills'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const bare = template({
+        id: 'bare',
+        slug: 'bare',
+        meta: { ageMin: 3, ageMax: 5 },
+        selectionProfile: null,
+      });
+
+      const paraphrased = {
+        ageGroup: '3-4',
+        query: 'match each big elephant to its big house',
+      };
+      expect(service.matchesSelectionProfileTopics(tracing, paraphrased)).toBe(true);
+      expect(service.score(tracing, paraphrased)).toBeGreaterThan(
+        service.score(bare, paraphrased),
+      );
+      expect(service.score(tracing, paraphrased) - service.score(bare, paraphrased)).toBe(6);
+    });
+
+    it('prefers match_the_pairs over circle_the_things for "match the pairs of planets"', async () => {
+      const matchPairs = template({
+        id: 'cmthcnikx003yrobgnng3y2ka',
+        slug: 'match_the_pairs',
+        name: 'Match the Pairs',
+        updatedAt: new Date('2024-01-01'),
+        meta: {
+          ageMin: 3,
+          ageMax: 6,
+          // Real DB rows often omit activityType — identity scoring must still work.
+          subjects: ['thematic'],
+        },
+        selectionProfile: {
+          id: 'p-match',
+          templateId: 'cmthcnikx003yrobgnng3y2ka',
+          templateSlug: 'match_the_pairs',
+          templateType: 'two_column_matching',
+          description: 'two-column matching',
+          primaryUse: 'Two-column visual matching and one-to-one correspondence activities.',
+          canBeUsedFor: ['Planets and planetary facts', 'Animals and habitats'],
+          exampleTopics: ['Planet → planetary fact'],
+          adaptationNote: 'Replace both columns with related sets.',
+          skillsPracticed: ['Matching'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const circleThings = template({
+        id: 'cmtctkipl002lxcbg6wqtf6q3',
+        slug: 'circle_the_things',
+        name: 'Circle the Things',
+        updatedAt: new Date('2025-01-01'), // newer — would win ties before the fix
+        meta: {
+          ageMin: 3,
+          ageMax: 6,
+          subjects: ['general knowledge'],
+        },
+        selectionProfile: {
+          id: 'p-circle',
+          templateId: 'cmtctkipl002lxcbg6wqtf6q3',
+          templateSlug: 'circle_the_things',
+          templateType: 'visual_classification',
+          description: 'circle classification',
+          primaryUse: 'Visual classification and identify-the-correct-items activities.',
+          canBeUsedFor: ['Fruits', 'Living and non-living things'],
+          exampleTopics: ['Circle fruits', 'Circle living things'],
+          adaptationNote: 'Mix category items with distractors.',
+          skillsPracticed: ['Classification'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+
+      const request = { ageGroup: '4-5', query: 'match the pairs of planets' };
+      expect(service.matchesActivityIdentity(matchPairs, request)).toBe(true);
+      expect(service.matchesActivityIdentity(circleThings, request)).toBe(false);
+      expect(service.score(matchPairs, request)).toBeGreaterThan(
+        service.score(circleThings, request) + TEMPLATE_SELECTION_MIN_SCORE_MARGIN - 1,
+      );
+
+      templateService.listActive.mockResolvedValue([circleThings, matchPairs]);
+      aiService.classify.mockResolvedValue({
+        theme: 'Mission: Space and Time',
+        subTopic: 'Planets',
+        activityIntent: 'Match the Pairs',
+        difficulty: 'easy',
+        confidence: 0.9,
+      });
+
+      const selected = await service.select(request);
+      expect(selected.slug).toBe('match_the_pairs');
+      expect(aiService.select).not.toHaveBeenCalled();
+    });
+
+    it('does not require a selectionProfile for scoring or selection', async () => {
+      const only = template({
+        id: 'no-profile',
+        slug: 'no_profile',
+        meta: { ageMin: 4, ageMax: 5, subjects: ['Math'] },
+        selectionProfile: null,
+      });
+      templateService.listActive.mockResolvedValue([only]);
+      const selected = await service.select({
+        ageGroup: '4-5',
+        query: 'count apples',
+      });
+      expect(selected.id).toBe('no-profile');
+      expect(service.score(only, { query: 'count apples' })).toBe(0);
     });
   });
 });

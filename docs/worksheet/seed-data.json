@@ -1,0 +1,466 @@
+{
+    "templates": [
+      {
+        "id": "sq0j4a",
+        "template": {
+          "templateName": "tracing",
+          "templateType": "visual_tracing",
+          "description": "A tracing activity where learners follow a line between corresponding objects, especially useful for comparing size, quantity, position or other visual relationships."
+        },
+        "topicFit": {
+          "primaryUse": "Pre-math, visual correspondence and fine-motor tracing activities.",
+          "canBeUsedFor": [
+            "Big and small",
+            "Tall and short",
+            "Long and short",
+            "Heavy and light",
+            "More and less",
+            "Same and different",
+            "Near and far",
+            "One and many",
+            "Up and down",
+            "Animal matching",
+            "Object matching",
+            "Picture-to-picture correspondence",
+            "Size comparison",
+            "Quantity comparison"
+          ],
+          "exampleTopics": [
+            "Small animal to small house",
+            "Big fruit to big basket",
+            "Tall plant to tall pot",
+            "Large vehicle to large parking space",
+            "Same animal pairs",
+            "Animal and its home",
+            "Big and small objects",
+            "More and fewer objects"
+          ],
+          "adaptationNote": "Keep the dotted-line tracing interaction, but change the illustrated objects and relationship according to the selected topic. The template works best when the two endpoints have a clear visual relationship."
+        },
+        "skillsPracticed": [
+          "Fine motor skills",
+          "Visual discrimination",
+          "Matching",
+          "Comparison",
+          "Hand-eye coordination",
+          "Pre-writing skills"
+        ]
+      },
+      {
+        "id": "ayepbu",
+        "template": {
+          "templateName": "match_the_pairs",
+          "templateType": "two_column_matching",
+          "description": "A two-column visual matching activity where learners connect or match related items from two sets."
+        },
+        "topicFit": {
+          "primaryUse": "Two-column visual matching and one-to-one correspondence activities.",
+          "canBeUsedFor": [
+            "Body parts and senses",
+            "Animals and babies",
+            "Animals and sounds",
+            "Animals and habitats",
+            "Animals and food",
+            "Plants and plant parts",
+            "Community helpers and tools",
+            "Vehicles and transport types",
+            "Recycling and types of waste",
+            "Pollution and its effects",
+            "Planets and planetary facts",
+            "Numerals and quantities",
+            "Numbers and number names",
+            "Shapes and their names",
+            "Objects and their uses",
+            "Food and categories",
+            "Fruits and their colours",
+            "Vegetables and their names",
+            "People and their roles",
+            "Clothing and body parts",
+            "Animals and their homes",
+            "Animals and their features",
+            "Weather and related objects",
+            "Seasons and related objects"
+          ],
+          "exampleTopics": [
+            "Doctor → stethoscope",
+            "Teacher → classroom",
+            "Fire fighter → fire engine",
+            "Cow → calf",
+            "Dog → bark",
+            "Animal → habitat",
+            "Plant → plant part",
+            "Planet → planetary fact",
+            "Numeral → number name",
+            "Number → quantity",
+            "Plastic → recyclable waste",
+            "Shape → shape name",
+            "Fruit → colour"
+          ],
+          "adaptationNote": "The sample topic should never be treated as a restriction. Replace both columns with any two related sets of pictures, words, numbers or symbols that have clear one-to-one matches."
+        },
+        "skillsPracticed": [
+          "Matching",
+          "Visual discrimination",
+          "Classification",
+          "One-to-one correspondence",
+          "Vocabulary development",
+          "Concept recognition"
+        ]
+      },
+      {
+        "id": "xlr3bv",
+        "template": {
+          "templateName": "circle_the_things",
+          "templateType": "visual_classification",
+          "description": "A picture-based classification activity where learners identify and circle items belonging to a given category among distractors."
+        },
+        "topicFit": {
+          "primaryUse": "Visual classification, categorization and identify-the-correct-items activities.",
+          "canBeUsedFor": [
+            "Healthy habits",
+            "Personal hygiene",
+            "Body care",
+            "Safety",
+            "Fruits",
+            "Vegetables",
+            "Farm animals",
+            "Wild animals",
+            "Insects and bugs",
+            "Community helpers",
+            "Modes of transport",
+            "Plants",
+            "Things we get from trees",
+            "Recyclable items",
+            "Types of waste",
+            "Pollution",
+            "School objects",
+            "Home objects",
+            "Healthy and unhealthy choices",
+            "Living and non-living things",
+            "Things found in nature",
+            "Things used at home",
+            "Things used at school",
+            "Things that are safe or unsafe"
+          ],
+          "exampleTopics": [
+            "Circle things used for personal hygiene",
+            "Circle fruits",
+            "Circle farm animals",
+            "Circle things that can be recycled",
+            "Circle land transport",
+            "Circle objects that help keep us safe",
+            "Circle things we get from trees",
+            "Circle healthy foods",
+            "Circle living things",
+            "Circle things found in a classroom"
+          ],
+          "adaptationNote": "Create a mixture of correct-category items and visually distinct distractors. The learner should identify the target category using pictures rather than relying on the exact sample topic."
+        },
+        "skillsPracticed": [
+          "Classification",
+          "Categorization",
+          "Visual discrimination",
+          "Observation",
+          "Concept recognition",
+          "Decision making"
+        ]
+      },
+      {
+        "id": "psei8c",
+        "template": {
+          "templateName": "matching_single_letter",
+          "templateType": "letter_matching",
+          "description": "An alphabet activity where learners identify and match a target uppercase letter with its corresponding lowercase letter among distractors."
+        },
+        "topicFit": {
+          "primaryUse": "Alphabet and phonics activities focused on recognizing a target letter.",
+          "canBeUsedFor": [
+            "Uppercase and lowercase matching",
+            "Alphabet recognition",
+            "Letter discrimination",
+            "Letter-of-the-week activities",
+            "Initial letter recognition",
+            "Initial sound recognition",
+            "Phonics revision",
+            "Alphabet revision",
+            "Letter identification"
+          ],
+          "exampleTopics": [
+            "A/a",
+            "B/b",
+            "C/c",
+            "D/d",
+            "M/m",
+            "P/p",
+            "S/s",
+            "Y/y",
+            "Any target uppercase and lowercase letter",
+            "Find all instances of the target letter among distractors"
+          ],
+          "adaptationNote": "This template should remain within alphabet and phonics topics. Change the target letter, distractor letters, vocabulary and background illustration according to the selected letter."
+        },
+        "skillsPracticed": [
+          "Letter recognition",
+          "Uppercase-lowercase recognition",
+          "Visual discrimination",
+          "Alphabet knowledge",
+          "Phonics awareness"
+        ]
+      },
+      {
+        "id": "bzfiot",
+        "template": {
+          "templateName": "look_and_say_letter_sounds",
+          "templateType": "phonics_vocabulary",
+          "description": "A letter-and-sound activity presenting a target letter with familiar vocabulary pictures that begin with the corresponding sound."
+        },
+        "topicFit": {
+          "primaryUse": "Initial-sound recognition, oral vocabulary and phonics activities.",
+          "canBeUsedFor": [
+            "Any alphabet letter",
+            "Initial letter sounds",
+            "Letter-of-the-week vocabulary",
+            "Animal vocabulary",
+            "Fruit vocabulary",
+            "Vegetable vocabulary",
+            "Transport vocabulary",
+            "Community helper vocabulary",
+            "Plant vocabulary",
+            "Body-part vocabulary",
+            "House and school vocabulary",
+            "Space vocabulary",
+            "Everyday object vocabulary",
+            "Nature vocabulary",
+            "Food vocabulary",
+            "Family vocabulary"
+          ],
+          "exampleTopics": [
+            "A → ant, ambulance, astronaut, anchor",
+            "B → banana, bus, bear, butterfly",
+            "C → cat, car, carrot, cow",
+            "F → fire fighter, flower, frog, fruit",
+            "P → plant, police, parrot, potato",
+            "S → sun, school, snake, star",
+            "Y → yoghurt, yak, yo-yo, yarn"
+          ],
+          "adaptationNote": "Choose four familiar vocabulary words from the selected curriculum topic that begin with the target letter or sound. The topic can change freely as long as the selected words support the target phonics sound."
+        },
+        "skillsPracticed": [
+          "Phonemic awareness",
+          "Initial sound recognition",
+          "Letter-sound association",
+          "Vocabulary development",
+          "Oral language",
+          "Alphabet knowledge"
+        ]
+      },
+      {
+        "id": "nlgc35",
+        "template": {
+          "templateName": "look_and_say_circle_the_letters",
+          "templateType": "letter_recognition_phonics",
+          "description": "A combined alphabet activity where learners identify a target letter among distractors and connect it with relevant vocabulary or pictures."
+        },
+        "topicFit": {
+          "primaryUse": "Alphabet review combining letter recognition, phonics, oral reading and vocabulary.",
+          "canBeUsedFor": [
+            "Any target alphabet letter",
+            "Uppercase and lowercase recognition",
+            "Initial sounds",
+            "Letter-of-the-week review",
+            "Animal vocabulary",
+            "Fruit and vegetable vocabulary",
+            "Transport vocabulary",
+            "Community helpers",
+            "Plants",
+            "Body parts",
+            "School and home vocabulary",
+            "Space vocabulary",
+            "Everyday objects",
+            "Nature vocabulary",
+            "Food vocabulary",
+            "Family vocabulary"
+          ],
+          "exampleTopics": [
+            "Letter A with animals and objects beginning with A",
+            "Letter B with fruits, animals and transport beginning with B",
+            "Letter C with classroom and home vocabulary",
+            "Letter P with plants, people and objects beginning with P",
+            "Letter S with animals, school objects and nature vocabulary",
+            "Any target letter paired with curriculum vocabulary"
+          ],
+          "adaptationNote": "The target letter remains the core of the activity, while the vocabulary illustrations can be selected from any relevant FS0-FS2 thematic unit."
+        },
+        "skillsPracticed": [
+          "Letter recognition",
+          "Initial sound recognition",
+          "Visual discrimination",
+          "Vocabulary development",
+          "Phonics",
+          "Alphabet revision"
+        ]
+      },
+      {
+        "id": "jity6y",
+        "template": {
+          "templateName": "number_names_matching",
+          "templateType": "numeracy_matching",
+          "description": "A numeracy matching activity where learners connect numbers with their corresponding number names, quantities or other number representations."
+        },
+        "topicFit": {
+          "primaryUse": "Numeracy matching and number-representation activities.",
+          "canBeUsedFor": [
+            "Numbers 1-10",
+            "Numbers 1-20",
+            "Numeral to number name",
+            "Numeral to quantity",
+            "Number to number set",
+            "Number to dots or objects",
+            "Before and after numbers",
+            "Number bonds",
+            "Addition",
+            "Subtraction",
+            "Ordinal numbers",
+            "Subitising",
+            "Number grouping",
+            "Counting",
+            "Shapes and shape names",
+            "Numeral recognition",
+            "Quantity recognition"
+          ],
+          "exampleTopics": [
+            "6 → six",
+            "8 → eight objects",
+            "5 → five dots",
+            "3 → number bond representation",
+            "7 → number before or after",
+            "Circle → circle",
+            "Triangle → triangle",
+            "Number → corresponding quantity",
+            "Number → number name"
+          ],
+          "adaptationNote": "The two-column matching structure can be retained while changing what each side represents. For example, numeral-to-word, numeral-to-quantity, number-to-dots, number-to-objects or shape-to-name."
+        },
+        "skillsPracticed": [
+          "Number recognition",
+          "Counting",
+          "One-to-one correspondence",
+          "Number-name recognition",
+          "Quantity recognition",
+          "Numeracy skills",
+          "Visual matching"
+        ]
+      },
+      {
+        "id": "s0q8hf",
+        "template": {
+          "templateName": "circle_the_words",
+          "templateType": "early_reading",
+          "description": "An early-reading activity where learners identify and circle a target word within simple sentences using a word bank."
+        },
+        "topicFit": {
+          "primaryUse": "Early reading, sight-word recognition and simple sentence comprehension.",
+          "canBeUsedFor": [
+            "Sight words",
+            "Tricky words",
+            "Simple sentence reading",
+            "Sentence comprehension",
+            "Action words",
+            "Positional words",
+            "Describing words",
+            "Magic words",
+            "Words related to hygiene",
+            "Words related to plants",
+            "Words related to animals",
+            "Words related to family and friends",
+            "Words related to school and home",
+            "Words related to safety",
+            "Thematic vocabulary in sentences",
+            "Everyday vocabulary",
+            "Nature vocabulary",
+            "Food vocabulary",
+            "Community helper vocabulary"
+          ],
+          "exampleTopics": [
+            "Circle the sight word in simple sentences",
+            "Circle action words",
+            "Circle positional words such as in, on and up",
+            "Circle hygiene-related vocabulary",
+            "Circle animal vocabulary in sentences",
+            "Circle plant vocabulary in sentences",
+            "Circle words related to family or school",
+            "Circle community-helper vocabulary",
+            "Circle words related to healthy habits"
+          ],
+          "adaptationNote": "Replace the word bank, sentences and illustrations according to the selected language or thematic unit. The template works best when each target word appears clearly within a short, age-appropriate sentence."
+        },
+        "skillsPracticed": [
+          "Sight-word recognition",
+          "Early reading",
+          "Vocabulary",
+          "Sentence comprehension",
+          "Word recognition",
+          "Language development"
+        ]
+      },
+      {
+        "id": "cyny03",
+        "template": {
+          "templateName": "answer_and_colour",
+          "templateType": "story_comprehension_reflection",
+          "description": "A story-based worksheet combining comprehension questions, personal reflection, drawing or colouring and simple decision-making."
+        },
+        "topicFit": {
+          "primaryUse": "Story comprehension, listening comprehension, reflection, social-emotional learning and creative response.",
+          "canBeUsedFor": [
+            "Animal stories",
+            "Friendship",
+            "Sharing and taking turns",
+            "Emotions and feelings",
+            "Conflict resolution",
+            "Kindness",
+            "Healthy habits",
+            "Personal hygiene",
+            "Safety",
+            "Family and friends",
+            "School situations",
+            "Community helpers",
+            "Plants and growth stories",
+            "Environmental stories",
+            "Moral stories",
+            "Everyday routines",
+            "Picture-based stories",
+            "Recycling stories",
+            "Nature stories",
+            "Helping others",
+            "Good manners",
+            "Problem solving"
+          ],
+          "exampleTopics": [
+            "A story about sharing toys",
+            "A story about taking turns",
+            "A story about caring for an animal",
+            "A story about personal hygiene",
+            "A story about staying safe",
+            "A story about planting and caring for a seed",
+            "A story about helping a friend",
+            "A story about reducing and recycling waste",
+            "A story about kindness",
+            "A story about managing emotions",
+            "A story about good habits"
+          ],
+          "adaptationNote": "Change the story, characters, illustrations and questions according to the selected unit. Keep the combination of comprehension question, personal or reflection question, drawing or colouring and simple choice-based response."
+        },
+        "skillsPracticed": [
+          "Listening comprehension",
+          "Reading comprehension",
+          "Critical thinking",
+          "Social-emotional learning",
+          "Self-expression",
+          "Decision making",
+          "Creative expression",
+          "Vocabulary development"
+        ]
+      }
+    ]
+  }
