@@ -313,11 +313,56 @@ NULL
     expect(html).not.toContain('"imageQuery"');
     expect(html).not.toContain('[{');
     expect(html).toContain('class="item"');
-    expect(html).toContain('carrot');
+    expect(html).not.toContain('item-label');
+    expect(html).not.toMatch(/>\s*carrot\s*</);
+    expect(html).toContain('alt="orange carrot"');
     expect(html).toContain('/worksheets/assets/a1/image');
     const tops = [...html.matchAll(/class="item"[^>]*top:(\d+)px/g)].map((m) => Number(m[1]));
     expect(tops.length).toBe(1);
-    expect(Math.max(...tops) + 180).toBeLessThanOrEqual(760);
+    expect(Math.max(...tops) + 145).toBeLessThanOrEqual(760);
+  });
+
+  it('places circle_the_things items in a 2-3-2 grid without labels', () => {
+    const items = Array.from({ length: 7 }, (_, i) => ({
+      id: `i${i + 1}`,
+      label: `item${i + 1}`,
+      imageQuery: `object ${i + 1}`,
+      is_correct: i % 2 === 0,
+      assetUrl: `/worksheets/assets/a${i + 1}/image`,
+    }));
+    const html = renderer.render({
+      templateHtml: '<div class="activity-box">{{ITEMS}}</div>',
+      structure: {
+        worksheet_type: 'circle_the_things',
+        items,
+      },
+    });
+
+    expect(html).not.toContain('item-label');
+    for (const item of items) {
+      expect(html).not.toMatch(new RegExp(`>\\s*${item.label}\\s*<`));
+    }
+
+    const placed = [
+      ...html.matchAll(/class="item"[^>]*top:(\d+)px;left:(\d+)px/g),
+    ].map((m) => ({ top: Number(m[1]), left: Number(m[2]) }));
+    expect(placed).toHaveLength(7);
+
+    const minT = Math.min(...placed.map((p) => p.top));
+    const maxT = Math.max(...placed.map((p) => p.top));
+    const span = Math.max(1, maxT - minT);
+    const band = (top: number) => {
+      const t = (top - minT) / span;
+      if (t < 0.33) return 0;
+      if (t < 0.66) return 1;
+      return 2;
+    };
+    expect(placed.filter((p) => band(p.top) === 0)).toHaveLength(2);
+    expect(placed.filter((p) => band(p.top) === 1)).toHaveLength(3);
+    expect(placed.filter((p) => band(p.top) === 2)).toHaveLength(2);
+    // Staggered: not all items share the same top within a band.
+    const topBandTops = placed.filter((p) => band(p.top) === 0).map((p) => p.top);
+    expect(new Set(topBandTops).size).toBeGreaterThan(1);
   });
 
   it('renders number_names pairs without using pastel colors as text', () => {

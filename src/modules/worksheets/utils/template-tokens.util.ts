@@ -6,7 +6,7 @@ import {
   visualQueryFromImageRecord,
 } from './structure.util';
 import { ImageSlotRef } from '../types/worksheet.types';
-import { generateScatterPositions } from './scatter-layout.util';
+import { generateCircleGridPositions } from './scatter-layout.util';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -392,7 +392,8 @@ export function parseActivityBoxRect(
 
 const DEFAULT_ACTIVITY_BOX = { left: 80, top: 330, width: 860, height: 760 };
 const ACTIVITY_FRAME_INSET = 58;
-const SCATTER_ITEM_SIZE = { width: 150, height: 180 };
+/** Image-only tile size for circle-the-things (no under-image labels). */
+const SCATTER_ITEM_SIZE = { width: 165, height: 145 };
 
 export function scatterLayoutForTemplate(html = ''): {
   box: { left: number; top: number; width: number; height: number };
@@ -745,7 +746,7 @@ export function buildScatterItemsMarkup(
   }
 
   const { box, itemSize } = scatterLayoutForTemplate(templateHtml);
-  const positions = generateScatterPositions(items.length, box, itemSize);
+  const positions = generateCircleGridPositions(items.length, box, itemSize);
   const icon = pencilIconUrl.trim();
 
   return items
@@ -763,12 +764,13 @@ export function buildScatterItemsMarkup(
         (typeof item.imageUrl === 'string' && item.imageUrl) ||
         '';
       const srcAttr = rawSrc ? ` src="${escapeHtml(rawSrc)}"` : '';
+      // Labels stay in structure for answer keys / AI; canvas shows images only.
       const alt = slotMatch?.imageQuery || visualQueryFromImageRecord(item) || label || slotId;
       const isCorrect = item.is_correct === true;
       const pencil = icon
         ? `<button class="ai-pencil" data-pencil-for="${escapeHtml(path)}" type="button" title="AI regenerate" style="position:absolute;top:-10px;right:-10px;width:30px;height:30px;z-index:3;"><img src="${escapeHtml(icon)}" width="30" height="30" alt=""></button>`
         : '';
-      return `<div class="item" style="position:absolute;top:${pos.top}px;left:${pos.left}px;width:${itemSize.width}px;height:${itemSize.height}px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;" data-item-id="${escapeHtml(path)}" data-correct="${isCorrect}">${pencil}<div style="width:100%;height:130px;display:flex;justify-content:center;align-items:center;"><img class="worksheet-image"${srcAttr} alt="${escapeHtml(alt)}" data-image-slot="${escapeHtml(slotId)}" data-field-path="${escapeHtml(path)}" style="max-width:120px;max-height:120px;object-fit:contain;" /></div><div class="item-label" data-editable="${escapeHtml(`${path}.label`)}" data-field-path="${escapeHtml(`${path}.label`)}" style="text-align:center;font-size:22px;font-weight:bold;color:#222;margin-top:4px;height:28px;width:100%;overflow:hidden;">${escapeHtml(label)}</div></div>`;
+      return `<div class="item" style="position:absolute;top:${pos.top}px;left:${pos.left}px;width:${itemSize.width}px;height:${itemSize.height}px;display:flex;align-items:center;justify-content:center;" data-item-id="${escapeHtml(path)}" data-correct="${isCorrect}" data-field-path="${escapeHtml(path)}">${pencil}<img class="worksheet-image"${srcAttr} alt="${escapeHtml(alt)}" data-image-slot="${escapeHtml(slotId)}" data-field-path="${escapeHtml(path)}" style="max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;" /></div>`;
     })
     .join('');
 }
