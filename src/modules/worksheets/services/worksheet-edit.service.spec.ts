@@ -20,10 +20,17 @@ describe('WorksheetEditService', () => {
     parseAiConfig: jest.fn(),
     parseFieldPrompts: jest.fn(),
     parseMeta: jest.fn(),
+    parseAiEditUi: jest.fn(() => ({
+      aiEditPopupHtml: null,
+      aiEditConfigJs: null,
+      aiEditPanelJs: null,
+    })),
+    getActiveByIdOrSlug: jest.fn(),
   };
   const contentService = {
     generateFieldReplacement: jest.fn(),
     generateStructure: jest.fn(),
+    correctLearnerGrammar: jest.fn(),
   };
   const validationService = {
     validateGeneratedStructure: jest.fn(),
@@ -66,6 +73,7 @@ describe('WorksheetEditService', () => {
       }),
     ),
     uploadUserImage: jest.fn(),
+    searchCandidates: jest.fn(),
   };
 
   const eventEmitter = { emit: jest.fn() };
@@ -94,7 +102,7 @@ describe('WorksheetEditService', () => {
       validationService as unknown as WorksheetValidationService,
       assetService as unknown as WorksheetAssetService,
       { composeHtml: () => ({ html: '<p>ok</p>', canvas: { width: 1016, height: 1316 } }) } as unknown as WorksheetRenderService,
-      eventEmitter as unknown as EventEmitter2,
+      { emit: jest.fn() } as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue(worksheet);
     templateService.getById.mockResolvedValue(template);
@@ -155,7 +163,6 @@ describe('WorksheetEditService', () => {
       'green grapes',
       'items[0]',
       expect.any(Object),
-      expect.objectContaining({ workflowType: 'worksheets_edit' }),
     );
     expect(
       (result.structure.items as Array<Record<string, unknown>>)[0].assetId,
@@ -177,5 +184,100 @@ describe('WorksheetEditService', () => {
     );
     expect(prisma.worksheet.update).toHaveBeenCalled();
     expect(result.structure.instruction).toBe('Count the fruit.');
+  });
+
+  it('searchLibrary returns mapped candidates for a query', async () => {
+    assetService.searchCandidates.mockResolvedValue([
+      {
+        assetId: 'a1',
+        caption: 'apple',
+        searchDescription: 'red apple',
+        imageUrl: '/worksheets/assets/a1/image',
+      },
+    ]);
+
+    const result = await service.searchLibrary({ query: 'red apple', limit: 5 });
+    expect(assetService.searchCandidates).toHaveBeenCalledWith(
+      'red apple',
+      5,
+      undefined,
+      undefined,
+    );
+    expect(result.query).toBe('red apple');
+    expect(result.results).toHaveLength(1);
+  });
+
+  it('searchLibrary returns empty results when query is blank', async () => {
+    const result = await service.searchLibrary({ query: '  ' });
+    expect(assetService.searchCandidates).not.toHaveBeenCalled();
+    expect(result).toEqual({ query: '', results: [] });
+  });
+
+  it('searchImages derives query from the slot when query is omitted', async () => {
+    assetService.searchCandidates.mockResolvedValue([]);
+    await service.searchImages('ws-1', { path: 'items[0]' });
+    expect(assetService.searchCandidates).toHaveBeenCalledWith(
+      'red apples',
+      undefined,
+      undefined,
+      'counting_objects_v1',
+    );
+  });
+
+  it('searchImages returns empty results when query and slot query are missing', async () => {
+    const result = await service.searchImages('ws-1', { path: 'instruction' });
+    expect(assetService.searchCandidates).not.toHaveBeenCalled();
+    expect(result.results).toEqual([]);
+  });
+
+  it('regenerate applies AI Edit match type even if the LLM returns word names', async () => {
+    const llmStructure = {
+      topic: 'NUMBER NAMES',
+      instruction_text: 'Match the numbers with their word names.',
+      pairs: [
+        { number: '1', name: 'one' },
+        { number: '5', name: 'five' },
+      ],
+    };
+    contentService.generateStructure.mockResolvedValue(llmStructure);
+    assetService.attachAssets.mockResolvedValue({ structure: llmStructure, slots: [] });
+
+    const result = await service.regenerate('ws-1', {
+      query: 'Change the topic to "whole numbers". Match type: Roman numeral.',
+      topic: 'whole numbers',
+      fields: { topic: 'whole numbers', matchType: 'roman_numerals' },
+    });
+
+    expect(contentService.generateStructure).toHaveBeenCalled();
+    expect(assetService.attachAssets).toHaveBeenCalledWith(
+      llmStructure,
+      { templateSlug: 'counting_objects_v1' },
+      expect.any(Object),
+    );
+    expect(result.structure.topic).toBe('whole numbers');
+    expect(result.structure.instruction_text).toBe(
+      'Match the numbers with their Roman numerals.',
+    );
+    expect((result.structure.pairs as Array<{ name: string }>).map((pair) => pair.name)).toEqual([
+      'I',
+      'V',
+    ]);
+  });
+
+  it('corrects all questions in one grammar call without persisting', async () => {
+    const corrected = {
+      ...worksheet.structure,
+      questions: [{ question: 'What will you do?' }],
+    };
+    contentService.correctLearnerGrammar.mockResolvedValue(corrected);
+    const result = await service.correctGrammar('temp-ai-draft', {
+      templateId: 'tmpl-1',
+      structure: {
+        questions: [{ question: 'what will you do' }],
+      },
+    });
+    expect(contentService.correctLearnerGrammar).toHaveBeenCalledTimes(1);
+    expect(prisma.worksheet.update).not.toHaveBeenCalled();
+    expect(result.structure).toEqual(corrected);
   });
 });

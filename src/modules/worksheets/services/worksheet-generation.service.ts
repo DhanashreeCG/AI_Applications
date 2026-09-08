@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -30,11 +31,24 @@ import { WorksheetAssetService } from './worksheet-asset.service';
 import { WorksheetContentService } from './worksheet-content.service';
 import { WorksheetRenderService } from './worksheet-render.service';
 import { WorksheetTemplateSelectionService } from './worksheet-template-selection.service';
-import { WorksheetTemplateService } from './worksheet-template.service';
+import {
+  TEMPLATE_WITH_SELECTION_PROFILE,
+  WorksheetTemplateService,
+} from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
+
+export interface GenerateWorksheetProgress {
+  onMeta?: (meta: {
+    count: number;
+    templateId?: string;
+    templateSlug?: string;
+  }) => void;
+  onItem?: (item: GenerateWorksheetResponse, slotIndex: number) => void;
+}
 
 export interface GenerateWorksheetOptions {
   correlationId?: string;
+  progress?: GenerateWorksheetProgress;
 }
 
 @Injectable()
@@ -173,7 +187,7 @@ export class WorksheetGenerationService {
     });
 
     try {
-      const response = await this.runGenerate(dto, telemetry);
+      const response = await this.runGenerate(dto, telemetry, options);
       this.emitter.emitCompleted({
         ...telemetry,
         status: 'completed',
@@ -203,6 +217,7 @@ export class WorksheetGenerationService {
   private async runGenerate(
     dto: GenerateWorksheetDto,
     telemetry: PipelineTelemetryContext,
+    options: GenerateWorksheetOptions = {},
   ): Promise<GenerateWorksheetResponse> {
     await runTrackedStage(
       this.emitter,
@@ -247,49 +262,57 @@ export class WorksheetGenerationService {
       this.emitter,
       telemetry,
       PIPELINE_STAGES.TEMPLATE_SELECTION,
-      () => this.templateSelectionService.select(dto),
+      () => this.templateSelectionService.select(dto, telemetry),
       {
         startMetadata: {
           explicitTemplateId: analyzed.explicitTemplateId,
         },
-        completeMetadata: (selected) => ({
-          templateId: selected.id,
-          templateSlug: selected.slug,
-          rendererType: selected.rendererType,
-          category: selected.category,
-          explicitTemplateId: analyzed.explicitTemplateId,
-        }),
+        completeMetadata: (selected) => {
+          const outcome = (selected as any)._aiOutcome;
+          const selectionTelemetry = (selected as any)._selectionTelemetry;
+          return {
+            templateId: selected.id,
+            templateSlug: selected.slug,
+            rendererType: selected.rendererType,
+            category: selected.category,
+            explicitTemplateId: analyzed.explicitTemplateId,
+            selectionMode:
+              selectionTelemetry?.selectionMode ??
+              (analyzed.explicitTemplateId
+                ? 'explicit'
+                : outcome?.usedFallback
+                  ? 'deterministic'
+                  : outcome?.result
+                    ? 'ai'
+                    : 'deterministic'),
+            aiConfidence: outcome?.result?.confidenceScore,
+            aiReasoning: outcome?.result?.reasoning,
+            aiFallbackReason: outcome?.fallbackReason,
+            ageBand: selectionTelemetry?.ageBand ?? null,
+            ageFilteredCount: selectionTelemetry?.ageFilteredCount ?? null,
+            stage2Classification: selectionTelemetry?.stage2Classification ?? null,
+            rerankTopScores: selectionTelemetry?.rerankTopScores ?? null,
+            scoreMargin: selectionTelemetry?.scoreMargin ?? null,
+            selectionReason: selectionTelemetry?.selectionReason ?? null,
+          };
+        },
       },
     );
     this.logger.log(`template selected slug=${template.slug} id=${template.id}`);
 
-    const generated = await this.contentService.generateStructure(
+    const count = this.normalizeCount(dto.count);
+    options.progress?.onMeta?.({
+      count,
+      templateId: template.id,
+      templateSlug: template.slug,
+    });
+    const generatedList = await this.contentService.generateStructures(
       template,
       dto,
+      count,
       telemetry,
     );
-    this.logger.log('content generation completed');
-
-    const normalized = normalizeImageQueryFields(generated);
-    const imageQueries = collectImageQueries(normalized);
-    this.logger.log(
-      `image queries extracted count=${imageQueries.length} ${JSON.stringify(
-        imageQueries.map((item) => ({ path: item.parentPath, query: item.query })),
-      )}`,
-    );
-
-    const queries = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.IMAGE_QUERY_GENERATION,
-      () => imageQueries,
-      {
-        completeMetadata: (items) => ({
-          queryCount: items.length,
-          queries: items.map((item) => item.query),
-        }),
-      },
-    );
+    this.logger.log(`content generation completed structuresCount=${generatedList.length}`);
 
     const meta = this.templateService.parseMeta(template);
     const ageGroups =
@@ -297,91 +320,98 @@ export class WorksheetGenerationService {
         ? [`${meta.ageMin}-${meta.ageMax}`]
         : undefined;
 
-    const attached = await runTrackedStage(
+    const attachedBatch = await runTrackedStage(
       this.emitter,
       telemetry,
       PIPELINE_STAGES.IMAGE_RETRIEVAL,
       () =>
-        this.assetService.attachAssets(
-          normalized,
-          {
-            grades: dto.grade ? [dto.grade] : meta.grades,
-            ageGroups,
-          },
+        this.assetService.attachAssetsBatch(
+          generatedList,
+          { templateSlug: template.slug },
           telemetry,
         ),
       {
-        startMetadata: { queryCount: queries.length },
-        completeMetadata: (result) => ({
-          slotCount: result.slots.length,
-          resolvedCount: result.slots.filter((slot) => slot.assetId).length,
+        startMetadata: { worksheetCount: generatedList.length },
+        completeMetadata: (results) => ({
+          worksheetCount: results.length,
+          totalSlotCount: results.reduce((acc, r) => acc + r.slots.length, 0),
+          resolvedSlotCount: results.reduce(
+            (acc, r) => acc + r.slots.filter((s) => s.assetId).length,
+            0,
+          ),
         }),
       },
     );
-    this.logger.log('asset retrieval completed');
+    this.logger.log('batch asset retrieval completed');
 
-    await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.IMAGE_MAPPING,
-      () => attached.slots,
-      {
-        completeMetadata: () => ({
-          mappings: attached.slots.map((slot) => ({
-            path: slot.path,
-            imageQuery: slot.imageQuery,
-            assetId: slot.assetId,
-          })),
-        }),
-      },
-    );
-
-    const validated = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.STRUCTURE_VALIDATION,
-      () =>
-        this.validationService.validateGeneratedStructure(
+    // Concurrently validate, persist and compose response for each worksheet in the batch
+    const validatedRows = await Promise.all(
+      attachedBatch.map(async (attached) => {
+        const validated = this.validationService.validateGeneratedStructure(
           this.assetService.persistableStructure(attached.structure),
           template,
           { allowEnrichmentKeys: true },
-        ),
+        );
+        return {
+          structure: validated,
+          slots: attached.slots,
+        };
+      }),
     );
 
-    const worksheet = await runTrackedStage(
+    this.emitter.emitStageSkipped({
+      ...telemetry,
+      stageName: PIPELINE_STAGES.PERSISTENCE,
+      metadata: { reason: 'DB Persistence disabled as worksheets are saved on explicit action now' },
+    });
+
+    const persistedRows = validatedRows.map(row => ({
+      id: `temp-${randomUUID()}`,
+      templateId: template.id,
+      request: dto as Prisma.InputJsonValue,
+      structure: row.structure as Prisma.InputJsonValue,
+      status: 'DRAFT',
+    }));
+    
+    /*
+    const persistedRows = await runTrackedStage(
       this.emitter,
       telemetry,
       PIPELINE_STAGES.PERSISTENCE,
       () =>
-        this.prisma.worksheet.create({
-          data: {
-            templateId: template.id,
-            request: dto as Prisma.InputJsonValue,
-            structure: validated as Prisma.InputJsonValue,
-            status: 'GENERATED',
-          },
-        }),
+        this.prisma.$transaction(
+          validatedRows.map((row) =>
+            this.prisma.worksheet.create({
+              data: {
+                templateId: template.id,
+                request: dto as Prisma.InputJsonValue,
+                structure: row.structure as Prisma.InputJsonValue,
+                status: 'GENERATED',
+              },
+            }),
+          ),
+        ),
       {
-        completeMetadata: (row) => ({
-          worksheetId: row.id,
-          status: row.status,
+        completeMetadata: (rows) => ({
+          count: rows.length,
+          worksheetIds: rows.map((r) => r.id),
         }),
       },
     );
-    this.logger.log(`worksheet persisted id=${worksheet.id}`);
+    */
+    this.logger.log(`batch worksheets persisted count=${persistedRows.length}`);
 
-    const response = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.RESPONSE_ASSEMBLY,
-      () => {
+    const responses = await mapWithConcurrency(
+      persistedRows,
+      Math.min(3, persistedRows.length),
+      async (worksheet, index) => {
         const composed = this.renderService.composeHtml({
           template,
           structure: asStructureRecord(worksheet.structure),
           request: dto as unknown as Record<string, unknown>,
           mode: 'editor',
         });
-        return {
+        const response = {
           id: worksheet.id,
           status: worksheet.status,
           template: {
@@ -389,30 +419,16 @@ export class WorksheetGenerationService {
             slug: template.slug,
             name: template.name,
             rendererType: template.rendererType,
+            ...this.templateService.parseAiEditUi(template),
           },
           request: dto,
           structure: asStructureRecord(worksheet.structure),
           html: composed.html,
           canvas: composed.canvas,
+          fieldPrompts: this.templateService.parseFieldPrompts(template),
         } satisfies GenerateWorksheetResponse;
-      },
-    );
-
-    await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.FINAL_VALIDATION,
-      () => {
-        if (!response.id || !response.structure) {
-          throw new Error('Assembled worksheet response is incomplete');
-        }
+        options.progress?.onItem?.(response, index);
         return response;
-      },
-      {
-        completeMetadata: {
-          worksheetId: response.id,
-          templateId: response.template.id,
-        },
       },
     );
 
@@ -420,55 +436,43 @@ export class WorksheetGenerationService {
       this.emitter,
       telemetry,
       PIPELINE_STAGES.RESPONSE_RETURN,
-      () => response,
+      () => responses[0],
       {
         completeMetadata: {
-          worksheetId: response.id,
-          templateSlug: response.template.slug,
+          worksheetId: responses[0].id,
+          totalGenerated: responses.length,
+          templateSlug: responses[0].template.slug,
         },
       },
     );
 
-    return response;
+    // Stash full batch responses on the first response for generateSet consumption
+    // Use defineProperty to make it non-enumerable and avoid circular JSON serialization issues
+    Object.defineProperty(responses[0], '_batchResponses', {
+      value: responses,
+      enumerable: false,
+      configurable: true,
+    });
+
+    return responses[0];
   }
 
   public async generateSet(
     dto: GenerateWorksheetDto,
     options: GenerateWorksheetOptions = {},
   ): Promise<{ items: GenerateWorksheetResponse[]; failed: number }> {
-    this.validationService.validateRequest(dto);
-    const count = this.normalizeCount(dto.count);
-    const matching = await this.templateSelectionService.listMatching(dto, count);
-    const pool = matching.length
-      ? matching
-      : [await this.templateSelectionService.select(dto)];
-    const targets = Array.from({ length: count }, (_, index) => pool[index % pool.length]);
-
-    const results: GenerateWorksheetResponse[] = [];
-    let failed = 0;
-    await mapWithConcurrency(targets, 2, async (template) => {
-      try {
-        const item = await this.generate(
-          { ...dto, templateId: template.id, count: undefined },
-          options,
-        );
-        results.push(item);
-      } catch (error) {
-        failed += 1;
-        this.logger.warn(
-          `generate-set skipped template ${template.slug}: ${getErrorMessage(error)}`,
-        );
-      }
-    });
-
-    if (!results.length) {
-      throw new WorksheetException(
-        'NO_TEMPLATE_FOUND',
-        'No worksheets could be generated for this request',
-        HttpStatus.NOT_FOUND,
-      );
+    try {
+      const first = await this.generate(dto, options);
+      const requestedCount = this.normalizeCount(dto.count);
+      const items: GenerateWorksheetResponse[] = (
+        (first as any)._batchResponses || [first]
+      ).slice(0, requestedCount);
+      const failed = Math.max(0, requestedCount - items.length);
+      return { items, failed };
+    } catch (error) {
+      this.logger.error(`generateSet failed: ${getErrorMessage(error)}`);
+      throw error;
     }
-    return { items: results, failed };
   }
 
   public async list(options: { skip?: number; take?: number } = {}) {
@@ -483,7 +487,9 @@ export class WorksheetGenerationService {
         take,
         orderBy: { createdAt: 'desc' },
         include: {
-          template: true,
+          template: {
+            include: TEMPLATE_WITH_SELECTION_PROFILE,
+          },
         },
       }),
       this.prisma.worksheet.count(),
@@ -513,7 +519,9 @@ export class WorksheetGenerationService {
     const row = await this.prisma.worksheet.findUnique({
       where: { id: worksheetId },
       include: {
-        template: true,
+        template: {
+          include: TEMPLATE_WITH_SELECTION_PROFILE,
+        },
       },
     });
     if (!row) {
@@ -551,6 +559,8 @@ export class WorksheetGenerationService {
       slug: string;
       category: string;
       sampleAssetId: string | null;
+      aiEditPopupHtml?: string | null;
+      aiEditConfigJs?: string | null;
     };
   }) {
     const request = asStructureRecord(row.request);
@@ -565,6 +575,7 @@ export class WorksheetGenerationService {
         name: row.template.name,
         slug: row.template.slug,
         category: row.template.category,
+        ...this.templateService.parseAiEditUi(row.template as never),
       },
       thumbnailUrl: row.template.sampleAssetId
         ? `${this.assetImagePath}/${row.template.sampleAssetId}/image`

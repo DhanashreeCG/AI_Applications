@@ -7,9 +7,24 @@ import {
   PipelineTelemetryContext,
 } from '../../../common/events/pipeline-tracker.events';
 import { PrismaService } from '../../database/prisma.service';
-import { assertGenerationRequestAllowed } from '../../../common/content-safety/assert-user-query';
-import { WORKSHEET_WORKFLOW_EDIT } from '../constants/worksheet.constants';
-import { EditWorksheetDto } from '../dto/edit-worksheet.dto';
+import {
+  WORKSHEET_REGENERATE_STAGE,
+  WORKSHEET_WORKFLOW_REGENERATE,
+} from '../constants/worksheet.constants';
+import {
+  WorksheetPipelineEmitter,
+  createTelemetryContext,
+  runTrackedStage,
+} from '../telemetry/worksheet-pipeline.events';
+import {
+  assertGenerationRequestAllowed,
+  throwContentNotAllowed,
+} from '../../../common/content-safety/assert-user-query';
+import { containsForbiddenContent } from '../../flashcards/utils/content-restriction.registry';
+import {
+  CorrectWorksheetGrammarDto,
+  EditWorksheetDto,
+} from '../dto/edit-worksheet.dto';
 import { GenerateWorksheetDto } from '../dto/generate-worksheet.dto';
 import { SaveWorksheetDto } from '../dto/save-worksheet.dto';
 import { RegenerateWorksheetDto } from '../dto/regenerate-worksheet.dto';
@@ -22,14 +37,12 @@ import {
   getValueAtPath,
   isEditableField,
   looksLikeHtml,
+  resolveAliasFieldPath,
   setValueAtPath,
   visualQueryFromImageRecord,
+  withLineartQuery,
 } from '../utils/structure.util';
-import {
-  WorksheetPipelineEmitter,
-  createTelemetryContext,
-  runTrackedStage,
-} from '../telemetry/worksheet-pipeline.events';
+import { applyNumberMatchOverrides } from '../utils/number-match.util';
 import { WorksheetAssetService } from './worksheet-asset.service';
 import { WorksheetContentService } from './worksheet-content.service';
 import { WorksheetRenderService } from './worksheet-render.service';
@@ -63,177 +76,142 @@ export class WorksheetEditService {
   public async edit(
     worksheetId: string,
     dto: EditWorksheetDto,
-    options: EditWorksheetOptions = {},
+    _options: EditWorksheetOptions = {},
   ): Promise<GenerateWorksheetResponse> {
-    const telemetry = createTelemetryContext({
-      correlationId: options.correlationId,
-      workflowType: WORKSHEET_WORKFLOW_EDIT,
-    });
-    const fieldPath = (dto.fieldPath || dto.field || '').trim();
+    return this.runEdit(worksheetId, dto);
+  }
 
-    this.emitter.emitStarted({
-      ...telemetry,
-      metadata: {
-        operation: 'edit',
-        worksheetId,
-        fieldPath: fieldPath || null,
-      },
+  public async correctGrammar(
+    worksheetId: string,
+    dto: CorrectWorksheetGrammarDto,
+  ): Promise<GenerateWorksheetResponse> {
+    const worksheet = await this.prisma.worksheet.findUnique({
+      where: { id: worksheetId },
     });
-
-    try {
-      const response = await this.runEdit(worksheetId, dto, telemetry);
-      this.emitter.emitCompleted({
-        ...telemetry,
-        status: 'completed',
-        metadata: {
-          operation: 'edit',
-          worksheetId: response.id,
-          templateId: response.template.id,
-          templateSlug: response.template.slug,
-          fieldPath,
-        },
-      });
-      return response;
-    } catch (error) {
-      this.emitter.emitFailed({
-        ...telemetry,
-        status: 'failed',
-        errorMessage: getErrorMessage(error),
-      });
-      throw error;
+    const inMemory =
+      !worksheet &&
+      worksheetId.startsWith('temp-') &&
+      dto.templateId &&
+      dto.structure &&
+      typeof dto.structure === 'object';
+    if (!worksheet && !inMemory) {
+      throw new WorksheetException(
+        'WORKSHEET_NOT_FOUND',
+        `Worksheet "${worksheetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
     }
+    const template = worksheet
+      ? await this.templateService.getById(worksheet.templateId)
+      : await this.templateService.getActiveByIdOrSlug(String(dto.templateId));
+    const structure = asStructureRecord(
+      worksheet ? worksheet.structure : dto.structure,
+    );
+    const corrected = await this.contentService.correctLearnerGrammar(structure);
+    const next = this.validationService.validateGeneratedStructure(
+      this.assetService.persistableStructure(corrected),
+      template,
+      { allowEnrichmentKeys: true },
+    );
+    return this.toResponse(
+      {
+        id: worksheetId,
+        status: worksheet?.status || 'GENERATED',
+        request: worksheet?.request || {},
+        structure: next,
+      },
+      template,
+    );
   }
 
   private async runEdit(
     worksheetId: string,
     dto: EditWorksheetDto,
-    telemetry: PipelineTelemetryContext,
   ): Promise<GenerateWorksheetResponse> {
-    const fieldPath = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.REQUEST_VALIDATION,
-      () => {
-        const path = (dto.fieldPath || dto.field || '').trim();
-        const instruction = dto.instruction?.trim();
-        if (!path) {
-          throw new WorksheetException(
-            'INVALID_FIELD',
-            'Provide field or fieldPath',
-          );
-        }
-        if (!instruction) {
-          throw new WorksheetException(
-            'INVALID_REQUEST',
-            'instruction is required',
-          );
-        }
-        assertGenerationRequestAllowed({
-          query: instruction,
-          countryCode: dto.countryCode,
-        });
-        return path;
-      },
-    );
+    const path = (dto.fieldPath || dto.field || '').trim();
+    const instruction = dto.instruction?.trim();
+    if (!path) {
+      throw new WorksheetException(
+        'INVALID_FIELD',
+        'Provide field or fieldPath',
+      );
+    }
+    if (!instruction) {
+      throw new WorksheetException(
+        'INVALID_REQUEST',
+        'instruction is required',
+      );
+    }
+    assertGenerationRequestAllowed({
+      query: instruction,
+      countryCode: dto.countryCode,
+    });
+    const worksheet = await this.prisma.worksheet.findUnique({
+      where: { id: worksheetId },
+    });
+    const inMemory =
+      !worksheet &&
+      worksheetId.startsWith('temp-') &&
+      dto.templateId &&
+      dto.structure &&
+      typeof dto.structure === 'object';
+    if (!worksheet && !inMemory) {
+      throw new WorksheetException(
+        'WORKSHEET_NOT_FOUND',
+        `Worksheet "${worksheetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
 
-    const worksheet = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.REQUEST_ANALYSIS,
-      async () => {
-        const row = await this.prisma.worksheet.findUnique({
-          where: { id: worksheetId },
-        });
-        if (!row) {
-          throw new WorksheetException(
-            'WORKSHEET_NOT_FOUND',
-            `Worksheet "${worksheetId}" was not found`,
-            HttpStatus.NOT_FOUND,
-          );
-        }
-        return row;
-      },
-      {
-        startMetadata: { worksheetId },
-        completeMetadata: (row) => ({
-          worksheetId: row.id,
-          templateId: row.templateId,
-          status: row.status,
-        }),
-      },
-    );
+    const template = worksheet
+      ? await this.templateService.getById(worksheet.templateId)
+      : await this.templateService.getActiveByIdOrSlug(String(dto.templateId));
 
-    const template = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.TEMPLATE_SELECTION,
-      () => this.templateService.getById(worksheet.templateId),
-      {
-        completeMetadata: (selected) => ({
-          templateId: selected.id,
-          templateSlug: selected.slug,
-          rendererType: selected.rendererType,
-        }),
-      },
+    const aiConfig = this.templateService.parseAiConfig(template);
+    const structure = asStructureRecord(
+      worksheet ? worksheet.structure : dto.structure,
     );
-
-    const resolved = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.FIELD_RESOLUTION,
-      () => {
-        const aiConfig = this.templateService.parseAiConfig(template);
-        const structure = asStructureRecord(worksheet.structure);
-        const currentValue = getValueAtPath(structure, fieldPath);
-        const declared = isEditableField(fieldPath, aiConfig.editableFields);
-        const leaf =
-          typeof currentValue === 'string' || typeof currentValue === 'number';
-        if (!declared && !leaf) {
-          throw new WorksheetException(
-            'FIELD_NOT_EDITABLE',
-            `Field "${fieldPath}" is not editable for this template`,
-          );
-        }
-        return {
-          structure,
-          currentValue,
-          fieldPrompts: this.templateService.parseFieldPrompts(template),
-          linkedValues: this.resolveLinkedValues(
-            structure,
-            fieldPath,
-            aiConfig.linkedFields,
-          ),
-        };
-      },
-      {
-        completeMetadata: { fieldPath, editable: true },
-      },
-    );
+    const fieldPath = resolveAliasFieldPath(structure, path);
+    const currentValue = getValueAtPath(structure, fieldPath);
+    const declared = isEditableField(fieldPath, aiConfig.editableFields);
+    const leaf =
+      typeof currentValue === 'string' || typeof currentValue === 'number';
+    if (!declared && !leaf) {
+      throw new WorksheetException(
+        'FIELD_NOT_EDITABLE',
+        `Field "${fieldPath}" is not editable for this template`,
+      );
+    }
+    const resolved = {
+      structure,
+      currentValue,
+      fieldPrompts: this.templateService.parseFieldPrompts(template),
+      linkedValues: this.resolveLinkedValues(
+        structure,
+        fieldPath,
+        aiConfig.linkedFields,
+      ),
+    };
 
     const replacement = await this.contentService.generateFieldReplacement({
       systemPrompt: template.aiSystemPrompt,
       fieldPath,
       fieldPrompt:
+        resolved.fieldPrompts[path] ||
         resolved.fieldPrompts[fieldPath] ||
         resolved.fieldPrompts[String(fieldPath.split(/[.[]/)[0])],
       instruction: dto.instruction.trim(),
       currentValue: resolved.currentValue,
       worksheetStructure: resolved.structure,
       linkedValues: resolved.linkedValues,
-      telemetry,
+      countryCode: dto.countryCode,
     });
 
     let next = setValueAtPath(resolved.structure, fieldPath, replacement);
-    next = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.STRUCTURE_VALIDATION,
-      () =>
-        this.validationService.validateGeneratedStructure(
-          this.assetService.persistableStructure(next),
-          template,
-          { allowEnrichmentKeys: true },
-        ),
+    next = await this.validationService.validateGeneratedStructure(
+      this.assetService.persistableStructure(next),
+      template,
+      { allowEnrichmentKeys: true },
     );
 
     const previousQueries = new Map(
@@ -249,68 +227,39 @@ export class WorksheetEditService {
 
     if (changed.length) {
       const meta = this.templateService.parseMeta(template);
-      next = await runTrackedStage(
-        this.emitter,
-        telemetry,
-        PIPELINE_STAGES.IMAGE_RETRIEVAL,
-        async () => {
-          let updated = next;
-          for (const item of changed) {
-            const slot = await this.assetService.resolveSlot(
-              item.query,
-              item.parentPath,
-              { grades: meta.grades },
-              telemetry,
-            );
-            updated = this.assetService.applySlot(updated, slot);
-          }
-          return updated;
-        },
-        {
-          startMetadata: { changedQueryCount: changed.length },
-          completeMetadata: { changedQueryCount: changed.length },
-        },
-      );
+      for (const item of changed) {
+        const slot = await this.assetService.resolveSlot(
+          item.query,
+          item.parentPath,
+          { grades: meta.grades, templateSlug: template.slug },
+        );
+        next = this.assetService.applySlot(next, slot);
+      }
       this.logger.log('image query edit triggered asset re-resolution');
-    } else {
-      this.emitter.emitStageSkipped({
-        ...telemetry,
-        stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
-        metadata: { reason: 'image_query_unchanged' },
-      });
     }
 
-    const updated = await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.PERSISTENCE,
-      () =>
-        this.prisma.worksheet.update({
-          where: { id: worksheet.id },
-          data: {
-            structure: this.assetService.persistableStructure(
-              next,
-            ) as Prisma.InputJsonValue,
-          },
-        }),
-      {
-        completeMetadata: (row) => ({ worksheetId: row.id }),
+    if (!worksheet) {
+      return this.toResponse(
+        {
+          id: worksheetId,
+          status: 'GENERATED',
+          request: {},
+          structure: this.assetService.persistableStructure(next),
+        },
+        template,
+      );
+    }
+
+    const updated = await this.prisma.worksheet.update({
+      where: { id: worksheet.id },
+      data: {
+        structure: this.assetService.persistableStructure(
+          next,
+        ) as Prisma.InputJsonValue,
       },
-    );
+    });
 
-    const response = this.toResponse(updated, template);
-
-    await runTrackedStage(
-      this.emitter,
-      telemetry,
-      PIPELINE_STAGES.RESPONSE_RETURN,
-      () => response,
-      {
-        completeMetadata: { worksheetId: response.id, fieldPath },
-      },
-    );
-
-    return response;
+    return this.toResponse(updated, template);
   }
 
   public async replaceImage(
@@ -389,6 +338,7 @@ export class WorksheetEditService {
       for (const item of changed) {
         const slot = await this.assetService.resolveSlot(item.query, item.parentPath, {
           grades: meta.grades,
+          templateSlug: template.slug,
         });
         next = this.assetService.applySlot(next, slot);
       }
@@ -434,17 +384,45 @@ export class WorksheetEditService {
       }
     }
     if (!query) {
-      throw new WorksheetException(
-        'INVALID_REQUEST',
-        'Provide query or a path whose slot has imageQuery',
-      );
+      return { query: '', results: [] };
     }
+    const template = await this.templateService.getById(worksheet.templateId);
+    const searchQuery = withLineartQuery(query, template.slug);
     const results = await this.assetService.searchCandidates(
-      query,
+      searchQuery,
       options.limit,
       options.countryCode,
+      template.slug,
     );
-    return { query, results };
+    return { query: searchQuery, results };
+  }
+
+  public async searchLibrary(options: {
+    query?: string;
+    limit?: number;
+    countryCode?: string;
+    templateSlug?: string;
+  }): Promise<{
+    query: string;
+    results: Array<{
+      assetId: string;
+      caption: string;
+      searchDescription: string;
+      imageUrl: string;
+    }>;
+  }> {
+    const query = options.query?.trim() || '';
+    if (!query) {
+      return { query: '', results: [] };
+    }
+    const searchQuery = withLineartQuery(query, options.templateSlug);
+    const results = await this.assetService.searchCandidates(
+      searchQuery,
+      options.limit,
+      options.countryCode,
+      options.templateSlug,
+    );
+    return { query: searchQuery, results };
   }
 
   public async uploadImage(
@@ -551,42 +529,163 @@ export class WorksheetEditService {
   public async regenerate(
     worksheetId: string,
     dto: RegenerateWorksheetDto,
+    options: EditWorksheetOptions = {},
   ): Promise<GenerateWorksheetResponse> {
-    const query = dto.query?.trim();
+    const telemetry = createTelemetryContext({
+      correlationId: options.correlationId,
+      workflowType: WORKSHEET_WORKFLOW_REGENERATE,
+    });
+    this.emitter.emitStarted({
+      ...telemetry,
+      metadata: {
+        operation: 'regenerate',
+        worksheetId,
+        topic: dto.topic ?? dto.fields?.topic ?? null,
+        ageGroup: dto.ageGroup ?? null,
+        fields: dto.fields ?? {},
+      },
+    });
+    try {
+      const response = await this.runRegenerate(worksheetId, dto, telemetry);
+      this.emitter.emitCompleted({
+        ...telemetry,
+        status: 'completed',
+        metadata: {
+          operation: 'regenerate',
+          worksheetId: response.id,
+          templateId: response.template.id,
+          templateSlug: response.template.slug,
+        },
+      });
+      return response;
+    } catch (error) {
+      this.emitter.emitFailed({
+        ...telemetry,
+        status: 'failed',
+        errorMessage: getErrorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  private async runRegenerate(
+    worksheetId: string,
+    dto: RegenerateWorksheetDto,
+    telemetry: PipelineTelemetryContext,
+  ): Promise<GenerateWorksheetResponse> {
+    const fields = this.inferMatchFields(this.normalizeFields(dto.fields));
+    const query =
+      dto.query?.trim() ||
+      this.instructionFromFields(fields);
     if (!query) {
       throw new WorksheetException(
         'INVALID_REQUEST',
         'Provide requirements to regenerate this worksheet',
       );
     }
+    const topic = dto.topic?.trim() || fields.topic || undefined;
+    this.assertSafeUserText(query, 'query', dto.countryCode);
+    this.assertSafeUserText(topic, 'topic', dto.countryCode);
+    for (const [key, value] of Object.entries(fields)) {
+      this.assertSafeUserText(value, `fields.${key}`, dto.countryCode);
+    }
     assertGenerationRequestAllowed({
       query,
-      topic: dto.topic,
+      topic,
       countryCode: dto.countryCode,
     });
-    const worksheet = await this.requireWorksheet(worksheetId);
-    const template = await this.templateService.getById(worksheet.templateId);
-    const previousRequest = asStructureRecord(worksheet.request);
+
+    const worksheet = await this.prisma.worksheet.findUnique({
+      where: { id: worksheetId },
+    });
+    const inMemory =
+      !worksheet &&
+      worksheetId.startsWith('temp-') &&
+      Boolean(dto.templateId);
+    if (!worksheet && !inMemory) {
+      throw new WorksheetException(
+        'WORKSHEET_NOT_FOUND',
+        `Worksheet "${worksheetId}" was not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const template = worksheet
+      ? await this.templateService.getById(worksheet.templateId)
+      : await this.templateService.getActiveByIdOrSlug(String(dto.templateId));
+
+    const previousRequest = asStructureRecord(
+      worksheet?.request ?? dto.request ?? {},
+    );
+    const currentStructure = asStructureRecord(
+      dto.structure ?? worksheet?.structure ?? {},
+    );
     const generateDto = {
       ...previousRequest,
       query,
-      topic: dto.topic?.trim() || previousRequest.topic || query,
+      topic: topic || query,
+      ageGroup: dto.ageGroup?.trim() || previousRequest.ageGroup,
+      age: dto.age ?? previousRequest.age,
+      countryCode: dto.countryCode || previousRequest.countryCode,
       templateId: template.id,
-    } as GenerateWorksheetDto;
+      fields,
+    } as GenerateWorksheetDto & { fields?: Record<string, string> };
 
-    const generated = await this.contentService.generateStructure(
-      template,
-      generateDto,
+    const generated = await runTrackedStage(
+      this.emitter,
+      telemetry,
+      PIPELINE_STAGES.LLM_CONTENT_GENERATION,
+      () =>
+        this.contentService.generateStructure(template, generateDto, telemetry, {
+          currentStructure,
+          systemPrompt: template.aiSystemPrompt,
+          stage: WORKSHEET_REGENERATE_STAGE,
+        }),
+      {
+        startMetadata: { fields, query },
+        completeMetadata: { templateSlug: template.slug },
+      },
     );
-    const meta = this.templateService.parseMeta(template);
-    const attached = await this.assetService.attachAssets(generated, {
-      grades: generateDto.grade ? [generateDto.grade] : meta.grades,
-    });
-    const validated = this.validationService.validateGeneratedStructure(
-      this.assetService.persistableStructure(attached.structure),
-      template,
-      { allowEnrichmentKeys: true },
+    const leaked = this.findForbiddenTerm(generated, generateDto.countryCode);
+    if (leaked) {
+      throwContentNotAllowed(leaked, 'generated content', generateDto.countryCode);
+    }
+    const attached = await runTrackedStage(
+      this.emitter,
+      telemetry,
+      PIPELINE_STAGES.IMAGE_RETRIEVAL,
+      () =>
+        this.assetService.attachAssets(
+          generated,
+          { templateSlug: template.slug },
+          telemetry,
+        ),
     );
+    const validated = await runTrackedStage(
+      this.emitter,
+      telemetry,
+      PIPELINE_STAGES.CONTENT_VALIDATION,
+      () =>
+        this.applyFieldOverrides(
+          this.validationService.validateGeneratedStructure(
+            this.assetService.persistableStructure(attached.structure),
+            template,
+            { allowEnrichmentKeys: true },
+          ),
+          fields,
+        ),
+    );
+    if (!worksheet) {
+      return this.toResponse(
+        {
+          id: worksheetId,
+          status: 'GENERATED',
+          request: generateDto,
+          structure: validated,
+        },
+        template,
+      );
+    }
     const updated = await this.prisma.worksheet.update({
       where: { id: worksheet.id },
       data: {
@@ -635,6 +734,7 @@ export class WorksheetEditService {
         slug: template.slug,
         name: template.name,
         rendererType: template.rendererType,
+        ...this.templateService.parseAiEditUi(template),
       },
       request: asStructureRecord(worksheet.request),
       structure: asStructureRecord(worksheet.structure),
@@ -664,5 +764,79 @@ export class WorksheetEditService {
       }
     }
     return values;
+  }
+
+  private normalizeFields(fields?: Record<string, string>): Record<string, string> {
+    if (!fields || typeof fields !== 'object') return {};
+    const next: Record<string, string> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      if (typeof value === 'string' && value.trim()) {
+        next[key] = value.trim();
+      }
+    }
+    return next;
+  }
+
+  private inferMatchFields(fields: Record<string, string>): Record<string, string> {
+    const next = { ...fields };
+    if (!next.matchType && next.topic) {
+      const topic = next.topic.toLowerCase();
+      if (/roman/.test(topic)) next.matchType = 'roman_numerals';
+      else if (/ordinal/.test(topic)) next.matchType = 'ordinals';
+      else if (/addition|\+/.test(topic)) next.matchType = 'addition';
+      else if (/subtract|minus/.test(topic)) next.matchType = 'subtraction';
+      else if (/multipl|times|×/.test(topic)) next.matchType = 'multiplication';
+      else if (/division|÷/.test(topic)) next.matchType = 'division';
+    }
+    return next;
+  }
+
+  private applyFieldOverrides(
+    structure: Record<string, unknown>,
+    fields: Record<string, string>,
+  ): Record<string, unknown> {
+    return applyNumberMatchOverrides(structure, fields);
+  }
+
+  private instructionFromFields(fields: Record<string, string>): string {
+    const parts = Object.entries(fields).map(([key, value]) =>
+      key === 'topic' ? `Change the topic to "${value}".` : `For ${key}: ${value}.`,
+    );
+    return parts.join(' ');
+  }
+
+  private assertSafeUserText(
+    value: string | undefined,
+    field: string,
+    countryCode?: string,
+  ): void {
+    if (!value?.trim()) return;
+    const matched = containsForbiddenContent(value, countryCode);
+    if (matched) {
+      throwContentNotAllowed(matched, field, countryCode);
+    }
+  }
+
+  private findForbiddenTerm(
+    value: unknown,
+    countryCode?: string,
+  ): string | undefined {
+    if (typeof value === 'string') {
+      return containsForbiddenContent(value, countryCode);
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const matched = this.findForbiddenTerm(item, countryCode);
+        if (matched) return matched;
+      }
+      return undefined;
+    }
+    if (value && typeof value === 'object') {
+      for (const item of Object.values(value)) {
+        const matched = this.findForbiddenTerm(item, countryCode);
+        if (matched) return matched;
+      }
+    }
+    return undefined;
   }
 }

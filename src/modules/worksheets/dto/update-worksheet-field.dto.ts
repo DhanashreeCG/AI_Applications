@@ -23,4 +23,7 @@ export class SearchWorksheetImagesQueryDto {
 
   @ApiPropertyOptional({ example: 'IN' })
   countryCode?: string;
+
+  @ApiPropertyOptional({ example: 'answer_and_colour' })
+  templateSlug?: string;
 }

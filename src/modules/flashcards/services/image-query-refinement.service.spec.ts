@@ -33,7 +33,7 @@ describe('ImageQueryRefinementService', () => {
     configService.get.mockImplementation((key: string) => {
       if (key === 'flashcards.imageQueryRefinement.enabled') return true;
       if (key === 'flashcards.imageQueryRefinement.provider') return 'openai';
-      if (key === 'ai.openaiApiKey') return 'test-key';
+      if (key === 'flashcards.openaiApiKey') return 'test-key';
       if (key === 'flashcards.imageQueryRefinement.timeoutMs') return 1000;
       if (key === 'flashcards.imageQueryRefinement.maxAttempts') return 1;
       return undefined;

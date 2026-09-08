@@ -8,6 +8,7 @@ import { WorksheetAssetService } from './worksheet-asset.service';
 describe('WorksheetAssetService', () => {
   const searchService = {
     search: jest.fn(),
+    searchMany: jest.fn(),
   };
   const s3StorageService = {
     getSignedUrl: jest.fn(),
@@ -21,6 +22,7 @@ describe('WorksheetAssetService', () => {
     get: (key: string) => {
       if (key === 'worksheets.imageConcurrency') return 2;
       if (key === 'worksheets.imageSearchLimit') return 1;
+      if (key === 'worksheets.imageMinSimilarity') return 0;
       if (key === 'worksheets.imagePickerLimit') return 10;
       if (key === 'worksheets.signedUrlTtlSeconds') return 3600;
       if (key === 'worksheets.assetImagePath') return '/worksheets/assets';
@@ -45,16 +47,23 @@ describe('WorksheetAssetService', () => {
   });
 
   it('maps imageQuery to assetId only in persisted structure', async () => {
-    searchService.search.mockImplementation(async ({ query }: { query: string }) => ({
-      query,
-      total: 1,
-      results: [
-        {
-          assetId: query.includes('apple') ? 'asset-123' : 'asset-456',
-          s3ObjectKey: query.includes('apple') ? 'assets/a.png' : 'assets/b.png',
-        },
-      ],
-    }));
+    searchService.searchMany.mockImplementation(async (queries: string[]) => {
+      const map = new Map();
+      for (const query of queries) {
+        map.set(query, {
+          query,
+          total: 1,
+          results: [
+            {
+              assetId: query.includes('apple') ? 'asset-123' : 'asset-456',
+              similarity: 0.9,
+              s3ObjectKey: query.includes('apple') ? 'assets/a.png' : 'assets/b.png',
+            },
+          ],
+        });
+      }
+      return map;
+    });
 
     const { structure, slots } = await service.attachAssets({
       instruction: 'Count',
@@ -64,7 +73,16 @@ describe('WorksheetAssetService', () => {
       ],
     });
 
-    expect(searchService.search).toHaveBeenCalledTimes(2);
+    expect(searchService.searchMany).toHaveBeenCalledTimes(1);
+    expect(searchService.searchMany).toHaveBeenCalledWith(
+      ['red apples', 'yellow bananas'],
+      expect.objectContaining({
+        limit: 1,
+        retrieval: true,
+        concurrency: 2,
+        embeddingBilling: 'worksheets',
+      }),
+    );
     expect(slots.map((slot) => slot.assetId)).toEqual(['asset-123', 'asset-456']);
     expect(structure).toEqual({
       instruction: 'Count',
@@ -78,11 +96,24 @@ describe('WorksheetAssetService', () => {
   });
 
   it('searches assets from structure.image.image_name when imageQuery is absent', async () => {
-    searchService.search.mockResolvedValue({
-      query: 'cute jumping dolphins in the ocean',
-      total: 1,
-      results: [{ assetId: 'dolphin-1', s3ObjectKey: 'assets/d.png' }],
-    });
+    searchService.searchMany.mockResolvedValue(
+      new Map([
+        [
+          'cute jumping dolphins in the ocean',
+          {
+            query: 'cute jumping dolphins in the ocean',
+            total: 1,
+            results: [
+              {
+                assetId: 'dolphin-1',
+                similarity: 0.91,
+                s3ObjectKey: 'assets/d.png',
+              },
+            ],
+          },
+        ],
+      ]),
+    );
 
     const { structure, slots } = await service.attachAssets({
       topic: 'Dolphin Fun',
@@ -92,8 +123,13 @@ describe('WorksheetAssetService', () => {
       },
     });
 
-    expect(searchService.search).toHaveBeenCalledWith(
-      expect.objectContaining({ query: 'cute jumping dolphins in the ocean' }),
+    expect(searchService.searchMany).toHaveBeenCalledWith(
+      ['cute jumping dolphins in the ocean'],
+      expect.objectContaining({
+        retrieval: true,
+        concurrency: 2,
+        embeddingBilling: 'worksheets',
+      }),
     );
     expect(slots).toEqual([
       {
@@ -126,6 +162,26 @@ describe('WorksheetAssetService', () => {
       signedUrl: 'https://signed.example/img',
     });
     expect(s3StorageService.getSignedUrl).toHaveBeenCalled();
+  });
+
+  it('keeps a replacement imageUrl when assetId is missing', () => {
+    const enriched = service.enrichForRender({
+      items: [
+        {
+          imageQuery: 'carrot',
+          assetId: null,
+          imageUrl: '/worksheets/assets/new-carrot/image',
+        },
+      ],
+    });
+    expect(enriched.items).toEqual([
+      {
+        imageQuery: 'carrot',
+        assetId: null,
+        assetUrl: '/worksheets/assets/new-carrot/image',
+        imageUrl: '/worksheets/assets/new-carrot/image',
+      },
+    ]);
   });
 
   it('injects assetUrl for render without persisting it', () => {
@@ -180,24 +236,143 @@ describe('WorksheetAssetService', () => {
     });
   });
 
-  it('retries without filters when the filtered search is empty', async () => {
-    searchService.search
-      .mockResolvedValueOnce({ query: 'red apples', total: 0, results: [] })
-      .mockResolvedValueOnce({
-        query: 'red apples',
-        total: 1,
-        results: [{ assetId: 'asset-123', s3ObjectKey: 'assets/a.png' }],
-      });
+  it('appends lineart to search queries for answer_and_colour', async () => {
+    searchService.searchMany.mockResolvedValue(
+      new Map([
+        [
+          'two goats lineart',
+          {
+            query: 'two goats lineart',
+            total: 1,
+            results: [
+              {
+                assetId: 'goat-lineart',
+                similarity: 0.9,
+                s3ObjectKey: 'assets/goat.png',
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+
+    const { slots } = await service.attachAssets(
+      { image: { imageQuery: 'two goats' } },
+      { templateSlug: 'answer_and_colour' },
+    );
+
+    expect(searchService.searchMany).toHaveBeenCalledWith(
+      ['two goats lineart'],
+      expect.objectContaining({ retrieval: true, embeddingBilling: 'worksheets' }),
+    );
+    expect(slots[0].imageQuery).toBe('two goats lineart');
+    expect(slots[0].assetId).toBe('goat-lineart');
+  });
+
+  it('returns empty slot when search returns 0 results', async () => {
+    searchService.searchMany.mockResolvedValueOnce(
+      new Map([
+        ['red apples', { query: 'red apples', total: 0, results: [] }],
+      ]),
+    );
 
     const { slots, structure } = await service.attachAssets(
       { items: [{ imageQuery: 'red apples' }] },
       { grades: ['LKG'] },
     );
 
-    expect(searchService.search).toHaveBeenCalledTimes(2);
-    expect(slots[0].assetId).toBe('asset-123');
+    expect(searchService.searchMany).toHaveBeenCalledTimes(1);
+    expect(slots[0].assetId).toBeUndefined();
     expect(structure).toEqual({
-      items: [{ imageQuery: 'red apples', assetId: 'asset-123' }],
+      items: [{ imageQuery: 'red apples' }],
+    });
+  });
+
+  it('deduplicates identical image queries across multiple worksheets in a batch', async () => {
+    searchService.searchMany.mockImplementation(async (queries: string[]) => {
+      const map = new Map();
+      for (const query of queries) {
+        map.set(query, {
+          query,
+          total: 1,
+          results: [
+            {
+              assetId: query.includes('apple') ? 'asset-apple' : 'asset-banana',
+              similarity: 0.88,
+              s3ObjectKey: query.includes('apple')
+                ? 'assets/apple.png'
+                : 'assets/banana.png',
+            },
+          ],
+        });
+      }
+      return map;
+    });
+
+    const batchStructures = [
+      { items: [{ imageQuery: 'red apple' }] },
+      { items: [{ imageQuery: 'red apple' }] },
+      { items: [{ imageQuery: 'yellow banana' }] },
+    ];
+
+    const results = await service.attachAssetsBatch(batchStructures);
+
+    expect(results).toHaveLength(3);
+    expect(searchService.searchMany).toHaveBeenCalledTimes(1);
+    expect(searchService.searchMany).toHaveBeenCalledWith(
+      ['red apple', 'yellow banana'],
+      expect.objectContaining({
+        retrieval: true,
+        concurrency: 2,
+        embeddingBilling: 'worksheets',
+      }),
+    );
+    expect(results[0].structure).toEqual({
+      items: [{ imageQuery: 'red apple', assetId: 'asset-apple' }],
+    });
+    expect(results[1].structure).toEqual({
+      items: [{ imageQuery: 'red apple', assetId: 'asset-apple' }],
+    });
+    expect(results[2].structure).toEqual({
+      items: [{ imageQuery: 'yellow banana', assetId: 'asset-banana' }],
+    });
+  });
+
+  it('returns null assetId when similarity is below the configured minimum', async () => {
+    const strictConfig = {
+      get: (key: string) => {
+        if (key === 'worksheets.imageMinSimilarity') return 0.75;
+        return configService.get(key);
+      },
+    };
+    const eventEmitter = { emit: jest.fn() };
+    const strictService = new WorksheetAssetService(
+      searchService as unknown as SearchService,
+      s3StorageService as unknown as S3StorageService,
+      prisma as unknown as PrismaService,
+      strictConfig as unknown as ConfigService,
+      eventEmitter as unknown as EventEmitter2,
+    );
+    searchService.searchMany.mockResolvedValue(
+      new Map([
+        [
+          'red apples',
+          {
+            query: 'red apples',
+            total: 1,
+            results: [{ assetId: 'weak-hit', similarity: 0.2 }],
+          },
+        ],
+      ]),
+    );
+
+    const { slots, structure } = await strictService.attachAssets({
+      items: [{ imageQuery: 'red apples' }],
+    });
+
+    expect(slots[0].assetId).toBeUndefined();
+    expect(structure).toEqual({
+      items: [{ imageQuery: 'red apples' }],
     });
   });
 });

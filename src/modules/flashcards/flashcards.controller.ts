@@ -340,6 +340,37 @@ export class FlashcardsController {
     return data;
   }
 
+  @Get('flow-type')
+  @ApiOperation({
+    summary: 'Proxy request to fetch teacher-resource flow types from Gyan API',
+  })
+  async getFlowTypes(
+    @Query('schoolId') schoolId: string,
+    @Headers('authorization') authorization: string,
+  ) {
+    const baseUrl = this.configService.get<string>('flashcards.gyanApiBaseUrl');
+    const url = `${baseUrl}/api/gyan/V1/teacher-resource/flow-type?schoolId=${encodeURIComponent(schoolId || '')}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json, text/plain, */*',
+        'accept-language': 'en-US,en;q=0.9',
+        authorization,
+      },
+    });
+
+    if (!response.ok) {
+      console.log('response', response.json(), 'URL////////////////////////////////////////////////////////////////////////////////////////////////////////////////////', url);
+      throw new HttpException(
+        'Failed to fetch flow types from Gyan API',
+        response.status,
+      );
+    }
+
+    return response.json();
+  }
+
   @Get('templates')
   @ApiOperation({
     summary: 'List all flashcard templates (id, name, templateType, layoutType)',

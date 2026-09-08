@@ -3,12 +3,19 @@ import { toondemyFontUrl, toondemyTextCss } from '../../../common/ui/toondemy-fo
 import { GENERIC_RENDERER_TYPE } from '../constants/worksheet.constants';
 import { WorksheetRenderInput, WorksheetRenderMode } from '../types/worksheet.types';
 import {
+  bindGenericEditorHooks,
   flattenTemplateTokens,
+  imageZoneForSlot,
+  injectLookAndSayCaptions,
   injectMatchingPairMarkup,
+  injectPairImagesMarkup,
+  injectSentenceRowMarkup,
+  injectWorksheetItemsMarkup,
   positionMatchingPairItems,
   resolveImageSlot,
+  type ImageZoneBox,
 } from '../utils/template-tokens.util';
-import { visualQueryFromImageRecord } from '../utils/structure.util';
+import { unifyBeforeAfterSharedMascot, visualQueryFromImageRecord } from '../utils/structure.util';
 import { WorksheetRenderer } from './worksheet-renderer.interface';
 
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -46,8 +53,24 @@ body.export-mode .img-camera-btn,
 body.export-mode .img-zone-box {
   display: none !important;
 }
-img[data-image-slot] {
+img.worksheet-bg {
+  z-index: 0;
+}
+img[data-image-slot],
+img.worksheet-image {
   object-fit: contain;
+  z-index: 2;
+}
+.center-circle,
+.letter-upper,
+.letter-lower {
+  z-index: 8;
+}
+.caption,
+.topic,
+.badge,
+.instruction-pill {
+  z-index: 6;
 }
 </style>
 `;
@@ -75,27 +98,82 @@ const EDITOR_BRIDGE = `
   window.addEventListener('message', function (event) {
     var data = event.data || {};
     if (data.type !== 'worksheet-set-image') return;
-    var nodes = [];
-    document.querySelectorAll('[data-ws-target="active"]').forEach(function (n) { nodes.push(n); });
-    if (data.path) {
-      document.querySelectorAll('[data-field-path="' + data.path + '"]').forEach(function (n) { nodes.push(n); });
+    function cssAttr(name, value) {
+      return '[' + name + '="' + String(value || '').replace(/"/g, '') + '"]';
     }
-    if (data.slotId) {
-      document.querySelectorAll('[data-image-slot="' + data.slotId + '"]').forEach(function (n) { nodes.push(n); });
+    function asImg(el) {
+      if (!el) return null;
+      return el.tagName === 'IMG' ? el : (el.querySelector && el.querySelector('img'));
     }
-    if (!nodes.length) {
-      document.querySelectorAll('img.worksheet-image, img[data-image-slot]').forEach(function (n) { nodes.push(n); });
+    var node = asImg(document.querySelector('[data-ws-target="active"]'));
+    if (!node && data.path) {
+      var byPath = document.querySelectorAll('img' + cssAttr('data-field-path', data.path));
+      node = byPath.length === 1 ? byPath[0] : asImg(document.querySelector('[data-ws-target="active"]'));
+      if (!node && byPath.length) node = byPath[0];
     }
-    if (!nodes.length) {
-      document.querySelectorAll('img').forEach(function (n) {
-        if (n.classList.contains('worksheet-bg')) return;
-        if (n.closest && (n.closest('.ai-pencil') || n.closest('.img-camera-btn'))) return;
-        var src = n.getAttribute('src') || '';
-        if (/pencil/i.test(src)) return;
-        nodes.push(n);
-      });
+    if (!node && data.slotId) {
+      var bySlot = document.querySelectorAll('img' + cssAttr('data-image-slot', data.slotId));
+      if (bySlot.length === 1) node = bySlot[0];
     }
-    nodes.forEach(function (el) { applySrc(el, data.src); });
+    if (!node && (data.path === 'image' || data.slotId === 'image' || data.slotId === 'main_image' || data.slotId === 'goat')) {
+      node = asImg(document.querySelector('.image-wrap img:not(.worksheet-bg), .img-zone-box img, img[data-field-path="image"]'));
+    }
+    if (node) applySrc(node, data.src);
+  });
+  function parseSelectId(el) {
+    if (!el || !el.getAttribute) return '';
+    var fromAttr = el.getAttribute('data-image-slot') || '';
+    if (fromAttr) return fromAttr;
+    var oc = el.getAttribute('onclick') || '';
+    var pair = oc.match(/selectPairImage\\(\\s*['"]([^'"]+)['"]\\s*,\\s*['"](left|right)['"]/);
+    if (pair) {
+      var pn = String(pair[1]).match(/(\\d+)$/);
+      return pn ? ('IMAGE_' + pn[1] + '_' + String(pair[2]).toUpperCase()) : (pair[1] + '_' + pair[2]);
+    }
+    var match = oc.match(/selectWorksheetImage\\(\\s*['"]([^'"]+)['"]/);
+    return match ? match[1] : '';
+  }
+  function inferItemPath(slotId) {
+    var pair = String(slotId || '').match(/^IMAGE_?(\\d+)_(LEFT|RIGHT)$/i)
+      || String(slotId || '').match(/^pair[_-]?(\\d+)[_./-](left|right)/i);
+    if (pair) {
+      return 'pairs[' + (Number(pair[1]) - 1) + '].' + String(pair[2]).toLowerCase() + '_image';
+    }
+    var n = String(slotId || '').match(/^(?:item|image|img|slot)_?(\\d+)$/i);
+    return n ? ('items[' + (Number(n[1]) - 1) + ']') : '';
+  }
+  function selectImage(slotId, path, img) {
+    document.querySelectorAll('[data-ws-target]').forEach(function (el) { el.removeAttribute('data-ws-target'); });
+    if (img) img.setAttribute('data-ws-target', 'active');
+    emit('worksheet-replace-image', {
+      slotId: slotId || (img && img.getAttribute('data-image-slot')) || 'image',
+      path: path || (img && img.getAttribute('data-field-path')) || inferItemPath(slotId) || 'image'
+    });
+  }
+  function selectWorksheetImageBridge(itemId) {
+    if (!document.body.classList.contains('edit-mode')) return;
+    var img = document.querySelector('img[data-image-slot="' + String(itemId || '').replace(/"/g, '') + '"]');
+    selectImage(itemId, inferItemPath(itemId) || (img && img.getAttribute('data-field-path')), img);
+  }
+  function selectPairImageBridge(pairId, side) {
+    if (!document.body.classList.contains('edit-mode')) return;
+    var n = String(pairId || '').match(/(\\d+)$/);
+    var slotId = n ? ('IMAGE_' + n[1] + '_' + String(side || 'left').toUpperCase()) : (String(pairId) + '_' + side);
+    var path = inferItemPath(slotId);
+    var img = document.querySelector('img[data-image-slot="' + slotId.replace(/"/g, '') + '"], img[data-field-path="' + String(path).replace(/"/g, '') + '"]');
+    selectImage(slotId, path, img);
+  }
+  // Prototype templates declare their own select* helpers later in the body,
+  // which would shadow these, so reclaim the names after parsing.
+  window.selectWorksheetImage = selectWorksheetImageBridge;
+  window.selectPairImage = selectPairImageBridge;
+  document.addEventListener('DOMContentLoaded', function () {
+    window.selectWorksheetImage = selectWorksheetImageBridge;
+    window.selectPairImage = selectPairImageBridge;
+  });
+  window.addEventListener('load', function () {
+    window.selectWorksheetImage = selectWorksheetImageBridge;
+    window.selectPairImage = selectPairImageBridge;
   });
   document.addEventListener('click', function (event) {
     var target = event.target;
@@ -118,22 +196,28 @@ const EDITOR_BRIDGE = `
       return;
     }
     var camera = target.closest('.img-camera-btn, [data-editor-control]');
-    var slot = target.closest('[data-image-slot], [data-editor-control][data-image-slot], .worksheet-image, .img-zone-box');
-    if (camera && !slot) {
-      var zone = camera.closest('.img-zone-box, .img-zone, .image-wrap') || camera.parentElement;
-      slot = zone && (zone.querySelector('[data-image-slot], img.worksheet-image, img') || zone);
+    var zone = target.closest('.img-zone-box, .img-zone');
+    var slot = target.closest('[data-image-slot], [data-editor-control][data-image-slot], .worksheet-image, .img-zone-box, img');
+    if (slot && (slot.classList.contains('worksheet-bg') || (slot.closest && (slot.closest('.ai-pencil') || slot.closest('.img-camera-btn'))))) {
+      slot = null;
     }
-    if (slot) {
+    if (camera && !slot) {
+      slot = camera.closest('.img-zone-box, .img-zone, .image-wrap') || camera;
+    }
+    if (slot || camera || zone) {
       event.preventDefault();
       event.stopPropagation();
-      document.querySelectorAll('[data-ws-target]').forEach(function (el) { el.removeAttribute('data-ws-target'); });
-      slot.setAttribute('data-ws-target', 'active');
-      var img = slot.tagName === 'IMG' ? slot : slot.querySelector('img');
+      var host = slot || zone || camera;
+      var slotId = parseSelectId(host) || parseSelectId(camera) || parseSelectId(zone);
+      var img = host && host.tagName === 'IMG' ? host : (host && host.querySelector && host.querySelector('img:not(.worksheet-bg)'));
+      if (!img && slotId) {
+        img = document.querySelector('img[data-image-slot="' + String(slotId).replace(/"/g, '') + '"]');
+      }
+      var path = (host && host.getAttribute && host.getAttribute('data-field-path'))
+        || (img && img.getAttribute('data-field-path'))
+        || inferItemPath(slotId);
       if (img) img.setAttribute('data-ws-target', 'active');
-      emit('worksheet-replace-image', {
-        slotId: (slot.getAttribute('data-image-slot') || (img && img.getAttribute('data-image-slot')) || ''),
-        path: (slot.getAttribute('data-field-path') || (img && img.getAttribute('data-field-path')) || undefined)
-      });
+      selectImage(slotId, path, img);
       return;
     }
     var field = target.closest('[data-editable]');
@@ -198,7 +282,7 @@ function stringifyValue(value: unknown): string {
   if (typeof value === 'number' || typeof value === 'boolean') {
     return escapeHtml(String(value));
   }
-  return escapeHtml(JSON.stringify(value));
+  return '';
 }
 
 function isUsableSrc(value: string): boolean {
@@ -206,27 +290,64 @@ function isUsableSrc(value: string): boolean {
   return trimmed.length > 0 && !/^(null|undefined)$/i.test(trimmed);
 }
 
+function itemNodeBySlot(
+  structure: Record<string, unknown>,
+  slotId: string,
+): unknown {
+  const pairSide = slotId.match(
+    /^IMAGE[_-]?(\d+)[_-](left|right)$/i,
+  ) || slotId.match(/^pair[_-]?(\d+)[_./-](left|right)/i);
+  if (pairSide && Array.isArray(structure.pairs)) {
+    const pair = structure.pairs[Number(pairSide[1]) - 1];
+    if (isRecord(pair)) {
+      return pair[`${pairSide[2].toLowerCase()}_image`];
+    }
+  }
+  const n = slotId.match(/^(?:item|image|img|slot)_?(\d+)$/i)?.[1];
+  if (!n || !Array.isArray(structure.items)) {
+    return undefined;
+  }
+  return structure.items[Number(n) - 1];
+}
+
 function slotUrl(
   structure: Record<string, unknown>,
   slotId: string,
-): { src: string; alt: string; path: string; slotId: string } {
+): { src: string; alt: string; path: string; slotId: string; replaced: boolean } {
   const match = resolveImageSlot(structure, slotId);
   const node = match?.path
     ? lookup(structure, match.path.replace(/\[(\d+)\]/g, '.$1'))
-    : lookup(structure, slotId);
+    : lookup(structure, slotId) ?? itemNodeBySlot(structure, slotId);
   const record = isRecord(node) ? node : {};
+  const replacement =
+    typeof record.imageUrl === 'string' && isUsableSrc(record.imageUrl)
+      ? record.imageUrl
+      : '';
   const rawSrc =
+    replacement ||
     (typeof record.assetUrl === 'string' && record.assetUrl) ||
-    (typeof record.imageUrl === 'string' && record.imageUrl) ||
     '';
+  const pairSide = slotId.match(/^IMAGE[_-]?(\d+)[_-](left|right)$/i);
+  const itemNumbered = slotId.match(/^(?:item|image|img|slot)_?(\d+)$/i);
+  const fallbackPath = pairSide
+    ? `pairs[${Number(pairSide[1]) - 1}].${pairSide[2].toLowerCase()}_image`
+    : itemNumbered && Array.isArray(structure.items)
+      ? `items[${Number(itemNumbered[1]) - 1}]`
+      : slotId;
+  const fallbackSlot = pairSide
+    ? `IMAGE_${pairSide[1]}_${pairSide[2].toUpperCase()}`
+    : itemNumbered
+      ? `item_${itemNumbered[1]}`
+      : slotId;
   return {
     src: isUsableSrc(rawSrc) ? rawSrc : '',
+    replaced: Boolean(replacement),
     alt:
       match?.imageQuery ||
       visualQueryFromImageRecord(record) ||
       slotId,
-    path: match?.path || slotId,
-    slotId: match?.slotId || slotId,
+    path: match?.path || fallbackPath,
+    slotId: match?.slotId || fallbackSlot,
   };
 }
 
@@ -234,19 +355,88 @@ function imageTag(
   slotId: string,
   resolved: { src: string; alt: string; path: string; slotId: string },
   positioned: boolean,
+  zone?: ImageZoneBox,
 ): string {
-  const style = positioned
-    ? 'position:absolute;left:70px;top:300px;width:200px;height:200px;object-fit:contain;'
-    : 'object-fit:contain;';
+  const style = zone
+    ? `position:absolute;left:${zone.left}px;top:${zone.top}px;width:${zone.width}px;height:${zone.height}px;object-fit:contain;z-index:2;`
+    : positioned
+      ? 'position:absolute;left:70px;top:300px;width:200px;height:200px;object-fit:contain;z-index:2;'
+      : 'object-fit:contain;z-index:2;';
   const srcAttr = isUsableSrc(resolved.src)
     ? ` src="${escapeHtml(resolved.src)}"`
     : '';
   return `<img class="worksheet-image" data-image-slot="${escapeHtml(resolved.slotId || slotId)}" data-field-path="${escapeHtml(resolved.path)}"${srcAttr} alt="${escapeHtml(resolved.alt)}" style="${style}" />`;
 }
 
+function htmlHasImageSlot(html: string, slotId: string): boolean {
+  const pairSide = slotId.match(/^IMAGE[_-]?(\d+)[_-](left|right)$/i);
+  const n = slotId.match(/^(?:item|image|img|slot)_?(\d+)$/i)?.[1];
+  const aliases = [
+    slotId,
+    pairSide
+      ? `pairs[${Number(pairSide[1]) - 1}].${pairSide[2].toLowerCase()}_image`
+      : '',
+    pairSide
+      ? `IMAGE_${pairSide[1]}_${pairSide[2].toUpperCase()}`
+      : '',
+    n ? `item_${n}` : '',
+    n ? `IMAGE_${n}` : '',
+    n ? `items[${Number(n) - 1}]` : '',
+    'main_image',
+    'image',
+    'goat',
+    'hero',
+  ].filter(Boolean);
+  return aliases.some((id) =>
+    new RegExp(`data-image-slot=["']${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`, 'i').test(
+      html,
+    ),
+  );
+}
+
 function applyImageSlots(html: string, structure: Record<string, unknown>): string {
-  const withTokens = html.replace(/\{\{IMAGE:([A-Za-z0-9_]+)\}\}/g, (_match, slotId: string) => {
-    return imageTag(slotId, slotUrl(structure, slotId), false);
+  const withPairSides = html.replace(
+    /\{\{\s*IMAGE[_:]?(\d+)[_-](LEFT|RIGHT)\s*\}\}/gi,
+    (_match, n: string, side: string) => {
+      const slotId = `IMAGE_${n}_${side.toUpperCase()}`;
+      if (htmlHasImageSlot(html, slotId)) {
+        return '';
+      }
+      return imageTag(
+        slotId,
+        slotUrl(structure, slotId),
+        true,
+        imageZoneForSlot(html, slotId),
+      );
+    },
+  );
+
+  const withNumbered = withPairSides.replace(
+    /\{\{\s*IMAGE[_:](\d+)\s*\}\}/gi,
+    (_match, n: string) => {
+      const slotId = `item_${n}`;
+      if (htmlHasImageSlot(withPairSides, slotId)) {
+        return '';
+      }
+      return imageTag(
+        slotId,
+        slotUrl(structure, slotId),
+        true,
+        imageZoneForSlot(withPairSides, slotId),
+      );
+    },
+  );
+
+  const withTokens = withNumbered.replace(/\{\{IMAGE:([A-Za-z0-9_]+)\}\}/g, (_match, slotId: string) => {
+    if (htmlHasImageSlot(withNumbered, slotId)) {
+      return '';
+    }
+    return imageTag(
+      slotId,
+      slotUrl(structure, slotId),
+      false,
+      imageZoneForSlot(withNumbered, slotId),
+    );
   });
 
   const withNamed = withTokens.replace(
@@ -255,8 +445,24 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
       if (name === 'BACKGROUND_IMAGE') {
         return full;
       }
-      const slotId = name.replace(/_IMAGE$/i, '');
-      return imageTag(slotId, slotUrl(structure, slotId), true);
+      const base = name.replace(/_IMAGE$/i, '');
+      const resolved = slotUrl(structure, base);
+      const slotId = resolved.slotId || base;
+      // Prefer explicit ids like scene_image over bare SCENE so zone boxes match.
+      const zoneKeys = [
+        slotId,
+        base,
+        `${base.toLowerCase()}_image`,
+        'scene_image',
+        'image',
+      ];
+      if (zoneKeys.some((id) => htmlHasImageSlot(withTokens, id))) {
+        return '';
+      }
+      const zone =
+        zoneKeys.map((id) => imageZoneForSlot(withTokens, id)).find(Boolean) ||
+        undefined;
+      return imageTag(slotId, resolved, true, zone);
     },
   );
 
@@ -265,8 +471,12 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
     (_full, attrs: string, slotId: string) => {
       const resolved = slotUrl(structure, slotId);
       const existingSrc = attrs.match(/\bsrc=(["'])(.*?)\1/i)?.[2] ?? '';
-      let next = attrs.replace(/\s*\bsrc=(["']).*?\1/i, '');
-      const src = isUsableSrc(existingSrc) ? existingSrc : resolved.src;
+      let next = attrs
+        .replace(/\s*\bsrc=(["']).*?\1/i, '')
+        .replace(/\s*\/\s*$/, '');
+      const src = isUsableSrc(resolved.src)
+        ? resolved.src
+        : existingSrc;
       if (isUsableSrc(src)) {
         next += ` src="${escapeHtml(src)}"`;
       }
@@ -275,6 +485,23 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
       }
       if (!/\bdata-field-path=/i.test(next)) {
         next += ` data-field-path="${escapeHtml(resolved.path)}"`;
+      }
+      // Before/after + maze mascots are already absolutely positioned by their
+      // parent box. Do not re-apply look-and-say / tracing default zones.
+      const alreadyPlaced =
+        /\b(?:item-mascot-img|maze-item-img)\b/i.test(attrs) ||
+        /left\s*:/i.test(next);
+      const zone = alreadyPlaced ? undefined : imageZoneForSlot(html, slotId);
+      if (zone) {
+        if (/\bstyle=/i.test(next)) {
+          next = next.replace(
+            /style=(["'])([\s\S]*?)\1/i,
+            (_m, quote: string, style: string) =>
+              `style=${quote}${style};position:absolute;left:${zone.left}px;top:${zone.top}px;width:${zone.width}px;height:${zone.height}px;object-fit:contain;z-index:2;${quote}`,
+          );
+        } else {
+          next += ` style="position:absolute;left:${zone.left}px;top:${zone.top}px;width:${zone.width}px;height:${zone.height}px;object-fit:contain;z-index:2;"`;
+        }
       }
       return `<img${next}>`;
     },
@@ -357,6 +584,11 @@ export function restoreNullPlaceholders(html: string): string {
     /(data-editable=["']([A-Za-z0-9_]+)["'][^>]*>)\s*NULL\s*</g,
     '$1{{$2}}<',
   );
+  next = next.replace(
+    /(class=["'][^"']*\bword-bank\b[^"']*["'][^>]*>)\s*NULL\s*</gi,
+    '$1{{WORD_BANK_ITEMS}}<',
+  );
+  next = next.replace(/>\s*NULL\s*(?={{ROWS}}|<div class="worksheet-row)/g, '>{{ROWS}}');
   next = next.replace(/>\s*NULL\s*</g, '>{{GOAT_IMAGE}}<');
   next = next.replace(
     /(<\/div>)\s*NULL\s*(?=<!--|<div|<button|<img)/g,
@@ -392,6 +624,7 @@ export function sanitizeComposedHtml(
     /(\s(?:src|href))\s*=\s*(['"])(?:null|undefined)?\2/gi,
     '',
   );
+  next = next.replace(/<\/body>\s*<\/html>\s*<\/body>\s*<\/html>/gi, '</body></html>');
   return next;
 }
 
@@ -414,6 +647,7 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
   render(input: WorksheetRenderInput): string {
     const mode: WorksheetRenderMode = input.mode ?? 'export';
     const fontPath = input.fontPath?.trim() || toondemyFontUrl();
+    const structure = unifyBeforeAfterSharedMascot(input.structure);
     const extras: Record<string, unknown> = {
       backgroundAssetUrl: input.backgroundAssetUrl ?? '',
       BACKGROUND_IMAGE: input.backgroundAssetUrl ?? '',
@@ -422,15 +656,20 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
       fontPath,
       FONT_PATH: fontPath,
     };
-    const context = flattenTemplateTokens(input.structure, extras);
+    const context = flattenTemplateTokens(structure, extras);
     let html = restoreNullPlaceholders(input.templateHtml);
-    html = injectMatchingPairMarkup(html, input.structure, input.pencilIconUrl);
+    html = injectMatchingPairMarkup(html, structure, input.pencilIconUrl);
+    html = injectPairImagesMarkup(html, structure);
+    html = injectSentenceRowMarkup(html, structure, input.pencilIconUrl);
+    html = injectWorksheetItemsMarkup(html, structure, input.pencilIconUrl);
     html = this.renderTemplate(html, context);
-    html = positionMatchingPairItems(html, input.structure);
+    html = positionMatchingPairItems(html, structure);
     html = applyImageSlots(html, {
-      ...input.structure,
+      ...structure,
       ...context,
     });
+    html = injectLookAndSayCaptions(html, structure);
+    html = bindGenericEditorHooks(html, structure);
     html = applyBodyClass(html, mode);
     if (input.canvas) {
       html = applyCanvasSize(html, input.canvas);
@@ -475,10 +714,13 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
 
     return withSections.replace(/\{\{([^#/][^}]*)\}\}/g, (_match, rawPath: string) => {
       const path = rawPath.trim();
-      if (!path || path.includes('(') || path.includes(';') || path.startsWith('IMAGE:') || (/_IMAGE$/i.test(path) && path !== 'BACKGROUND_IMAGE')) {
-        return path.startsWith('IMAGE:') || (/_IMAGE$/i.test(path) && path !== 'BACKGROUND_IMAGE')
-          ? `{{${path}}}`
-          : '';
+      const isImageToken =
+        path.startsWith('IMAGE:') ||
+        /^IMAGE_\d+$/i.test(path) ||
+        /^IMAGE_\d+_(LEFT|RIGHT)$/i.test(path) ||
+        (/_IMAGE$/i.test(path) && path !== 'BACKGROUND_IMAGE');
+      if (!path || path.includes('(') || path.includes(';') || isImageToken) {
+        return isImageToken ? `{{${path}}}` : '';
       }
       return stringifyValue(lookup(context, path));
     });

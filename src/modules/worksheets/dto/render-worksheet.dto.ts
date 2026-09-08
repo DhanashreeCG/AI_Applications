@@ -2,12 +2,12 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RenderWorksheetDto {
   @ApiProperty({
-    enum: ['html', 'webp', 'pdf'],
-    example: 'pdf',
+    enum: ['html', 'webp', 'png', 'pdf'],
+    example: 'png',
     description:
-      'html returns the same markup used for preview/export. webp/pdf are Playwright captures of export-mode HTML.',
+      'html returns the same markup used for preview/export. webp/png/pdf are Playwright captures of export-mode HTML.',
   })
-  format!: 'html' | 'webp' | 'pdf';
+  format!: 'html' | 'webp' | 'png' | 'pdf';
 
   @ApiPropertyOptional({
     enum: ['editor', 'export'],

@@ -5,6 +5,7 @@ import { WorksheetEditService } from './services/worksheet-edit.service';
 import { WorksheetRenderService } from './services/worksheet-render.service';
 import { WorksheetTemplateService } from './services/worksheet-template.service';
 import { AssetImageService } from '../flashcards/services/asset-image.service';
+import { WorksheetRenderNotifyService } from './services/worksheet-render-notify.service';
 
 describe('WorksheetsController', () => {
   const generationService = {
@@ -23,6 +24,8 @@ describe('WorksheetsController', () => {
     uploadImage: jest.fn(),
     loadUserUpload: jest.fn(),
     regenerate: jest.fn(),
+    correctGrammar: jest.fn(),
+    searchLibrary: jest.fn(),
   };
   const renderService = {
     render: jest.fn(),
@@ -43,6 +46,7 @@ describe('WorksheetsController', () => {
         { provide: WorksheetRenderService, useValue: renderService },
         { provide: WorksheetTemplateService, useValue: templateService },
         { provide: AssetImageService, useValue: assetImageService },
+        { provide: WorksheetRenderNotifyService, useValue: {} },
       ],
     }).compile();
     controller = moduleRef.get(WorksheetsController);

@@ -16,7 +16,7 @@ export const WORKSHEET_ERROR_CODES = [
 
 export type WorksheetErrorCode = (typeof WORKSHEET_ERROR_CODES)[number];
 
-export const WORKSHEET_RENDER_FORMATS = ['html', 'webp', 'pdf'] as const;
+export const WORKSHEET_RENDER_FORMATS = ['html', 'webp', 'png', 'pdf'] as const;
 export type WorksheetRenderFormat = (typeof WORKSHEET_RENDER_FORMATS)[number];
 
 export const WORKSHEET_RENDER_MODES = ['editor', 'export'] as const;
@@ -26,7 +26,15 @@ export interface WorksheetTemplateMeta {
   grades?: string[];
   subjects?: string[];
   topics?: string[];
+  /** Closed-vocabulary theme for FS0–FS2 templates. */
+  theme?: string;
+  /** Leaf topics under `theme` (FS0–FS2). */
+  subTopics?: string[];
+  /** One or more of the 15-item activity taxonomy. */
+  activityType?: string[];
+  /** Required for auto-select eligibility (Stage 1). */
   ageMin?: number;
+  /** Required for auto-select eligibility (Stage 1). */
   ageMax?: number;
   difficulty?: string[];
 }
@@ -90,6 +98,9 @@ export interface GenerateWorksheetRequest {
   difficulty?: string;
   language?: string;
   templateId?: string;
+  countryCode?: string;
+  count?: number;
+  fields?: Record<string, string>;
 }
 
 export interface GenerateWorksheetResponse {
@@ -100,11 +111,15 @@ export interface GenerateWorksheetResponse {
     slug: string;
     name: string;
     rendererType: string;
+    aiEditPopupHtml?: string | null;
+    aiEditConfigJs?: string | null;
+    aiEditPanelJs?: string | null;
   };
   request: GenerateWorksheetRequest;
   structure: Record<string, unknown>;
   html?: string;
   canvas?: { width: number; height: number };
+  fieldPrompts?: Record<string, string>;
 }
 
 export interface WorksheetRenderInput {
