@@ -75,6 +75,8 @@ export function buildWorksheetContentPrompt(input: {
   count?: number;
   systemPrompt?: string | null;
   currentStructure?: Record<string, unknown> | null;
+  /** From WorksheetTemplateSelectionProfile — how to adapt the layout to the topic. */
+  adaptationNote?: string | null;
 }): string {
   const request = input.request;
   const count = Math.max(1, input.count ?? (request.count ? Number(request.count) : 1));
@@ -128,6 +130,13 @@ export function buildWorksheetContentPrompt(input: {
       ].join('\n')
     : '';
 
+  const adaptationBlock = input.adaptationNote?.trim()
+    ? [
+        'Template adaptation guidance (follow while keeping the same interaction pattern):',
+        input.adaptationNote.trim(),
+      ].join('\n')
+    : '';
+
   return [
     input.systemPrompt?.trim() || 'You generate educational worksheet CONTENT only.',
     formatInstruction,
@@ -150,6 +159,7 @@ export function buildWorksheetContentPrompt(input: {
     '',
     `Template: ${input.templateName} (${input.templateSlug})`,
     input.templateDescription ? `Description: ${input.templateDescription}` : '',
+    adaptationBlock,
     '',
     'Educational request:',
     userRequest || 'Generate age-appropriate worksheet content for the selected template.',
@@ -190,8 +200,11 @@ export function buildWorksheetContentPrompt(input: {
       ? [
           'For match-the-pairs picture worksheets:',
           '- Return one worksheet with pairs[] (typically 5). Do not unwrap pairs into separate worksheets.',
-          '- Each pair needs label plus left_imageQuery and right_imageQuery as visual phrases (e.g. "cartoon eye"), not filenames.',
-          '- left and right images for a pair should match (same body part / object).',
+          '- Each pair needs: id, label, left_image, and right_image.',
+          '- left_image and right_image must be objects with imageQuery as a visual phrase (e.g. {"imageQuery":"cartoon red planet mars"}), not bare strings and not filenames.',
+          '- Do NOT invent left_imageQuery / right_imageQuery fields — use left_image.imageQuery and right_image.imageQuery only.',
+          '- For identical-pair matching, left and right imageQuery values for the same pair should match (same planet / object).',
+          '- Across different pairs, imageQuery values should be visually distinct.',
           '',
         ]
       : []),
@@ -244,6 +257,24 @@ export function buildWorksheetContentPrompt(input: {
       '- items[] has exactly 4 vocabulary clouds: id item_1..item_4, word (lowercase, starts with target), imageQuery (visual phrase, not filename).',
       '- All 4 words must be distinct and start with the target letter. Keep worksheet_type as look_and_say_circle_the_letters.',
       '- topic should be "Letters" or "Letter X", not an unrelated theme name.',
+      ''
+    ] : []),
+    ...(input.templateSlug === 'storytime_maze' ? [
+      'For storytime_maze worksheets:',
+      '- Exactly 3 items[]: item_start (start_character), item_obstacle (story_element), item_finish (goal).',
+      '- Each item needs id, role, label, imageQuery (visual phrase, not filename), and position { left, top, width, height }.',
+      '- Keep positions near the sample anchors: start bottom-left (~35,910,200x140), obstacle compact in-maze (~630,560,155x155), finish bottom-right (~840,905,125x145).',
+      '- instruction_text should tell the child to help the start character reach the goal without disturbing the obstacle.',
+      '- Keep worksheet_type as storytime_maze.',
+      ''
+    ] : []),
+    ...(input.templateSlug === 'numbers_after_and_before' ? [
+      'For numbers_after_and_before worksheets:',
+      '- Set mode to "before" or "after". Use blank_position "left" for before (given number on the right) and "right" for after.',
+      '- Exactly 8 items[] in row-major order (2 columns × 4 rows): id item_1..item_8, number (the given digit), blank_position.',
+      '- CRITICAL: All 8 items MUST share the SAME imageQuery (one cute mascot character, e.g. "cute cartoon penguin"). Do NOT invent a different image per cell — the worksheet repeats one image between every pair of circles.',
+      '- Include number_line { start, end, show } and/or number_line_numbers covering the printed line (usually 0..10).',
+      '- instruction_text must match the mode (before vs after). Keep worksheet_type as Numbers_afterandbefore.',
       ''
     ] : []),
     'Template metadata:',
@@ -321,7 +352,7 @@ export function buildWorksheetGrammarPrompt(input: {
   ].join('\n');
 }
 
-export const WORKSHEET_TEMPLATE_SELECTION_PROMPT_VERSION = 'v2-three-stage';
+export const WORKSHEET_TEMPLATE_SELECTION_PROMPT_VERSION = 'v3.1-activity-identity';
 
 export const WORKSHEET_TEMPLATE_SELECTION_AI_STAGE = 'worksheet_template_selection';
 
@@ -401,7 +432,8 @@ in allowedTemplateIds for each request.
 INPUT YOU WILL RECEIVE
 - A static TEMPLATE CATALOG (system message) describing candidate templates:
   id, name, category, subjects, topics, theme, subTopics, activityType,
-  difficulty, ageMin, ageMax.
+  difficulty, ageMin, ageMax, and when present a selection profile:
+  primaryUse, canBeUsedFor, exampleTopics, skillsPracticed.
 - A per-request user JSON with:
   - query: the original user request, verbatim.
   - topic: the subject/skill the worksheets should teach.
@@ -411,9 +443,27 @@ INPUT YOU WILL RECEIVE
     Prefer these over re-deriving intent from raw query/topic.
   - optional: grade, subject, difficulty.
 
+SELECTION PROFILE RULES (when present on a catalog entry)
+- canBeUsedFor and exampleTopics are ILLUSTRATIVE, not exhaustive. A request topic
+  that is not literally listed can still be an excellent fit if it matches the same
+  underlying pedagogical pattern.
+- Prefer matching the request's topic/intent against primaryUse first (general purpose),
+  then treat canBeUsedFor / exampleTopics as confirming evidence — do not string-match
+  example topics too literally.
+- Factor skillsPracticed in only when the request explicitly cares about a skill
+  (e.g. "fine motor", "phonics") or when two templates are otherwise tied.
+- ACTIVITY FORMAT BEATS TOPIC-ONLY FIT: when the query names an activity pattern
+  (e.g. "match the pairs", "match pairs of …", "circle the …", "trace …", "maze"),
+  prefer the template whose name/slug/primaryUse matches that activity format.
+  Example: "match the pairs of planets" → a matching/two-column template
+  (match_the_pairs), NOT a circle-to-classify template — even if both could involve planets.
+  Do not treat circle_the_things as a default for every thematic topic.
+
 DECISION PROCEDURE
-Trust classification hints when present. Use query/topic only to break ties
-among templates that already match those hints.
+Trust classification hints when present. Use query/topic and selection-profile
+fields to break ties among templates that already match those hints.
+When classification.activityIntent is "Match the Pairs" (or the query says match/pairs),
+prefer match_the_pairs over circle/classification layouts.
 
 CONSTRAINTS
 - You MUST return a selectedTemplateId that appears in allowedTemplateIds,

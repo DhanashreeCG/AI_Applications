@@ -481,7 +481,7 @@ export class WorksheetTemplateSelectionAiService {
   private buildCatalogBlock(templates: WorksheetTemplateRecord[]): string {
     const list = templates.map((t) => {
       const meta = this.templateService.parseMeta(t);
-      return {
+      const entry: Record<string, unknown> = {
         id: t.id,
         name: t.name,
         category: t.category,
@@ -494,6 +494,15 @@ export class WorksheetTemplateSelectionAiService {
         ageMin: meta.ageMin,
         ageMax: meta.ageMax,
       };
+      const profile = t.selectionProfile;
+      if (profile) {
+        entry.primaryUse = profile.primaryUse;
+        entry.canBeUsedFor = profile.canBeUsedFor;
+        entry.exampleTopics = profile.exampleTopics;
+        entry.skillsPracticed = profile.skillsPracticed;
+        // adaptationNote intentionally omitted — authoring guidance for content gen only
+      }
+      return entry;
     });
     return `TEMPLATE CATALOG:\n${JSON.stringify(list, null, 2)}`;
   }

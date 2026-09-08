@@ -13,14 +13,27 @@ How a template is chosen during worksheet generation.
 | Stage 2 classify + Stage 3 LLM picker | `src/modules/worksheets/services/worksheet-template-selection-ai.service.ts` |
 | Age band helpers | `src/modules/worksheets/utils/age-band.util.ts` |
 | FS0–FS2 taxonomy + scoring knobs | `src/modules/worksheets/constants/worksheet-template-taxonomy.constants.ts` |
-| Selection / classify prompts + JSON schema | `src/modules/worksheets/constants/worksheet-prompt.constants.ts` |
+| Selection / classify / content prompts + JSON schema | `src/modules/worksheets/constants/worksheet-prompt.constants.ts` |
 | Catalog load / meta parse / explicit lookup | `src/modules/worksheets/services/worksheet-template.service.ts` |
 | Request validation | `src/modules/worksheets/services/worksheet-validation.service.ts` |
 | AI / telemetry types | `src/modules/worksheets/interfaces/worksheet-template-selection-ai.interfaces.ts` |
 | Template `meta` shape | `src/modules/worksheets/types/worksheet.types.ts` → `WorksheetTemplateMeta` |
+| Per-template selection profile (optional 1:1) | Prisma `WorksheetTemplateSelectionProfile` |
+| Seed / slug-drift scripts | `scripts/seed-worksheet-template-selection-profiles.ts`, `scripts/check-worksheet-selection-profile-slug-drift.ts` |
+| Seed fixture | `docs/worksheet/seed-data.json` |
 | Config | `src/config/configuration.ts` → `worksheets.templateSelectionAi` |
 
 Worksheets do **not** use a flashcard-style `TemplateSelectionRule` table. There is **no hardcoded default template slug**.
+
+### Selection profile (optional)
+
+`WorksheetTemplateSelectionProfile` is a **1:1 optional** row per template (`templateId` unique). Templates with no profile stay fully selectable; Stage 2/3 fall back to `meta` only.
+
+| Field | Used for |
+| --- | --- |
+| `primaryUse`, `canBeUsedFor`, `exampleTopics`, `skillsPracticed` | Stage 3 catalog + prompt; Stage 2 fuzzy +6 on `canBeUsedFor`/`exampleTopics` |
+| `adaptationNote` | Content-generation prompt only (not Stage 3 selection) |
+| `templateSlug` | Denormalized; drift-checked vs `WorksheetTemplate.slug` |
 
 ---
 
@@ -103,7 +116,10 @@ Runs only on `ageFiltered`.
 | `activityIntent` match `meta.activityType` | +10 |
 | `subject` exact match | +8 |
 | `grade` exact match (not alias) | +6 |
+| Fuzzy overlap of `query`/`topic` vs `selectionProfile.canBeUsedFor` / `exampleTopics` | +6 |
 | `difficulty` match | +4 |
+
+Templates **without** a `selectionProfile` skip the +6 signal and otherwise score as before.
 
 Tie-break: newer `updatedAt`, then `id` asc.
 
@@ -111,6 +127,7 @@ Tie-break: newer `updatedAt`, then `id` asc.
 
 - If top score ≥ second score + `MIN_SCORE_MARGIN` (6) **and** top score > 0 → return top (`decisive_rerank_margin`). No Stage 3 LLM.
 - Else → Stage 3 LLM picker with `allowedTemplateIds` = **top N** by rerank (N=5), plus pre-computed `classification` hints.
+- Catalog entries that have a profile also include `primaryUse`, `canBeUsedFor`, `exampleTopics`, `skillsPracticed` (illustrative, not exhaustive). `adaptationNote` is **not** sent to Stage 3.
 - On any AI fallback (`disabled`, `no_candidates`, `single_candidate`, `missing_api_key`, `circuit_open`, `malformed_json`, `invalid_id`, `low_confidence`, `timeout`, `provider_error`) → return top of rerank list.
 
 ---
@@ -160,3 +177,7 @@ Stored in Prisma `WorksheetTemplate.meta` (JSON). Runtime guard enforces age for
 - Explicit `templateId` path
 - Renderer / asset-attachment steps after selection
 - `generateSet` “one template for the whole batch” behavior
+
+## After selection — content prompt
+
+When the chosen template has `selectionProfile.adaptationNote`, `WorksheetContentService` includes it in the content-generation prompt as authoring guidance. Templates without a profile omit that block.

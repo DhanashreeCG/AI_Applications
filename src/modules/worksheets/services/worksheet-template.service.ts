@@ -19,7 +19,13 @@ import {
 } from '../types/worksheet.types';
 import { parseJsonField, parseJsonObject } from '../utils/structure.util';
 
-export type WorksheetTemplateRecord = Prisma.WorksheetTemplateGetPayload<object>;
+export type WorksheetTemplateRecord = Prisma.WorksheetTemplateGetPayload<{
+  include: { selectionProfile: true };
+}>;
+
+export const TEMPLATE_WITH_SELECTION_PROFILE = {
+  selectionProfile: true,
+} as const satisfies Prisma.WorksheetTemplateInclude;
 
 export interface UploadedTemplateImage {
   buffer: Buffer;
@@ -202,6 +208,7 @@ export class WorksheetTemplateService {
       where: {
         OR: [{ id: idOrSlug }, { slug: idOrSlug }],
       },
+      include: TEMPLATE_WITH_SELECTION_PROFILE,
     });
 
     if (!template) {
@@ -226,6 +233,7 @@ export class WorksheetTemplateService {
   public async getById(id: string): Promise<WorksheetTemplateRecord> {
     const template = await this.prisma.worksheetTemplate.findUnique({
       where: { id },
+      include: TEMPLATE_WITH_SELECTION_PROFILE,
     });
     if (!template) {
       throw new WorksheetException(
@@ -240,6 +248,7 @@ export class WorksheetTemplateService {
   public async listActive(): Promise<WorksheetTemplateRecord[]> {
     return this.prisma.worksheetTemplate.findMany({
       where: { status: 'ACTIVE' },
+      include: TEMPLATE_WITH_SELECTION_PROFILE,
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
     });
   }

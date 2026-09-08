@@ -5,8 +5,41 @@ import {
   resolveAliasFieldPath,
   resolveAliasImagePath,
   stripLineartFromNonImageFields,
+  unifyBeforeAfterSharedMascot,
   withLineartQuery,
 } from './structure.util';
+
+describe('unifyBeforeAfterSharedMascot', () => {
+  it('forces one shared imageQuery and asset across all before/after items', () => {
+    const next = unifyBeforeAfterSharedMascot({
+      worksheet_type: 'Numbers_afterandbefore',
+      items: [
+        {
+          id: 'item_1',
+          number: 1,
+          blank_position: 'right',
+          imageQuery: 'cute cartoon penguin',
+          assetId: 'penguin-1',
+          assetUrl: '/worksheets/assets/penguin-1/image',
+        },
+        {
+          id: 'item_2',
+          number: 3,
+          blank_position: 'right',
+          imageQuery: 'orange cat',
+          assetId: 'cat-1',
+          assetUrl: '/worksheets/assets/cat-1/image',
+        },
+      ],
+    });
+    const items = next.items as Array<Record<string, unknown>>;
+    expect(items[0].imageQuery).toBe('cute cartoon penguin');
+    expect(items[1].imageQuery).toBe('cute cartoon penguin');
+    expect(items[0].assetId).toBe('penguin-1');
+    expect(items[1].assetId).toBe('penguin-1');
+    expect(items[1].assetUrl).toBe('/worksheets/assets/penguin-1/image');
+  });
+});
 
 describe('normalizeImageQueryFields pair images', () => {
   it('wraps left_image and right_image filenames into searchable slots', () => {
@@ -46,6 +79,33 @@ describe('normalizeImageQueryFields pair images', () => {
     const pair = (next.pairs as Array<Record<string, unknown>>)[0];
     expect((pair.left_image as { imageQuery: string }).imageQuery).toBe('small red bird');
     expect((pair.right_image as { imageQuery: string }).imageQuery).toBe('small birdhouse');
+  });
+
+  it('coerces left_imageQuery / right_imageQuery into left_image / right_image slots', () => {
+    const next = normalizeImageQueryFields({
+      pairs: [
+        {
+          id: 'pair_1',
+          label: 'red planet',
+          left_imageQuery: 'red planet cartoon',
+          right_imageQuery: 'red planet cartoon',
+        },
+      ],
+    });
+    const pair = (next.pairs as Array<Record<string, unknown>>)[0];
+    expect(pair.left_imageQuery).toBeUndefined();
+    expect(pair.right_imageQuery).toBeUndefined();
+    expect((pair.left_image as { imageQuery: string }).imageQuery).toBe(
+      'red planet cartoon',
+    );
+    expect((pair.right_image as { imageQuery: string }).imageQuery).toBe(
+      'red planet cartoon',
+    );
+    const slots = collectImageSlots(next);
+    expect(slots.map((s) => s.path).sort()).toEqual([
+      'pairs[0].left_image',
+      'pairs[0].right_image',
+    ]);
   });
 });
 
@@ -185,5 +245,16 @@ describe('alias field paths', () => {
       'circle_letters[0].letter',
     );
     expect(resolveAliasFieldPath(structure, 'word_1')).toBe('items[0].word');
+  });
+
+  it('maps storytime_maze item ids onto items[n]', () => {
+    const structure = {
+      items: [
+        { id: 'item_start', imageQuery: 'tortoise' },
+        { id: 'item_obstacle', imageQuery: 'hare' },
+      ],
+    };
+    expect(resolveAliasImagePath(structure, 'item_start')).toBe('items[0]');
+    expect(resolveAliasImagePath(structure, 'item_obstacle')).toBe('items[1]');
   });
 });

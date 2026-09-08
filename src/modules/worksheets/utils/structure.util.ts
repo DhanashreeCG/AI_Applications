@@ -313,6 +313,103 @@ export function visualQueryFromImageRecord(
   return null;
 }
 
+export function isBeforeAfterNumbersWorksheet(
+  structure: Record<string, unknown>,
+): boolean {
+  const type = String(structure.worksheet_type ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  if (type.includes('numbersafterandbefore') || type.includes('afterandbefore')) {
+    return true;
+  }
+  const items = Array.isArray(structure.items) ? structure.items : [];
+  return (
+    items.length > 0 &&
+    items.every(
+      (item) =>
+        isRecord(item) &&
+        'blank_position' in item &&
+        (typeof item.number === 'number' || typeof item.number === 'string'),
+    )
+  );
+}
+
+/**
+ * Before/after grids use one repeated mascot between every circle pair.
+ * Collapse divergent item imageQueries / assetIds onto the first usable slot.
+ */
+export function unifyBeforeAfterSharedMascot(
+  structure: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!isBeforeAfterNumbersWorksheet(structure)) {
+    return structure;
+  }
+  const items = Array.isArray(structure.items) ? structure.items : [];
+  if (items.length === 0) {
+    return structure;
+  }
+
+  let canonical: Record<string, unknown> | null = null;
+  let fallback: Record<string, unknown> | null = null;
+  for (const item of items) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const hasAsset =
+      (typeof item.assetId === 'string' && item.assetId.trim() !== '') ||
+      (typeof item.assetUrl === 'string' && item.assetUrl.trim() !== '') ||
+      (typeof item.imageUrl === 'string' && item.imageUrl.trim() !== '') ||
+      (typeof item.signedUrl === 'string' && item.signedUrl.trim() !== '');
+    const query = visualQueryFromImageRecord(item);
+    if (hasAsset) {
+      canonical = item;
+      break;
+    }
+    if (!fallback && query) {
+      fallback = item;
+    }
+  }
+  canonical = canonical ?? fallback;
+  if (!canonical) {
+    return structure;
+  }
+
+  const imageQuery =
+    (typeof canonical.imageQuery === 'string' && canonical.imageQuery.trim()) ||
+    visualQueryFromImageRecord(canonical) ||
+    '';
+  const imageName =
+    typeof canonical.image_name === 'string' ? canonical.image_name : undefined;
+
+  return {
+    ...structure,
+    items: items.map((item) => {
+      if (!isRecord(item)) {
+        return item;
+      }
+      const next: Record<string, unknown> = { ...item };
+      if (imageQuery) {
+        next.imageQuery = imageQuery;
+      }
+      if (imageName) {
+        next.image_name = imageName;
+      }
+      for (const key of [
+        'assetId',
+        'assetUrl',
+        'imageUrl',
+        'signedUrl',
+      ] as const) {
+        const value = canonical![key];
+        if (typeof value === 'string' && value.trim() !== '') {
+          next[key] = value;
+        }
+      }
+      return next;
+    }),
+  };
+}
+
 export function normalizeImageQueryFields(
   structure: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -323,8 +420,11 @@ export function normalizeImageQueryFields(
     if (!isRecord(node)) {
       return node;
     }
+    // LLM sometimes emits left_imageQuery / right_imageQuery instead of
+    // left_image / right_image objects — coerce before pair-image handling.
+    const source = coercePairImageQueryAliases(node);
     const next: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(node)) {
+    for (const [key, child] of Object.entries(source)) {
       if (SKIP_IMAGE_WALK_KEYS.has(key)) {
         next[key] = child;
         continue;
@@ -333,7 +433,9 @@ export function normalizeImageQueryFields(
         const side = key.startsWith('left') ? 'left' : 'right';
         const hintKey = `${side}_hint`;
         const hint =
-          typeof node[hintKey] === 'string' ? String(node[hintKey]).trim() : '';
+          typeof source[hintKey] === 'string'
+            ? String(source[hintKey]).trim()
+            : '';
         if (typeof child === 'string' && child.trim()) {
           next[key] = {
             image_name: child.trim(),
@@ -362,7 +464,41 @@ export function normalizeImageQueryFields(
     }
     return next;
   };
-  return asStructureRecord(walk(structure));
+  return unifyBeforeAfterSharedMascot(asStructureRecord(walk(structure)));
+}
+
+/**
+ * Maps mistaken LLM keys left_imageQuery / right_imageQuery onto left_image /
+ * right_image slots expected by asset resolution and the match_the_pairs renderer.
+ */
+function coercePairImageQueryAliases(
+  node: Record<string, unknown>,
+): Record<string, unknown> {
+  let changed = false;
+  const next: Record<string, unknown> = { ...node };
+  for (const side of ['left', 'right'] as const) {
+    const aliasKey = `${side}_imageQuery`;
+    const imageKey = `${side}_image`;
+    const alias = next[aliasKey];
+    if (typeof alias !== 'string' || !alias.trim()) {
+      continue;
+    }
+    const phrase = alias.trim();
+    const existing = next[imageKey];
+    if (existing == null || existing === '') {
+      next[imageKey] = { imageQuery: phrase };
+      changed = true;
+    } else if (typeof existing === 'string' && !existing.trim()) {
+      next[imageKey] = { imageQuery: phrase };
+      changed = true;
+    } else if (isRecord(existing) && !visualQueryFromImageRecord(existing)) {
+      next[imageKey] = { ...existing, imageQuery: phrase };
+      changed = true;
+    }
+    delete next[aliasKey];
+    changed = true;
+  }
+  return changed ? next : node;
 }
 
 const ANSWER_AND_COLOUR_SLUGS = new Set([
@@ -652,6 +788,14 @@ export function resolveAliasImagePath(
   const numbered = needle.match(/^(?:item|image|img|slot)_?(\d+)$/i);
   if (numbered && Array.isArray(root.items)) {
     return `items[${Number(numbered[1]) - 1}]`;
+  }
+  if (Array.isArray(root.items)) {
+    const byId = root.items.findIndex(
+      (item) => isRecord(item) && typeof item.id === 'string' && item.id === needle,
+    );
+    if (byId >= 0) {
+      return `items[${byId}]`;
+    }
   }
   if (
     needle === 'main_image' ||
