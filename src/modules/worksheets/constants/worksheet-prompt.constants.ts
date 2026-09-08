@@ -246,6 +246,15 @@ export function buildWorksheetContentPrompt(input: {
       '- topic should be "Letters" or "Letter X", not an unrelated theme name.',
       ''
     ] : []),
+    ...(input.templateSlug === 'storytime_maze' ? [
+      'For storytime_maze worksheets:',
+      '- Exactly 3 items[]: item_start (start_character), item_obstacle (story_element), item_finish (goal).',
+      '- Each item needs id, role, label, imageQuery (visual phrase, not filename), and position { left, top, width, height }.',
+      '- Keep positions near the sample anchors: start bottom-left (~35,885,210x150), obstacle upper-right in maze (~550,480,265x275), finish bottom-right (~835,875,135x160).',
+      '- instruction_text should tell the child to help the start character reach the goal without disturbing the obstacle.',
+      '- Keep worksheet_type as storytime_maze.',
+      ''
+    ] : []),
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',

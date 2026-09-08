@@ -592,22 +592,142 @@ export function injectWorksheetItemsMarkup(
   structure: Record<string, unknown>,
   pencilIconUrl = '',
 ): string {
-  const itemsHtml = buildScatterItemsMarkup(structure, pencilIconUrl, html);
-  if (!itemsHtml) {
-    return html;
-  }
+  const itemsHtml = itemsUseAbsolutePositions(structure)
+    ? buildPositionedItemsMarkup(structure, pencilIconUrl)
+    : buildScatterItemsMarkup(structure, pencilIconUrl, html);
 
   let next = html
+    .replace(/\{\{\s*ITEMS_HTML\s*\}\}/gi, itemsHtml)
     .replace(/\{\{\s*ITEMS_PLACEHOLDER\s*\}\}/g, itemsHtml)
     .replace(/\{\{\s*ITEMS\s*\}\}/gi, itemsHtml);
 
-  if (!/data-item-id=/i.test(next) && /class=["'][^"']*\bactivity-box\b/i.test(next)) {
+  if (
+    itemsHtml &&
+    !/data-item-id=/i.test(next) &&
+    /class=["'][^"']*\bactivity-box\b/i.test(next)
+  ) {
     next = next.replace(
       /(<(?:[a-z0-9-]+)[^>]*class=["'][^"']*\bactivity-box\b[^"']*["'][^>]*>)/i,
       `$1\n${itemsHtml}\n`,
     );
   }
   return next;
+}
+
+type AbsoluteBox = { left: number; top: number; width: number; height: number };
+
+/** storytime_maze sample anchors (start / obstacle / finish). */
+const DEFAULT_MAZE_POSITIONS_BY_ROLE: Record<string, AbsoluteBox> = {
+  start_character: { left: 35, top: 885, width: 210, height: 150 },
+  start: { left: 35, top: 885, width: 210, height: 150 },
+  story_element: { left: 550, top: 480, width: 265, height: 275 },
+  obstacle: { left: 550, top: 480, width: 265, height: 275 },
+  goal: { left: 835, top: 875, width: 135, height: 160 },
+  finish: { left: 835, top: 875, width: 135, height: 160 },
+};
+
+const DEFAULT_MAZE_POSITIONS_BY_INDEX: AbsoluteBox[] = [
+  DEFAULT_MAZE_POSITIONS_BY_ROLE.start_character,
+  DEFAULT_MAZE_POSITIONS_BY_ROLE.story_element,
+  DEFAULT_MAZE_POSITIONS_BY_ROLE.goal,
+];
+
+function absoluteBoxFromUnknown(value: unknown): AbsoluteBox | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const left = Number(value.left);
+  const top = Number(value.top);
+  const width = Number(value.width);
+  const height = Number(value.height);
+  if (![left, top, width, height].every(Number.isFinite)) {
+    return null;
+  }
+  return { left, top, width, height };
+}
+
+function resolveMazeItemPosition(
+  item: Record<string, unknown>,
+  index: number,
+): AbsoluteBox {
+  const fromField = absoluteBoxFromUnknown(item.position);
+  if (fromField) {
+    return fromField;
+  }
+  const roleKey =
+    typeof item.role === 'string' ? item.role.trim().toLowerCase() : '';
+  if (roleKey && DEFAULT_MAZE_POSITIONS_BY_ROLE[roleKey]) {
+    return DEFAULT_MAZE_POSITIONS_BY_ROLE[roleKey];
+  }
+  const idKey =
+    typeof item.id === 'string'
+      ? item.id.replace(/^item[_-]?/i, '').trim().toLowerCase()
+      : '';
+  if (idKey && DEFAULT_MAZE_POSITIONS_BY_ROLE[idKey]) {
+    return DEFAULT_MAZE_POSITIONS_BY_ROLE[idKey];
+  }
+  return (
+    DEFAULT_MAZE_POSITIONS_BY_INDEX[index] || DEFAULT_MAZE_POSITIONS_BY_INDEX[0]
+  );
+}
+
+export function itemsUseAbsolutePositions(
+  structure: Record<string, unknown>,
+): boolean {
+  const items = Array.isArray(structure.items) ? structure.items : [];
+  if (items.length === 0 || looksLikeMatchingPair(items[0])) {
+    return false;
+  }
+  const type = String(structure.worksheet_type ?? '').toLowerCase();
+  if (type === 'storytime_maze' || type.includes('maze')) {
+    return true;
+  }
+  return items.some(
+    (item) => isRecord(item) && absoluteBoxFromUnknown(item.position) != null,
+  );
+}
+
+/**
+ * Absolute-positioned maze / story clipart (no scatter labels).
+ * Uses structure.items[].position when present; falls back by role/index.
+ */
+export function buildPositionedItemsMarkup(
+  structure: Record<string, unknown>,
+  pencilIconUrl = '',
+): string {
+  const items = Array.isArray(structure.items) ? structure.items : [];
+  if (items.length === 0 || looksLikeMatchingPair(items[0])) {
+    return '';
+  }
+  const icon = pencilIconUrl.trim();
+
+  return items
+    .map((item, index) => {
+      if (!isRecord(item)) {
+        return '';
+      }
+      const pos = resolveMazeItemPosition(item, index);
+      const path = `items[${index}]`;
+      const slotId =
+        (typeof item.id === 'string' && item.id.trim()) || `item_${index + 1}`;
+      const label =
+        (typeof item.label === 'string' && item.label) ||
+        (typeof item.role === 'string' && item.role) ||
+        slotId;
+      const rawSrc =
+        (typeof item.assetUrl === 'string' && item.assetUrl) ||
+        (typeof item.imageUrl === 'string' && item.imageUrl) ||
+        '';
+      const srcAttr = rawSrc ? ` src="${escapeHtml(rawSrc)}"` : '';
+      const alt = escapeHtml(
+        visualQueryFromImageRecord(item) || label || slotId,
+      );
+      const pencil = icon
+        ? `<button class="ai-pencil" data-pencil-for="${escapeAttr(path)}" type="button" title="AI regenerate" style="top:-12px;left:-12px;"><img src="${escapeAttr(icon)}" width="26" height="26" alt=""></button>`
+        : '';
+      return `<div class="maze-item-container" style="left:${pos.left}px;top:${pos.top}px;width:${pos.width}px;height:${pos.height}px;" data-item-id="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}">${pencil}<div class="img-zone-box" onclick="selectWorksheetImage('${escapeAttr(slotId)}')" title="Click to replace image"></div><button type="button" class="img-camera-btn" onclick="selectWorksheetImage('${escapeAttr(slotId)}')" title="Replace image"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button><img class="maze-item-img worksheet-image"${srcAttr} alt="${alt}" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}" /></div>`;
+    })
+    .join('');
 }
 
 export function buildScatterItemsMarkup(
@@ -704,6 +824,21 @@ export function resolveImageSlot(
       slots.find((slot) => slot.path.endsWith(`[${index}]`)) ||
       null
     );
+  }
+  if (Array.isArray(structure.items)) {
+    const byId = structure.items.findIndex(
+      (item) => isRecord(item) && typeof item.id === 'string' && item.id.toLowerCase() === needle,
+    );
+    if (byId >= 0) {
+      return (
+        slots.find((slot) => slot.path === `items[${byId}]`) || {
+          slotId: String((structure.items[byId] as Record<string, unknown>).id),
+          path: `items[${byId}]`,
+          assetId: null,
+          imageQuery: '',
+        }
+      );
+    }
   }
   return null;
 }

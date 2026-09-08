@@ -416,6 +416,53 @@ NULL
     expect(html).toMatch(/left:387px;top:715px;width:219px;height:155px/);
   });
 
+  it('places storytime_maze clipart at structure positions via ITEMS_HTML', () => {
+    const html = renderer.render({
+      templateHtml: '<body>{{ITEMS_HTML}}</body>',
+      structure: {
+        worksheet_type: 'storytime_maze',
+        items: [
+          {
+            id: 'item_start',
+            role: 'start_character',
+            label: 'tortoise',
+            imageQuery: 'green tortoise',
+            assetUrl: '/worksheets/assets/tortoise/image',
+            position: { top: 885, left: 35, width: 210, height: 150 },
+          },
+          {
+            id: 'item_obstacle',
+            role: 'story_element',
+            label: 'hare under tree',
+            imageQuery: 'hare sleeping under tree',
+            assetUrl: '/worksheets/assets/hare/image',
+            position: { top: 480, left: 550, width: 265, height: 275 },
+          },
+          {
+            id: 'item_finish',
+            role: 'goal',
+            label: 'finish flag',
+            imageQuery: 'red finish flag',
+            assetUrl: '/worksheets/assets/flag/image',
+            position: { top: 875, left: 835, width: 135, height: 160 },
+          },
+        ],
+      },
+    });
+
+    expect(html).not.toContain('{{ITEMS_HTML}}');
+    expect(html).toContain('data-image-slot="item_start"');
+    expect(html).toContain('data-image-slot="item_obstacle"');
+    expect(html).toContain('data-image-slot="item_finish"');
+    expect(html).toMatch(/left:35px;top:885px;width:210px;height:150px/);
+    expect(html).toMatch(/left:550px;top:480px;width:265px;height:275px/);
+    expect(html).toMatch(/left:835px;top:875px;width:135px;height:160px/);
+    expect(html).toContain('/worksheets/assets/tortoise/image');
+    expect(html).toContain('/worksheets/assets/hare/image');
+    expect(html).toContain('/worksheets/assets/flag/image');
+    expect(html).not.toContain('item-label');
+  });
+
   it('renders match-the-pairs images from {{PAIR_IMAGES}} without touching number-name pairs', () => {
     const html = renderer.render({
       templateHtml:

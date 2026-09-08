@@ -186,4 +186,15 @@ describe('alias field paths', () => {
     );
     expect(resolveAliasFieldPath(structure, 'word_1')).toBe('items[0].word');
   });
+
+  it('maps storytime_maze item ids onto items[n]', () => {
+    const structure = {
+      items: [
+        { id: 'item_start', imageQuery: 'tortoise' },
+        { id: 'item_obstacle', imageQuery: 'hare' },
+      ],
+    };
+    expect(resolveAliasImagePath(structure, 'item_start')).toBe('items[0]');
+    expect(resolveAliasImagePath(structure, 'item_obstacle')).toBe('items[1]');
+  });
 });

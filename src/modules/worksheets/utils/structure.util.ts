@@ -653,6 +653,14 @@ export function resolveAliasImagePath(
   if (numbered && Array.isArray(root.items)) {
     return `items[${Number(numbered[1]) - 1}]`;
   }
+  if (Array.isArray(root.items)) {
+    const byId = root.items.findIndex(
+      (item) => isRecord(item) && typeof item.id === 'string' && item.id === needle,
+    );
+    if (byId >= 0) {
+      return `items[${byId}]`;
+    }
+  }
   if (
     needle === 'main_image' ||
     needle === 'goat' ||
