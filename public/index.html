@@ -2602,9 +2602,9 @@
         const auth = params.get('auth');
         if (!schoolId || !auth) return;
 
-        const url = apiBase() + '/flashcards/proxy?url=' + encodeURIComponent('https://gyan-dev-api.creativegalileo.com/api/gyan/V1/teacher-resource/flow-type?schoolId=' + schoolId);
+        const url = apiBase() + '/flashcards/proxy?url=' + encodeURIComponent('https://gyan-api.creativegalileo.com/api/gyan/V1/teacher-resource/flow-type?schoolId=' + schoolId);
         // Wait, wait... the URL given by user is direct. Let's use direct.
-        const directUrl = 'https://gyan-dev-api.creativegalileo.com/api/gyan/V1/teacher-resource/flow-type?schoolId=' + encodeURIComponent(schoolId);
+        const directUrl = 'https://gyan-api.creativegalileo.com/api/gyan/V1/teacher-resource/flow-type?schoolId=' + encodeURIComponent(schoolId);
         const res = await fetch(directUrl, {
           method: 'GET',
           headers: {

@@ -8,7 +8,7 @@
      Empty: assets next to the HTML file (recommended same-structure deploy).
      Example: "https://api.example.com" if nginx hosts HTML and Nest still serves /public. */
 window.__ENV__ = {
-  FLASHCARDS_API_URL: "",
-  WORKSHEETS_API_URL: "",
+  FLASHCARDS_API_URL: "https://api-flashcards.toondemy.com",
+  WORKSHEETS_API_URL: "https://api-flashcards.toondemy.com",
   PUBLIC_ASSET_URL: ""
 };
