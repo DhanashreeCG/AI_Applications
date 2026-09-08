@@ -136,9 +136,9 @@ export class ImageQueryRefinementService {
     );
     this.emitter = new FlashcardPipelineEmitter(eventEmitter);
 
-    // Initialize clients
-    const geminiApiKey = this.configService.get<string>('ai.geminiApiKey');
-    const openaiApiKey = this.configService.get<string>('ai.openaiApiKey');
+    // Initialize clients (flashcard product keys)
+    const geminiApiKey = this.configService.get<string>('flashcards.geminiApiKey');
+    const openaiApiKey = this.configService.get<string>('flashcards.openaiApiKey');
     this.geminiClient = geminiApiKey
       ? new GoogleGenAI({ apiKey: geminiApiKey })
       : null;

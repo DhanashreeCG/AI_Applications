@@ -7,6 +7,7 @@ import { WorksheetRendererRegistry } from '../renderers/worksheet-renderer.regis
 import { WorksheetTemplateService } from './worksheet-template.service';
 import { WorksheetRenderService } from './worksheet-render.service';
 import { GenericWorksheetRenderer } from '../renderers/generic-worksheet.renderer';
+import { CircleTheThingsRenderer } from '../renderers/circle-the-things.renderer';
 
 describe('WorksheetRenderService', () => {
   const prisma = {
@@ -36,7 +37,8 @@ describe('WorksheetRenderService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    const registry = new WorksheetRendererRegistry(new GenericWorksheetRenderer());
+    const generic = new GenericWorksheetRenderer();
+    const registry = new WorksheetRendererRegistry(generic, new CircleTheThingsRenderer(generic));
     service = new WorksheetRenderService(
       prisma as unknown as PrismaService,
       configService as unknown as ConfigService,
@@ -74,7 +76,6 @@ describe('WorksheetRenderService', () => {
       } as never,
       { normalize: jest.fn() } as never,
       { loadImage: jest.fn() } as never,
-      { emit: jest.fn() } as unknown as EventEmitter2,
     );
     prisma.worksheet.findUnique.mockResolvedValue({
       id: 'ws-1',
@@ -133,7 +134,7 @@ describe('WorksheetRenderService', () => {
   });
 
   it('rejects an unsupported format', async () => {
-    await expect(service.render('ws-1', 'png')).rejects.toMatchObject({
+    await expect(service.render('ws-1', 'gif')).rejects.toMatchObject({
       code: 'UNSUPPORTED_FORMAT',
     });
   });

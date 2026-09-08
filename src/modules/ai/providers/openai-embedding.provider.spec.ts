@@ -27,7 +27,11 @@ describe('OpenAiEmbeddingProvider', () => {
     get: jest.fn((key: string) => {
       switch (key) {
         case 'ai.openaiApiKey':
-          return 'test-openai-key';
+          return 'platform-openai-key';
+        case 'flashcards.openaiApiKey':
+          return 'flashcard-openai-key';
+        case 'worksheets.openaiApiKey':
+          return 'worksheet-openai-key';
         case 'ai.openaiEmbeddingModel':
           return 'text-embedding-3-small';
         case 'ai.openaiMaxRps':
@@ -102,13 +106,38 @@ describe('OpenAiEmbeddingProvider', () => {
 
     await expect(
       unconfiguredProvider.generateEmbedding('test query'),
-    ).rejects.toThrow('OpenAI embedding client is not initialized');
+    ).rejects.toThrow(
+      'OpenAI embedding client is not initialized for billing scope "platform"',
+    );
   });
 
   it('should reject empty input text', async () => {
     await expect(provider.generateEmbedding('   ')).rejects.toThrow(
       'Embedding input text cannot be empty',
     );
+  });
+
+  it('should generate embeddings for multiple texts in one request', async () => {
+    const first = sampleEmbedding;
+    const second = sampleEmbedding.map((value) => value * 0.5);
+    mockCreate.mockResolvedValue({
+      data: [
+        { index: 0, embedding: first },
+        { index: 1, embedding: second },
+      ],
+      usage: { prompt_tokens: 8, total_tokens: 8 },
+    });
+
+    const results = await provider.generateEmbeddings(['red apple', 'yellow banana']);
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      model: 'text-embedding-3-small',
+      input: ['red apple', 'yellow banana'],
+    });
+    expect(results).toHaveLength(2);
+    expect(results[0].embedding).toEqual(first);
+    expect(results[1].embedding).toEqual(second);
+    expect(results[0].sourceTextHash).toBe(hashSourceText('red apple'));
   });
 
   it('should throw when embedding dimensions are unexpected', async () => {

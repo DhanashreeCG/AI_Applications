@@ -40,6 +40,12 @@ export interface CreateWorksheetTemplateResult {
   sampleAssetId: string;
   backgroundUrl?: string;
   sampleUrl?: string;
+  aiEditConfigJs?: string | null;
+  aiEditPopupHtml?: string | null;
+  aiEditPanelJs?: string | null;
+  editorJs?: string | null;
+  fieldEditorJs?: string | null;
+  rendererJs?: string | null;
 }
 
 const TEMPLATE_STATUSES = new Set(['DRAFT', 'ACTIVE', 'INACTIVE']);
@@ -112,6 +118,10 @@ export class WorksheetTemplateService {
     const version = this.parseVersion(dto.version);
     const rendererType =
       this.optionalString(dto.rendererType) || GENERIC_RENDERER_TYPE;
+    const liftedAiConfig = this.liftAiConfigFromStructure(
+      structureDefinition,
+      dto.aiConfig,
+    );
 
     const [backgroundAsset, sampleAsset] = await Promise.all([
       this.uploadTemplateImage(background, 'background'),
@@ -133,9 +143,17 @@ export class WorksheetTemplateService {
           backgroundAssetId: backgroundAsset.id,
           sampleAssetId: sampleAsset.id,
           aiSystemPrompt: this.optionalString(dto.aiSystemPrompt) ?? null,
+          aiEditConfigJs: this.optionalString(dto.aiEditConfigJs) ?? null,
+          aiEditPopupHtml: this.optionalString(dto.aiEditPopupHtml) ?? null,
+          aiEditPanelJs: this.optionalString(dto.aiEditPanelJs) ?? null,
+          editorJs: this.optionalString(dto.editorJs) ?? null,
+          fieldEditorJs: this.optionalString(dto.fieldEditorJs) ?? null,
+          rendererJs: this.optionalString(dto.rendererJs) ?? null,
           ...this.optionalJson('meta', dto.meta),
           ...this.optionalJson('rendererConfig', dto.rendererConfig),
-          ...this.optionalJson('aiConfig', dto.aiConfig),
+          ...(liftedAiConfig
+            ? { aiConfig: liftedAiConfig as Prisma.InputJsonValue }
+            : this.optionalJson('aiConfig', dto.aiConfig)),
           ...this.optionalJson('fieldPrompts', dto.fieldPrompts),
         },
       });
@@ -156,6 +174,12 @@ export class WorksheetTemplateService {
         sampleAssetId: sampleAsset.id,
         backgroundUrl: backgroundAsset.url,
         sampleUrl: sampleAsset.url,
+        aiEditConfigJs: template.aiEditConfigJs,
+        aiEditPopupHtml: template.aiEditPopupHtml,
+        aiEditPanelJs: template.aiEditPanelJs,
+        editorJs: template.editorJs,
+        fieldEditorJs: template.fieldEditorJs,
+        rendererJs: template.rendererJs,
       };
     } catch (error) {
       if (
@@ -220,22 +244,25 @@ export class WorksheetTemplateService {
     });
   }
 
+  public toCatalogItem(template: WorksheetTemplateRecord) {
+    const meta = this.parseMeta(template);
+    return {
+      id: template.id,
+      name: template.name,
+      slug: template.slug,
+      category: template.category,
+      description: template.description,
+      meta,
+      sampleUrl: template.sampleAssetId
+        ? `${this.assetImagePath}/${template.sampleAssetId}/image`
+        : null,
+      ...this.parseAiEditUi(template),
+    };
+  }
+
   public async listCatalog() {
     const templates = await this.listActive();
-    return templates.map((template) => {
-      const meta = this.parseMeta(template);
-      return {
-        id: template.id,
-        name: template.name,
-        slug: template.slug,
-        category: template.category,
-        description: template.description,
-        meta,
-        sampleUrl: template.sampleAssetId
-          ? `${this.assetImagePath}/${template.sampleAssetId}/image`
-          : null,
-      };
-    });
+    return templates.map((template) => this.toCatalogItem(template));
   }
 
   public parseMeta(template: WorksheetTemplateRecord): WorksheetTemplateMeta {
@@ -247,7 +274,53 @@ export class WorksheetTemplateService {
   }
 
   public parseFieldPrompts(template: WorksheetTemplateRecord): WorksheetFieldPrompts {
-    return (parseJsonObject(template.fieldPrompts) ?? {}) as WorksheetFieldPrompts;
+    const raw = parseJsonObject(template.fieldPrompts) ?? {};
+    const flat: WorksheetFieldPrompts = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (key.startsWith('_')) continue;
+      if (typeof value === 'string') {
+        flat[key] = value;
+        continue;
+      }
+      if (value && typeof value === 'object' && 'prompt' in value) {
+        const prompt = (value as { prompt?: unknown }).prompt;
+        if (typeof prompt === 'string') flat[key] = prompt;
+      }
+    }
+    return flat;
+  }
+
+  public parseFieldPromptMeta(
+    template: WorksheetTemplateRecord,
+  ): Record<string, { label?: string; autoRegenerateAfter?: string[] }> {
+    const raw = parseJsonObject(template.fieldPrompts) ?? {};
+    const meta: Record<string, { label?: string; autoRegenerateAfter?: string[] }> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (!value || typeof value !== 'object' || key.startsWith('_')) continue;
+      const item = value as {
+        label?: string;
+        auto_regenerate_after?: string[];
+      };
+      meta[key] = {
+        label: typeof item.label === 'string' ? item.label : undefined,
+        autoRegenerateAfter: Array.isArray(item.auto_regenerate_after)
+          ? item.auto_regenerate_after
+          : undefined,
+      };
+    }
+    return meta;
+  }
+
+  public parseAiEditUi(template: WorksheetTemplateRecord): {
+    aiEditPopupHtml: string | null;
+    aiEditConfigJs: string | null;
+    aiEditPanelJs: string | null;
+  } {
+    return {
+      aiEditPopupHtml: this.optionalString(template.aiEditPopupHtml) ?? null,
+      aiEditConfigJs: this.optionalString(template.aiEditConfigJs) ?? null,
+      aiEditPanelJs: this.optionalString(template.aiEditPanelJs) ?? null,
+    };
   }
 
   public parseRendererConfig(
@@ -338,6 +411,27 @@ export class WorksheetTemplateService {
     );
 
     return { id: created.id, url };
+  }
+
+  private liftAiConfigFromStructure(
+    structureDefinition: Record<string, unknown>,
+    explicit: unknown,
+  ): Record<string, unknown> | null {
+    const provided = parseJsonField(explicit, 'aiConfig');
+    const nested = parseJsonObject(structureDefinition.ai_config);
+    const editableFields = parseJsonObject(structureDefinition.editable_fields);
+    if (!provided && !nested && !editableFields) {
+      return null;
+    }
+    return {
+      ...(nested ?? {}),
+      ...(editableFields ? { editable_fields: editableFields } : {}),
+      ...(provided ?? {}),
+      aiEditable:
+        (provided as WorksheetAiConfig | null)?.aiEditable ??
+        (Array.isArray(nested?.ai_editable) ? nested.ai_editable : undefined) ??
+        (nested as WorksheetAiConfig | null)?.aiEditable,
+    };
   }
 
   private optionalJson(

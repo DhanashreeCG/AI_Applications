@@ -104,20 +104,17 @@ export class VectorStorageService {
     }
 
     const vectorLiteral = this.formatVectorLiteral(queryVector);
+    // Query the base table so the HNSW index can be used. One row per asset
+    // is enforced by AssetEmbedding.assetId uniqueness.
     const rows = await this.prisma.$queryRawUnsafe<VectorSearchRow[]>(
       `
-        WITH latest_embeddings AS (
-          SELECT DISTINCT ON ("assetId") *
-          FROM "AssetEmbedding"
-          WHERE vector IS NOT NULL
-          ORDER BY "assetId", "embeddingVersion" DESC
-        )
         SELECT
           "assetId",
           id AS "embeddingId",
           (vector <=> $1::vector)::float8 AS distance,
           (1 - (vector <=> $1::vector))::float8 AS similarity
-        FROM latest_embeddings
+        FROM "AssetEmbedding"
+        WHERE vector IS NOT NULL
         ORDER BY vector <=> $1::vector
         LIMIT $2
       `,

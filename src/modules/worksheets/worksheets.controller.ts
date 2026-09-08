@@ -34,7 +34,10 @@ import {
   CreateWorksheetTemplateDto,
   CreateWorksheetTemplateResponseDto,
 } from './dto/create-worksheet-template.dto';
-import { EditWorksheetDto } from './dto/edit-worksheet.dto';
+import {
+  CorrectWorksheetGrammarDto,
+  EditWorksheetDto,
+} from './dto/edit-worksheet.dto';
 import {
   GenerateWorksheetDto,
   GenerateWorksheetResponseDto,
@@ -51,6 +54,7 @@ import { WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES } from './constants/worksheet.consta
 import { WorksheetException } from './errors/worksheet.exception';
 import { WorksheetEditService } from './services/worksheet-edit.service';
 import { WorksheetGenerationService } from './services/worksheet-generation.service';
+import { WorksheetRenderNotifyService } from './services/worksheet-render-notify.service';
 import { WorksheetRenderService } from './services/worksheet-render.service';
 import {
   WorksheetTemplateService,
@@ -64,6 +68,7 @@ export class WorksheetsController {
     private readonly generationService: WorksheetGenerationService,
     private readonly editService: WorksheetEditService,
     private readonly renderService: WorksheetRenderService,
+    private readonly renderNotifyService: WorksheetRenderNotifyService,
     private readonly templateService: WorksheetTemplateService,
     private readonly assetImageService: AssetImageService,
   ) {}
@@ -89,6 +94,68 @@ export class WorksheetsController {
         correlationId: correlationId || traceId,
       },
     );
+  }
+
+  @Post('generate-set/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Generate worksheets as an NDJSON stream, emitting each worksheet as soon as it is assembled',
+  })
+  async generateSetStream(
+    @Body() dto: GenerateWorksheetDto,
+    @Res() response: Response,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-country-code') headerCountryCode?: string,
+  ): Promise<void> {
+    response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-cache, no-transform');
+    response.setHeader('Connection', 'keep-alive');
+    response.setHeader('X-Accel-Buffering', 'no');
+    response.flushHeaders?.();
+
+    let clientGone = false;
+    response.on('close', () => {
+      clientGone = true;
+    });
+
+    const write = (event: Record<string, unknown>): void => {
+      if (clientGone || response.writableEnded) return;
+      response.write(`${JSON.stringify(event)}\n`);
+    };
+
+    const heartbeat = setInterval(() => write({ type: 'ping' }), 15000);
+
+    try {
+      const payload = await this.generationService.generateSet(
+        { ...dto, countryCode: dto.countryCode || headerCountryCode },
+        {
+          correlationId: correlationId || traceId,
+          progress: {
+            onMeta: (meta) => write({ type: 'meta', ...meta }),
+            onItem: (item, slotIndex) =>
+              write({ type: 'item', slotIndex, item }),
+          },
+        },
+      );
+      write({ type: 'done', payload });
+    } catch (error) {
+      const isWorksheetError = error instanceof WorksheetException;
+      write({
+        type: 'error',
+        code: isWorksheetError ? error.code : 'GENERATION_FAILED',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Could not generate worksheets',
+      });
+    } finally {
+      clearInterval(heartbeat);
+      if (!response.writableEnded) {
+        response.end();
+      }
+    }
   }
 
   @Post('generate-set')
@@ -137,6 +204,29 @@ export class WorksheetsController {
     return this.templateService.listCatalog();
   }
 
+  @Get('templates/:idOrSlug')
+  @ApiOperation({ summary: 'Get one active worksheet template including AI Edit popup HTML' })
+  async getTemplate(@Param('idOrSlug') idOrSlug: string) {
+    const template = await this.templateService.getActiveByIdOrSlug(idOrSlug);
+    return this.templateService.toCatalogItem(template);
+  }
+
+  @Get('images/search')
+  @ApiOperation({
+    summary: 'Semantic asset search without a saved worksheet',
+  })
+  async searchLibraryImages(
+    @Query() query: SearchWorksheetImagesQueryDto,
+    @Headers('x-country-code') headerCountryCode?: string,
+  ) {
+    return this.editService.searchLibrary({
+      query: query.query,
+      limit: query.limit != null ? Number(query.limit) : undefined,
+      countryCode: query.countryCode || headerCountryCode,
+      templateSlug: query.templateSlug,
+    });
+  }
+
   @Post('templates')
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
@@ -181,6 +271,12 @@ export class WorksheetsController {
         aiConfig: { type: 'string' },
         fieldPrompts: { type: 'string' },
         aiSystemPrompt: { type: 'string' },
+        aiEditConfigJs: { type: 'string' },
+        aiEditPopupHtml: { type: 'string' },
+        aiEditPanelJs: { type: 'string' },
+        editorJs: { type: 'string' },
+        fieldEditorJs: { type: 'string' },
+        rendererJs: { type: 'string' },
         background: { type: 'string', format: 'binary' },
         sample: {
           type: 'string',
@@ -206,6 +302,23 @@ export class WorksheetsController {
     const background = files?.background?.[0];
     const sample = files?.sample?.[0] ?? files?.example?.[0];
     return this.templateService.create(dto, { background, sample });
+  }
+
+  @Post(':worksheetId/grammar')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Correct grammar on all worksheet questions in one Gemini call',
+  })
+  @ApiOkResponse({ type: GenerateWorksheetResponseDto })
+  async correctGrammar(
+    @Param('worksheetId') worksheetId: string,
+    @Body() dto: CorrectWorksheetGrammarDto,
+    @Headers('x-country-code') headerCountryCode?: string,
+  ) {
+    return this.editService.correctGrammar(worksheetId, {
+      ...dto,
+      countryCode: dto.countryCode || headerCountryCode,
+    });
   }
 
   @Post(':worksheetId/edit')
@@ -261,7 +374,7 @@ export class WorksheetsController {
   @Post(':worksheetId/download')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Render a worksheet and download the webp or pdf as an attachment',
+    summary: 'Render a worksheet and download the png, webp or pdf as an attachment',
   })
   async download(
     @Param('worksheetId') worksheetId: string,
@@ -274,16 +387,20 @@ export class WorksheetsController {
       correlationId: correlationId || traceId,
       mode: dto.mode ?? 'export',
     });
-    if (!result.buffer || (dto.format !== 'webp' && dto.format !== 'pdf')) {
+    if (!result.buffer || (dto.format !== 'webp' && dto.format !== 'png' && dto.format !== 'pdf')) {
       throw new WorksheetException(
         'UNSUPPORTED_FORMAT',
-        'Download is only available for webp and pdf',
+        'Download is only available for png, webp and pdf',
         HttpStatus.BAD_REQUEST,
       );
     }
     const fileName = `worksheet-${worksheetId}.${result.format}`;
     const contentType =
-      result.format === 'pdf' ? 'application/pdf' : 'image/webp';
+      result.format === 'pdf'
+        ? 'application/pdf'
+        : result.format === 'png'
+          ? 'image/png'
+          : 'image/webp';
     response.setHeader('Content-Type', contentType);
     response.setHeader(
       'Content-Disposition',
@@ -292,7 +409,28 @@ export class WorksheetsController {
     return new StreamableFile(result.buffer);
   }
 
-  @Get(':worksheetId/preview')
+  @Post('render-and-notify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Render worksheet to PNG, upload to S3, and return structured resource list for postMessage',
+  })
+  async renderAndNotify(
+    @Body() body: {
+      templateId?: string;
+      structure?: Record<string, unknown>;
+      request?: Record<string, unknown>;
+      auth?: string;
+      grade?: unknown;
+    },
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    return this.renderNotifyService.renderAndNotify(body, {
+      correlationId: correlationId || traceId,
+    });
+  }
+
+  @Post(':worksheetId/preview')
   @ApiOperation({
     summary:
       'Return resolved worksheet HTML plus editor metadata (same HTML as render)',
@@ -390,12 +528,20 @@ export class WorksheetsController {
   async regenerate(
     @Param('worksheetId') worksheetId: string,
     @Body() dto: RegenerateWorksheetDto,
+    @Headers('x-trace-id') traceId?: string,
+    @Headers('x-correlation-id') correlationId?: string,
     @Headers('x-country-code') headerCountryCode?: string,
   ) {
-    return this.editService.regenerate(worksheetId, {
-      ...dto,
-      countryCode: dto.countryCode || headerCountryCode,
-    });
+    return this.editService.regenerate(
+      worksheetId,
+      {
+        ...dto,
+        countryCode: dto.countryCode || headerCountryCode,
+      },
+      {
+        correlationId: correlationId || traceId,
+      },
+    );
   }
 
   @Post(':worksheetId/images')

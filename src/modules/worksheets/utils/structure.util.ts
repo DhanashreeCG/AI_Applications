@@ -259,6 +259,8 @@ const IMAGE_QUERY_ALIAS_KEYS = [
   'searchDescription',
 ] as const;
 
+const PAIR_IMAGE_KEYS = new Set(['left_image', 'right_image']);
+
 const SKIP_IMAGE_WALK_KEYS = new Set([
   'editable_fields',
   'editableFields',
@@ -327,6 +329,27 @@ export function normalizeImageQueryFields(
         next[key] = child;
         continue;
       }
+      if (PAIR_IMAGE_KEYS.has(key)) {
+        const side = key.startsWith('left') ? 'left' : 'right';
+        const hintKey = `${side}_hint`;
+        const hint =
+          typeof node[hintKey] === 'string' ? String(node[hintKey]).trim() : '';
+        if (typeof child === 'string' && child.trim()) {
+          next[key] = {
+            image_name: child.trim(),
+            imageQuery: hint || filenameToSearchQuery(child.trim()),
+          };
+          continue;
+        }
+        if (
+          (child == null || child === '') &&
+          hint &&
+          !looksLikeImageFileName(hint)
+        ) {
+          next[key] = { imageQuery: hint };
+          continue;
+        }
+      }
       next[key] = walk(child);
     }
     const query = visualQueryFromImageRecord(next);
@@ -336,6 +359,64 @@ export function normalizeImageQueryFields(
       if (!existing || looksLikeImageFileName(existing)) {
         next.imageQuery = query;
       }
+    }
+    return next;
+  };
+  return asStructureRecord(walk(structure));
+}
+
+const ANSWER_AND_COLOUR_SLUGS = new Set([
+  'answer_and_colour',
+  'answer-and-colour',
+]);
+const LINEART_QUERY_HINT = /\b(line\s*art|lineart|outline)\b/i;
+
+export function isAnswerAndColourSlug(
+  slug?: string | null,
+): boolean {
+  return Boolean(slug && ANSWER_AND_COLOUR_SLUGS.has(slug.trim().toLowerCase()));
+}
+
+export function withLineartQuery(
+  query: string,
+  templateSlug?: string | null,
+): string {
+  const trimmed = query.trim();
+  if (!trimmed || !isAnswerAndColourSlug(templateSlug)) {
+    return trimmed;
+  }
+  if (LINEART_QUERY_HINT.test(trimmed)) {
+    return trimmed;
+  }
+  return `${trimmed} lineart`;
+}
+
+const LEARNER_LINEART_TERM = /\s*\b(line\s*art|lineart)\b/gi;
+const IMAGE_DESCRIPTION_KEYS = new Set<string>(IMAGE_QUERY_ALIAS_KEYS);
+
+export function stripLineartFromLearnerText(value: string): string {
+  return value.replace(LEARNER_LINEART_TERM, ' ').replace(/\s+/g, ' ').trim();
+}
+
+export function stripLineartFromNonImageFields(
+  structure: Record<string, unknown>,
+): Record<string, unknown> {
+  const walk = (node: unknown, key?: string): unknown => {
+    if (typeof node === 'string') {
+      if (key && IMAGE_DESCRIPTION_KEYS.has(key)) {
+        return node;
+      }
+      return stripLineartFromLearnerText(node);
+    }
+    if (Array.isArray(node)) {
+      return node.map((item) => walk(item));
+    }
+    if (!isRecord(node)) {
+      return node;
+    }
+    const next: Record<string, unknown> = {};
+    for (const [childKey, child] of Object.entries(node)) {
+      next[childKey] = walk(child, childKey);
     }
     return next;
   };
@@ -460,7 +541,7 @@ export function collectImageSlots(
       typeof value.id === 'string' && value.id.trim() ? value.id.trim() : null;
     const key = path.split(/[.[\]]/).filter(Boolean).pop() ?? 'image';
     found.push({
-      slotId: explicitId || key,
+      slotId: explicitId || (path.includes('[') ? path : key),
       path,
       assetId: typeof value.assetId === 'string' ? value.assetId : null,
       imageQuery,
@@ -479,6 +560,111 @@ export function collectImageSlots(
   }
 
   return found;
+}
+
+/** Map WorksheetMaker keys (question_1, option_2) onto structure paths. */
+export function resolveAliasFieldPath(
+  root: Record<string, unknown>,
+  fieldPath: string,
+): string {
+  const question = fieldPath.match(/^question_(\d+)$/i);
+  if (question && Array.isArray(root.questions)) {
+    return `questions[${Number(question[1]) - 1}].question`;
+  }
+  const option = fieldPath.match(/^option_(\d+)$/i);
+  if (option && Array.isArray(root.questions)) {
+    const parent = root.questions.find((item) => {
+      return isRecord(item) && Array.isArray(item.options);
+    });
+    const index = parent
+      ? (root.questions as unknown[]).indexOf(parent)
+      : 2;
+    return `questions[${index}].options[${Number(option[1]) - 1}].text`;
+  }
+  const sentence = fieldPath.match(/^sentence_(\d+)$/i);
+  if (sentence && Array.isArray(root.rows)) {
+    return `rows[${Number(sentence[1]) - 1}].sentence`;
+  }
+  const itemText = fieldPath.match(/^(?:item|caption)_(\d+)$/i);
+  if (itemText && Array.isArray(root.items)) {
+    const index = Number(itemText[1]) - 1;
+    const rec = isRecord(root.items[index]) ? root.items[index] : null;
+    const key =
+      rec && typeof rec.caption === 'string'
+        ? 'caption'
+        : rec && typeof rec.label === 'string'
+          ? 'label'
+          : rec && typeof rec.word === 'string'
+            ? 'word'
+            : rec && typeof rec.text === 'string'
+              ? 'text'
+              : 'caption';
+    return `items[${index}].${key}`;
+  }
+  const columnLetter = fieldPath.match(/^(left|right)_letter_(\d+)$/i);
+  if (columnLetter) {
+    const side = columnLetter[1].toLowerCase();
+    const index = Number(columnLetter[2]) - 1;
+    const key = `${side}_letters`;
+    if (Array.isArray(root[key])) {
+      return `${key}[${index}].letter`;
+    }
+  }
+  const circleLetter = fieldPath.match(/^cl_(\d+)$/i);
+  if (circleLetter && Array.isArray(root.circle_letters)) {
+    return `circle_letters[${Number(circleLetter[1]) - 1}].letter`;
+  }
+  const vocabWord = fieldPath.match(/^word_(\d+)$/i);
+  if (vocabWord && Array.isArray(root.items)) {
+    const index = Number(vocabWord[1]) - 1;
+    const rec = isRecord(root.items[index]) ? root.items[index] : null;
+    const key =
+      rec && typeof rec.word === 'string'
+        ? 'word'
+        : rec && typeof rec.caption === 'string'
+          ? 'caption'
+          : rec && typeof rec.label === 'string'
+            ? 'label'
+            : 'word';
+    return `items[${index}].${key}`;
+  }
+  return fieldPath;
+}
+
+/** Map prototype image ids (item_1, IMAGE_2_LEFT) onto structure paths. */
+export function resolveAliasImagePath(
+  root: Record<string, unknown>,
+  slotId: string,
+): string {
+  const needle = slotId.trim();
+  if (!needle) {
+    return needle;
+  }
+  if (/^[a-zA-Z_]\w*(\[\d+](\.[a-zA-Z_]\w*)*)+$/.test(needle) || /^\w+\[\d+]/.test(needle)) {
+    return needle;
+  }
+  const pairSide =
+    needle.match(/^IMAGE[_-]?(\d+)[_-](left|right)$/i) ||
+    needle.match(/^pair[_-]?(\d+)[_./-](left|right)(?:_image)?$/i);
+  if (pairSide && Array.isArray(root.pairs)) {
+    return `pairs[${Number(pairSide[1]) - 1}].${pairSide[2].toLowerCase()}_image`;
+  }
+  const numbered = needle.match(/^(?:item|image|img|slot)_?(\d+)$/i);
+  if (numbered && Array.isArray(root.items)) {
+    return `items[${Number(numbered[1]) - 1}]`;
+  }
+  if (
+    needle === 'main_image' ||
+    needle === 'goat' ||
+    needle === 'hero' ||
+    needle === 'primary' ||
+    needle === 'scene' ||
+    needle === 'scene_image' ||
+    /^scene(_image)?$/i.test(needle)
+  ) {
+    return isRecord(root.image) ? 'image' : needle;
+  }
+  return needle;
 }
 
 export function getValueAtPath(root: unknown, fieldPath: string): unknown {
@@ -647,4 +833,80 @@ export function setUserUploadedImageIndex(
     delete next[USER_UPLOADED_IMAGES_KEY];
   }
   return next;
+}
+
+function looksLikeSentenceRow(value: unknown): boolean {
+  return isRecord(value) && typeof value.sentence === 'string';
+}
+
+function looksLikeActivityItem(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    Array.isArray(value.items) ||
+    Array.isArray(value.pairs) ||
+    Array.isArray(value.questions)
+  ) {
+    return false;
+  }
+  return (
+    typeof value.label === 'string' ||
+    typeof value.imageQuery === 'string' ||
+    typeof value.is_correct === 'boolean'
+  );
+}
+
+function looksLikeWorksheetStructure(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    Array.isArray(value.items) ||
+    Array.isArray(value.pairs) ||
+    Array.isArray(value.questions)
+  ) {
+    return true;
+  }
+  return (
+    typeof value.instruction === 'string' ||
+    typeof value.instruction_text === 'string' ||
+    typeof value.topic === 'string' ||
+    typeof value.worksheet_type === 'string'
+  );
+}
+
+/**
+ * LLM output for one worksheet often includes items[] (e.g. circle_the_things).
+ * That array is content on a single page — never one worksheet per item.
+ */
+export function normalizeLlmWorksheetPayload(
+  parsed: unknown,
+  targetCount = 1,
+): unknown[] {
+  const limit = Math.max(1, targetCount);
+
+  const takeWorksheets = (candidates: unknown[]): unknown[] => {
+    if (candidates.length > 0 && candidates.every(looksLikeActivityItem)) {
+      return [{ items: candidates }].slice(0, limit);
+    }
+    if (candidates.length > 0 && candidates.every(looksLikeSentenceRow)) {
+      return [{ rows: candidates }].slice(0, limit);
+    }
+    const worksheets = candidates.filter(looksLikeWorksheetStructure);
+    return (worksheets.length ? worksheets : candidates).slice(0, limit);
+  };
+
+  if (Array.isArray(parsed)) {
+    return takeWorksheets(parsed);
+  }
+  if (!isRecord(parsed)) {
+    return [];
+  }
+
+  if (Array.isArray(parsed.worksheets)) {
+    return takeWorksheets(parsed.worksheets);
+  }
+
+  return [parsed].slice(0, limit);
 }

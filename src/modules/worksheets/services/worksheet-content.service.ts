@@ -18,6 +18,7 @@ import {
 import {
   buildWorksheetContentPrompt,
   buildWorksheetEditPrompt,
+  buildWorksheetGrammarPrompt,
 } from '../constants/worksheet-prompt.constants';
 import { WorksheetException } from '../errors/worksheet.exception';
 import { GenerateWorksheetRequest } from '../types/worksheet.types';
@@ -28,6 +29,7 @@ import {
 } from '../telemetry/worksheet-pipeline.events';
 import { WorksheetTemplateRecord } from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
+import { normalizeLlmWorksheetPayload } from '../utils/structure.util';
 
 @Injectable()
 export class WorksheetContentService {
@@ -44,7 +46,7 @@ export class WorksheetContentService {
     private readonly validationService: WorksheetValidationService,
     eventEmitter: EventEmitter2,
   ) {
-    const apiKey = this.configService.get<string>('ai.geminiApiKey');
+    const apiKey = this.configService.get<string>('worksheets.geminiApiKey');
     this.modelName =
       this.configService.get<string>('worksheets.geminiModel') ||
       'gemini-2.5-flash';
@@ -60,7 +62,7 @@ export class WorksheetContentService {
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
     if (!apiKey) {
       this.logger.warn(
-        'GEMINI_API_KEY not provided. WorksheetContentService is unavailable.',
+        'WORKSHEET_GEMINI_API_KEY (or GEMINI_API_KEY fallback) not provided. WorksheetContentService is unavailable.',
       );
     }
   }
@@ -69,11 +71,18 @@ export class WorksheetContentService {
     this.client = client;
   }
 
-  public async generateStructure(
+  public async generateStructures(
     template: WorksheetTemplateRecord,
     request: GenerateWorksheetRequest,
+    count: number = 1,
     telemetry?: PipelineTelemetryContext,
-  ): Promise<Record<string, unknown>> {
+    extras?: {
+      currentStructure?: Record<string, unknown> | null;
+      systemPrompt?: string | null;
+      stage?: string;
+    },
+  ): Promise<Array<Record<string, unknown>>> {
+    const targetCount = Math.max(1, count);
     const run = async () => {
       const prompt = await maybeRunTrackedStage(
         this.emitter,
@@ -87,32 +96,72 @@ export class WorksheetContentService {
             templateDescription: template.description,
             structureDefinition: template.structureDefinition,
             meta: template.meta,
+            count: targetCount,
+            systemPrompt: extras?.systemPrompt,
+            currentStructure: extras?.currentStructure,
           }),
         {
           completeMetadata: {
             templateId: template.id,
             templateSlug: template.slug,
+            count: targetCount,
           },
         },
       );
 
       const parsed = await this.generateJson(
         prompt,
-        WORKSHEET_CONTENT_STAGE,
+        extras?.stage || WORKSHEET_CONTENT_STAGE,
         telemetry,
       );
+
+      let rawItems = normalizeLlmWorksheetPayload(parsed, targetCount);
+
+      if (!rawItems.length) {
+        throw new WorksheetException(
+          'INVALID_LLM_OUTPUT',
+          'LLM failed to produce worksheet structure contents',
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
 
       return maybeRunTrackedStage(
         this.emitter,
         telemetry,
         PIPELINE_STAGES.CONTENT_VALIDATION,
-        () =>
-          this.validationService.validateGeneratedStructure(parsed, template),
+        () => {
+          const validatedItems: Array<Record<string, unknown>> = [];
+          for (const rawItem of rawItems) {
+            try {
+              const validated = this.validationService.validateGeneratedStructure(
+                rawItem,
+                template,
+                { allowEnrichmentKeys: true },
+              );
+              validatedItems.push(validated);
+            } catch (err) {
+              this.logger.warn(
+                `validation skipped invalid worksheet item in batch: ${getErrorMessage(err)}`,
+              );
+            }
+          }
+
+          if (!validatedItems.length) {
+            throw new WorksheetException(
+              'INVALID_STRUCTURE',
+              'None of the generated worksheet structures passed validation',
+              HttpStatus.BAD_GATEWAY,
+            );
+          }
+
+          return validatedItems;
+        },
         {
-          completeMetadata: {
+          completeMetadata: (items) => ({
             templateId: template.id,
             templateSlug: template.slug,
-          },
+            count: items.length,
+          }),
         },
       );
     };
@@ -126,13 +175,35 @@ export class WorksheetContentService {
         startMetadata: {
           templateId: template.id,
           templateSlug: template.slug,
+          count: targetCount,
         },
-        completeMetadata: {
+        completeMetadata: (items) => ({
           templateId: template.id,
           templateSlug: template.slug,
-        },
+          generatedCount: items.length,
+        }),
       },
     );
+  }
+
+  public async generateStructure(
+    template: WorksheetTemplateRecord,
+    request: GenerateWorksheetRequest,
+    telemetry?: PipelineTelemetryContext,
+    extras?: {
+      currentStructure?: Record<string, unknown> | null;
+      systemPrompt?: string | null;
+      stage?: string;
+    },
+  ): Promise<Record<string, unknown>> {
+    const items = await this.generateStructures(
+      template,
+      request,
+      1,
+      telemetry,
+      extras,
+    );
+    return items[0];
   }
 
   public async generateFieldReplacement(input: {
@@ -143,6 +214,7 @@ export class WorksheetContentService {
     currentValue: unknown;
     worksheetStructure: unknown;
     linkedValues: Record<string, unknown>;
+    countryCode?: string | null;
     telemetry?: PipelineTelemetryContext;
   }): Promise<unknown> {
     const telemetry = input.telemetry;
@@ -160,6 +232,7 @@ export class WorksheetContentService {
             currentValue: input.currentValue,
             worksheetStructure: input.worksheetStructure,
             linkedValues: input.linkedValues,
+            countryCode: input.countryCode,
           }),
         {
           completeMetadata: { fieldPath: input.fieldPath },
@@ -191,6 +264,55 @@ export class WorksheetContentService {
         completeMetadata: { fieldPath: input.fieldPath },
       },
     );
+  }
+
+  public async correctLearnerGrammar(
+    structure: Record<string, unknown>,
+    telemetry?: PipelineTelemetryContext,
+  ): Promise<Record<string, unknown>> {
+    const parsed = await this.generateJson(
+      buildWorksheetGrammarPrompt({ structure }),
+      WORKSHEET_EDIT_STAGE,
+      telemetry,
+    );
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return structure;
+    }
+    const next = { ...structure };
+    const incoming = (parsed as { questions?: unknown }).questions;
+    if (Array.isArray(incoming) && Array.isArray(next.questions)) {
+      next.questions = (next.questions as Array<Record<string, unknown>>).map(
+        (current, index) => {
+          const updated = incoming[index];
+          if (!updated || typeof updated !== 'object' || Array.isArray(updated)) {
+            return current;
+          }
+          const record = updated as Record<string, unknown>;
+          const merged: Record<string, unknown> = { ...current };
+          if (typeof record.question === 'string') {
+            merged.question = record.question;
+          }
+          if (Array.isArray(record.options) && Array.isArray(current.options)) {
+            merged.options = (current.options as Array<Record<string, unknown>>).map(
+              (option, optionIndex) => {
+                const nextOption = record.options?.[optionIndex];
+                if (
+                  nextOption &&
+                  typeof nextOption === 'object' &&
+                  !Array.isArray(nextOption) &&
+                  typeof (nextOption as { text?: unknown }).text === 'string'
+                ) {
+                  return { ...option, text: (nextOption as { text: string }).text };
+                }
+                return option;
+              },
+            );
+          }
+          return merged;
+        },
+      );
+    }
+    return next;
   }
 
   private async generateJson(

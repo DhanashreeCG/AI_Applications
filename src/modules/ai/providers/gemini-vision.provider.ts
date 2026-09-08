@@ -72,7 +72,7 @@ export class GeminiVisionProvider implements VisionProvider {
     } else {
       this.client = null;
       this.logger.warn(
-        'GEMINI_API_KEY not provided. GeminiVisionProvider is unavailable.',
+        'GEMINI_API_KEY (shared/platform, or FLASHCARD_GEMINI_API_KEY fallback) not provided. GeminiVisionProvider is unavailable.',
       );
     }
   }

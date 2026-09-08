@@ -1,4 +1,4 @@
-import { buildCorsOptions } from './cors.util';
+import { buildCorsOptions, CORS_ALLOWED_HEADERS } from './cors.util';
 
 describe('buildCorsOptions', () => {
   it('reflects any origin when allowAll is true', () => {
@@ -31,5 +31,24 @@ describe('buildCorsOptions', () => {
     originFn(undefined, (_err, allow) => {
       expect(allow).toBe(true);
     });
+  });
+
+  it('allows frontend tracing and restriction headers used by flashcards/worksheets HTML', () => {
+    const options = buildCorsOptions({
+      origins: ['https://dev-ai-flashcards.toondemy.com'],
+      allowAll: false,
+      credentials: false,
+    });
+
+    expect(options.allowedHeaders).toEqual(expect.arrayContaining([...CORS_ALLOWED_HEADERS]));
+    expect(options.allowedHeaders).toEqual(
+      expect.arrayContaining([
+        'x-trace-id',
+        'x-correlation-id',
+        'x-country-code',
+        'Authorization',
+        'Accept',
+      ]),
+    );
   });
 });

@@ -9,12 +9,12 @@ import {
   sanitizeUploadFilename,
 } from '../../storage/s3-storage.service';
 import { PrismaService } from '../../database/prisma.service';
+import { getErrorMessage } from '../../../common/utils/error-message';
 import {
   PIPELINE_STAGES,
   PipelineTelemetryContext,
 } from '../../../common/events/pipeline-tracker.events';
 import {
-  mapWithConcurrency,
   WORKSHEET_IMAGE_SEARCH_EMBEDDING_PURPOSE,
   WORKSHEET_TEMPLATE_IMAGE_MAX_BYTES,
   WORKSHEET_TEMPLATE_IMAGE_MIME_TYPES,
@@ -26,8 +26,11 @@ import {
 } from '../types/worksheet.types';
 import {
   collectImageQueries,
+  isAnswerAndColourSlug,
   normalizeImageQueryFields,
   patchImageSlot,
+  stripLineartFromNonImageFields,
+  withLineartQuery,
   setUserUploadedImageIndex,
   setValueAtPath,
   stripTransientAssetFields,
@@ -44,6 +47,9 @@ export class WorksheetAssetService {
   private readonly searchLimit: number;
   private readonly pickerLimit: number;
   private readonly signedUrlTtlSeconds: number;
+  private readonly embeddingMaxAttempts: number;
+  private readonly embeddingRetryDelayMs: number;
+  private readonly minSimilarity: number;
   private readonly assetImagePath: string;
   private readonly userUploadS3Prefix: string;
   private readonly emitter: WorksheetPipelineEmitter;
@@ -56,11 +62,23 @@ export class WorksheetAssetService {
     eventEmitter: EventEmitter2,
   ) {
     this.concurrency =
-      this.configService.get<number>('worksheets.imageConcurrency') ?? 3;
+      this.configService.get<number>('worksheets.imageConcurrency') ?? 6;
     this.searchLimit =
       this.configService.get<number>('worksheets.imageSearchLimit') ?? 1;
     this.pickerLimit =
       this.configService.get<number>('worksheets.imagePickerLimit') ?? 10;
+    this.embeddingMaxAttempts = Math.max(
+      1,
+      this.configService.get<number>('worksheets.imageEmbeddingMaxAttempts') ?? 2,
+    );
+    this.embeddingRetryDelayMs = Math.max(
+      0,
+      this.configService.get<number>('worksheets.imageEmbeddingRetryDelayMs') ?? 200,
+    );
+    this.minSimilarity = Math.max(
+      0,
+      this.configService.get<number>('worksheets.imageMinSimilarity') ?? 0,
+    );
     this.signedUrlTtlSeconds =
       this.configService.get<number>('worksheets.signedUrlTtlSeconds') ?? 3600;
     this.assetImagePath = (
@@ -74,6 +92,14 @@ export class WorksheetAssetService {
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
   }
 
+  private usableRenderSrc(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const src = value.trim();
+    if (!src || src === 'null' || src === 'undefined') return null;
+    if (/^(data:|blob:|https?:|\/)/i.test(src)) return src;
+    return null;
+  }
+
   public persistableStructure(
     structure: Record<string, unknown>,
   ): Record<string, unknown> {
@@ -82,36 +108,174 @@ export class WorksheetAssetService {
 
   public async attachAssets(
     structure: Record<string, unknown>,
-    options?: { grades?: string[]; ageGroups?: string[] },
+    options?: {
+      grades?: string[];
+      ageGroups?: string[];
+      templateSlug?: string;
+    },
     telemetry?: PipelineTelemetryContext,
   ): Promise<{ structure: Record<string, unknown>; slots: ResolvedAssetSlot[] }> {
-    const normalized = normalizeImageQueryFields(structure);
-    const queries = collectImageQueries(normalized);
+    const [result] = await this.attachAssetsBatch([structure], options, telemetry);
+    return result;
+  }
+
+  public async attachAssetsBatch(
+    structures: Array<Record<string, unknown>>,
+    options?: {
+      grades?: string[];
+      ageGroups?: string[];
+      templateSlug?: string;
+    },
+    telemetry?: PipelineTelemetryContext,
+  ): Promise<Array<{ structure: Record<string, unknown>; slots: ResolvedAssetSlot[] }>> {
+    const normalizedList = structures.map((s) => {
+      const normalized = normalizeImageQueryFields(s);
+      return isAnswerAndColourSlug(options?.templateSlug)
+        ? stripLineartFromNonImageFields(normalized)
+        : normalized;
+    });
+
+    // 1. Gather all slot queries across all structures in the batch
+    const allSlotRequests: Array<{
+      structureIndex: number;
+      path: string;
+      query: string;
+    }> = [];
+
+    normalizedList.forEach((struct, structureIndex) => {
+      const queries = collectImageQueries(struct);
+      const uniqueParents = new Map<string, { path: string; query: string }>();
+      for (const item of queries) {
+        uniqueParents.set(item.parentPath, {
+          path: item.parentPath,
+          query: withLineartQuery(item.query, options?.templateSlug),
+        });
+      }
+      for (const item of uniqueParents.values()) {
+        allSlotRequests.push({
+          structureIndex,
+          path: item.path,
+          query: item.query,
+        });
+      }
+    });
+
     this.logger.log(
-      `image search start slots=${queries.length} ${JSON.stringify(
-        queries.map((item) => ({ path: item.parentPath, query: item.query })),
-      )}`,
+      `batch image search start worksheets=${structures.length} totalSlots=${allSlotRequests.length}`,
     );
-    const uniqueParents = new Map<string, { path: string; query: string }>();
-    for (const item of queries) {
-      uniqueParents.set(item.parentPath, {
-        path: item.parentPath,
-        query: item.query,
+
+    // 2. In-batch Deduplication: extract unique query strings to avoid repeating identical searches
+    const uniqueQueryStrings = Array.from(
+      new Set(allSlotRequests.map((r) => r.query.trim()).filter(Boolean)),
+    );
+
+    // 3. One batch embed + vector search for unique queries (flashcard miss semantics)
+    const queryToAssetIdMap = new Map<string, string | undefined>();
+    const filters = {
+      grades: options?.grades?.filter(Boolean),
+      ageGroups: options?.ageGroups?.filter(Boolean),
+    };
+    const hasFilters = Boolean(filters.grades?.length || filters.ageGroups?.length);
+
+    if (uniqueQueryStrings.length > 0) {
+      const startedAt = Date.now();
+      const searchIds = new Map(
+        uniqueQueryStrings.map((query) => [query, randomUUID()]),
+      );
+      if (telemetry) {
+        for (const queryString of uniqueQueryStrings) {
+          this.emitter.emitImageSearchStarted({
+            ...telemetry,
+            searchId: searchIds.get(queryString) ?? randomUUID(),
+            stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+            query: queryString,
+            filters: hasFilters ? filters : undefined,
+          });
+        }
+      }
+      try {
+        const responses = await this.searchBatchWithRetry(
+          uniqueQueryStrings,
+          hasFilters ? filters : undefined,
+        );
+        for (const queryString of uniqueQueryStrings) {
+          const response = responses.get(queryString);
+          this.emitEmbeddingUsage(telemetry, queryString, response);
+          const hit = this.selectHit(response);
+          if (hit) {
+            queryToAssetIdMap.set(queryString, hit);
+          } else {
+            this.logger.warn(`No asset found for imageQuery "${queryString}"`);
+          }
+          if (telemetry) {
+            this.emitter.emitImageSearchCompleted({
+              ...telemetry,
+              searchId: searchIds.get(queryString) ?? randomUUID(),
+              stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+              query: queryString,
+              filters: hasFilters ? filters : undefined,
+              resultCount: response?.results.length ?? 0,
+              selectedAssetId: hit ?? null,
+              cacheHit: response?.fromCache === true,
+              failed: false,
+              durationMs: Date.now() - startedAt,
+            });
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Batch asset search failed: ${getErrorMessage(error)}`,
+        );
+        if (telemetry) {
+          for (const queryString of uniqueQueryStrings) {
+            this.emitter.emitImageSearchCompleted({
+              ...telemetry,
+              searchId: searchIds.get(queryString) ?? randomUUID(),
+              stageName: PIPELINE_STAGES.IMAGE_RETRIEVAL,
+              query: queryString,
+              filters: hasFilters ? filters : undefined,
+              resultCount: 0,
+              selectedAssetId: null,
+              failed: true,
+              errorMessage: 'Asset search failed',
+              durationMs: Date.now() - startedAt,
+            });
+          }
+        }
+      }
+    }
+
+    // 4. Map resolved asset IDs back to each worksheet structure
+    const results: Array<{
+      structure: Record<string, unknown>;
+      slots: ResolvedAssetSlot[];
+    }> = [];
+
+    normalizedList.forEach((normalized, structureIndex) => {
+      const structureSlots = allSlotRequests
+        .filter((r) => r.structureIndex === structureIndex)
+        .map((r) => {
+          const trimmed = r.query.trim();
+          const assetId = queryToAssetIdMap.get(trimmed);
+          return {
+            path: r.path,
+            imageQuery: trimmed,
+            assetId,
+          } as ResolvedAssetSlot;
+        });
+
+      let next = normalized;
+      for (const slot of structureSlots) {
+        next = this.applySlot(next, slot);
+      }
+
+      results.push({
+        structure: this.persistableStructure(next),
+        slots: structureSlots,
       });
-    }
+    });
 
-    const slots = await mapWithConcurrency(
-      [...uniqueParents.values()],
-      this.concurrency,
-      async (item) => this.resolveSlot(item.query, item.path, options, telemetry),
-    );
-
-    let next = normalized;
-    for (const slot of slots) {
-      next = this.applySlot(next, slot);
-    }
-
-    return { structure: this.persistableStructure(next), slots };
+    return results;
   }
 
   public applySlot(
@@ -132,10 +296,14 @@ export class WorksheetAssetService {
   public async resolveSlot(
     imageQuery: string,
     path: string,
-    options?: { grades?: string[]; ageGroups?: string[] },
+    options?: {
+      grades?: string[];
+      ageGroups?: string[];
+      templateSlug?: string;
+    },
     telemetry?: PipelineTelemetryContext,
   ): Promise<ResolvedAssetSlot> {
-    const query = imageQuery.trim();
+    const query = withLineartQuery(imageQuery, options?.templateSlug);
     if (!query) {
       return this.emptySlot(path, query);
     }
@@ -163,30 +331,18 @@ export class WorksheetAssetService {
     );
 
     try {
-      let response = await this.searchService.search({
+      const response = await this.searchWithEmbeddingRetry(
         query,
-        limit: this.searchLimit,
-        filters: hasFilters ? filters : undefined,
-      });
+        hasFilters ? filters : undefined,
+      );
       this.emitEmbeddingUsage(telemetry, query, response);
       this.logger.log(
         `image search embedding+vector path=${path || '(root)'} query="${query}" hits=${response.results.length} cache=${response.fromCache === true} topAssetId=${response.results[0]?.assetId ?? 'none'}`,
       );
 
-      if (!response.results.length && hasFilters) {
-        this.logger.warn(
-          `No filtered asset for "${query}" at ${path}; retrying without grade/age filters`,
-        );
-        response = await this.searchService.search({
-          query,
-          limit: this.searchLimit,
-        });
-        this.emitEmbeddingUsage(telemetry, query, response);
-      }
-
-      const hit = response.results[0];
-      const slot: ResolvedAssetSlot = hit
-        ? { path, imageQuery: query, assetId: hit.assetId }
+      const hitId = this.selectHit(response);
+      const slot: ResolvedAssetSlot = hitId
+        ? { path, imageQuery: query, assetId: hitId }
         : this.emptySlot(path, query);
 
       if (!slot.assetId) {
@@ -232,6 +388,78 @@ export class WorksheetAssetService {
       }
       return this.emptySlot(path, query);
     }
+  }
+
+  private async searchBatchWithRetry(
+    queries: string[],
+    filters?: { grades?: string[]; ageGroups?: string[] },
+  ): Promise<Map<string, SearchAssetsResponse>> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.embeddingMaxAttempts; attempt += 1) {
+      try {
+        return await this.searchService.searchMany(queries, {
+          limit: this.searchLimit,
+          filters,
+          retrieval: true,
+          concurrency: this.concurrency,
+          embeddingBilling: 'worksheets',
+        });
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(
+          `Worksheet batch image search attempt ${attempt}/${this.embeddingMaxAttempts} failed: ${getErrorMessage(error)}`,
+        );
+        if (attempt < this.embeddingMaxAttempts && this.embeddingRetryDelayMs) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.embeddingRetryDelayMs),
+          );
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  private selectHit(response: SearchAssetsResponse | undefined): string | undefined {
+    const hit = response?.results?.[0];
+    if (!hit?.assetId) {
+      return undefined;
+    }
+    if (this.minSimilarity > 0 && hit.similarity < this.minSimilarity) {
+      this.logger.warn(
+        `Dropped weak match for "${response?.query}" assetId=${hit.assetId} similarity=${hit.similarity}`,
+      );
+      return undefined;
+    }
+    return hit.assetId;
+  }
+
+  private async searchWithEmbeddingRetry(
+    query: string,
+    filters?: { grades?: string[]; ageGroups?: string[] },
+  ): Promise<SearchAssetsResponse> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.embeddingMaxAttempts; attempt += 1) {
+      try {
+        return await this.searchService.search({
+          query,
+          limit: this.searchLimit,
+          filters,
+          retrieval: true,
+          embeddingBilling: 'worksheets',
+        });
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(
+          `Worksheet image search attempt ${attempt}/${this.embeddingMaxAttempts} failed for "${query}": ${getErrorMessage(error)}`,
+        );
+        if (attempt < this.embeddingMaxAttempts && this.embeddingRetryDelayMs) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.embeddingRetryDelayMs),
+          );
+        }
+      }
+    }
+    throw lastError;
   }
 
   public assetProxyUrl(assetId: string): string {
@@ -287,6 +515,7 @@ export class WorksheetAssetService {
           }
           next[key] = walk(child);
         }
+        const replacement = this.usableRenderSrc(record.imageUrl) || this.usableRenderSrc(record.assetUrl);
         if (typeof record.assetId === 'string' && record.assetId.trim()) {
           next.assetUrl = this.assetProxyUrl(record.assetId);
         } else if (
@@ -299,7 +528,13 @@ export class WorksheetAssetService {
               parsed.worksheetId,
               parsed.uploadId,
             );
+          } else if (replacement) {
+            next.assetUrl = replacement;
+            next.imageUrl = replacement;
           }
+        } else if (replacement) {
+          next.assetUrl = replacement;
+          next.imageUrl = replacement;
         }
         return next;
       }
@@ -312,6 +547,7 @@ export class WorksheetAssetService {
     query: string,
     limit?: number,
     countryCode?: string,
+    templateSlug?: string,
   ): Promise<
     Array<{
       assetId: string;
@@ -320,13 +556,14 @@ export class WorksheetAssetService {
       imageUrl: string;
     }>
   > {
-    const trimmed = query.trim();
+    const trimmed = withLineartQuery(query, templateSlug);
     if (!trimmed) {
       return [];
     }
     const response = await this.searchService.search({
       query: trimmed,
       limit: limit ?? this.pickerLimit,
+      embeddingBilling: 'worksheets',
       ...(countryCode ? { countryCode } : {}),
     });
     return response.results.map((hit) => ({
@@ -479,9 +716,9 @@ export class WorksheetAssetService {
   private emitEmbeddingUsage(
     telemetry: PipelineTelemetryContext | undefined,
     query: string,
-    response: SearchAssetsResponse,
+    response: SearchAssetsResponse | undefined,
   ): void {
-    if (!telemetry || !response.usage || response.usage.fromCache) {
+    if (!telemetry || !response?.usage || response.usage.fromCache) {
       return;
     }
     const invocationId = randomUUID();

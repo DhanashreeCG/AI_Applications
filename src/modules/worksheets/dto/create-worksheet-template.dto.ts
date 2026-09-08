@@ -76,6 +76,36 @@ export class CreateWorksheetTemplateDto {
     example: 'You edit a single worksheet field. Return JSON {"value": ...} only.',
   })
   aiSystemPrompt?: string;
+
+  @ApiPropertyOptional({
+    description: 'Raw source of ai-edit-config.js (buildInstruction).',
+  })
+  aiEditConfigJs?: string;
+
+  @ApiPropertyOptional({
+    description: 'Raw HTML for the template-specific AI edit popup fields.',
+  })
+  aiEditPopupHtml?: string;
+
+  @ApiPropertyOptional({
+    description: 'Raw source of ai-edit-panel.js when the template uses a custom panel.',
+  })
+  aiEditPanelJs?: string;
+
+  @ApiPropertyOptional({
+    description: 'Raw source of editor.js (getEditableFields / applyEditorChanges).',
+  })
+  editorJs?: string;
+
+  @ApiPropertyOptional({
+    description: 'Raw source of field-editor.js (resolveField / getFieldPrompt).',
+  })
+  fieldEditorJs?: string;
+
+  @ApiPropertyOptional({
+    description: 'Raw source of renderer.js when a custom renderer is stored with the template.',
+  })
+  rendererJs?: string;
 }
 
 export class CreateWorksheetTemplateResponseDto {
@@ -111,4 +141,22 @@ export class CreateWorksheetTemplateResponseDto {
 
   @ApiPropertyOptional()
   sampleUrl?: string;
+
+  @ApiPropertyOptional()
+  aiEditConfigJs?: string | null;
+
+  @ApiPropertyOptional()
+  aiEditPopupHtml?: string | null;
+
+  @ApiPropertyOptional()
+  aiEditPanelJs?: string | null;
+
+  @ApiPropertyOptional()
+  editorJs?: string | null;
+
+  @ApiPropertyOptional()
+  fieldEditorJs?: string | null;
+
+  @ApiPropertyOptional()
+  rendererJs?: string | null;
 }

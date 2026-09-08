@@ -149,11 +149,10 @@ describe('VectorStorageService', () => {
 
     const results = await service.searchSimilar(sampleVector, 2);
 
-    expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledWith(
-      expect.stringContaining('vector <=> $1::vector'),
-      expect.any(String),
-      2,
-    );
+    const [sql] = mockPrisma.$queryRawUnsafe.mock.calls[0];
+    expect(sql).toContain('FROM "AssetEmbedding"');
+    expect(sql).toContain('ORDER BY vector <=> $1::vector');
+    expect(sql).not.toContain('DISTINCT ON');
     expect(results).toEqual([
       {
         assetId: 'asset-001',

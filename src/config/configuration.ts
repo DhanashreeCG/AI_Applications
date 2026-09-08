@@ -36,6 +36,10 @@ export interface AppConfig {
     apiKey?: string;
   };
   ai: {
+    /**
+     * Shared/platform keys: asset ingestion (Gemini vision) + embeddings (image search).
+     * Prefer GEMINI_API_KEY / OPENAI_API_KEY; falls back to flashcard product keys.
+     */
     geminiApiKey?: string;
     geminiModel: string;
     geminiPromptVersion: string;
@@ -65,6 +69,10 @@ export interface AppConfig {
     prefix: string;
   };
   flashcards: {
+    /** Flashcard-only Gemini key (content, template selection, image-query refinement). */
+    geminiApiKey?: string;
+    /** Flashcard-only OpenAI key (content, template selection, image-query refinement). */
+    openaiApiKey?: string;
     gyanApiBaseUrl: string;
     parentOrigin: string;
     imageConcurrency: number;
@@ -118,13 +126,27 @@ export interface AppConfig {
     };
   };
   worksheets: {
+    /** Worksheet-only Gemini key (content generation, template selection). */
+    geminiApiKey?: string;
+    /** Worksheet-only OpenAI key (template selection when provider=openai). */
+    openaiApiKey?: string;
     apiBaseUrl: string;
     apiPrefix: string;
+    parentOrigin: string;
+    upload: {
+      apiUrl: string;
+      entityName: string;
+      entityType: string;
+      folderName: string;
+    };
     assetImagePath: string;
     pencilIconUrl: string;
     imageConcurrency: number;
+    imageEmbeddingMaxAttempts: number;
+    imageEmbeddingRetryDelayMs: number;
     signedUrlTtlSeconds: number;
     imageSearchLimit: number;
+    imageMinSimilarity: number;
     imagePickerLimit: number;
     userUploadS3Prefix: string;
     generateCountDefault: number;
@@ -145,6 +167,17 @@ export interface AppConfig {
       defaultWidth: number;
       defaultHeight: number;
     };
+    templateSelectionAi: {
+      enabled: boolean;
+      provider: string;
+      openaiModel: string;
+      geminiModel: string;
+      minConfidence: number;
+      timeoutMs: number;
+      costPerMInputUsd: number;
+      costPerMCachedInputUsd: number;
+      costPerMOutputUsd: number;
+    };
   };
   pipelineTracking: {
     enabled: boolean;
@@ -159,6 +192,17 @@ function envTrim(name: string, fallback = ''): string {
     return fallback;
   }
   return raw.trim();
+}
+
+/** First non-empty trimmed env var (for product-scoped API key fallbacks). */
+function firstEnv(...names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function parseWorksheetAgeGroups(raw: string | undefined): AppConfig['worksheets']['ageGroups'] {
@@ -201,10 +245,17 @@ function envInt(primary: string, fallback: string, defaultValue: number): number
 function parseCorsOrigins(): string[] {
   const listed = (process.env.CORS_ORIGINS || '')
     .split(',')
-    .map((value) => value.trim().replace(/\/$/, ''))
+    .map((value) =>
+      value
+        .trim()
+        .replace(/^['"]+|['"]+$/g, '') // strip wrapping quotes from platform env injectors
+        .replace(/\/$/, ''),
+    )
     .filter((value) => value.length > 0 && value !== '*');
 
-  const parent = envTrim('PARENT_ORIGIN').replace(/\/$/, '');
+  const parent = envTrim('PARENT_ORIGIN')
+    .replace(/^['"]+|['"]+$/g, '')
+    .replace(/\/$/, '');
   if (parent && parent !== '*' && /^https?:\/\//i.test(parent)) {
     listed.push(parent);
   }
@@ -257,7 +308,9 @@ export default (): AppConfig => ({
     apiKey: process.env.GOOGLE_DRIVE_API_KEY,
   },
   ai: {
-    geminiApiKey: process.env.GEMINI_API_KEY,
+    // Shared platform: ingestion vision + embeddings. Prefer dedicated shared keys;
+    // fall back to flashcard product keys so a 4-key setup still works.
+    geminiApiKey: firstEnv('GEMINI_API_KEY', 'FLASHCARD_GEMINI_API_KEY'),
     geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     geminiPromptVersion: process.env.GEMINI_PROMPT_VERSION || 'v1',
     flashcardPromptVersion: process.env.FLASHCARD_PROMPT_VERSION || 'v1',
@@ -266,7 +319,7 @@ export default (): AppConfig => ({
     geminiFlashcardModel:
       process.env.FLASHCARD_GEMINI_MODEL || 'gemini-2.5-flash',
     openaiFlashcardModel: process.env.OPENAI_FLASHCARD_MODEL || 'gpt-4o-mini',
-    openaiApiKey: process.env.OPENAI_API_KEY,
+    openaiApiKey: firstEnv('OPENAI_API_KEY', 'FLASHCARD_OPENAI_API_KEY'),
     openaiEmbeddingModel:
       process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
     costGeminiPerImageUsd: parseFloat(
@@ -317,6 +370,8 @@ export default (): AppConfig => ({
     prefix: normalizeBullMqPrefix(process.env.BULLMQ_PREFIX),
   },
   flashcards: {
+    geminiApiKey: firstEnv('FLASHCARD_GEMINI_API_KEY', 'GEMINI_API_KEY'),
+    openaiApiKey: firstEnv('FLASHCARD_OPENAI_API_KEY', 'OPENAI_API_KEY'),
     gyanApiBaseUrl: envTrim('GYAN_API_BASE_URL') || 'https://gyan-api.creativegalileo.com',
     parentOrigin: envTrim('PARENT_ORIGIN') || '*',
     imageConcurrency: parseInt(
@@ -449,8 +504,22 @@ export default (): AppConfig => ({
     },
   },
   worksheets: {
+    geminiApiKey: firstEnv('WORKSHEET_GEMINI_API_KEY', 'GEMINI_API_KEY'),
+    openaiApiKey: firstEnv('WORKSHEET_OPENAI_API_KEY', 'OPENAI_API_KEY'),
     apiBaseUrl: envTrim('WORKSHEET_API_BASE_URL').replace(/\/$/, ''),
     apiPrefix: envTrim('WORKSHEET_API_PREFIX', '/worksheets').replace(/\/$/, '') || '/worksheets',
+    parentOrigin: envTrim('WORKSHEET_PARENT_ORIGIN', '*') || '*',
+    upload: {
+      apiUrl:
+        envTrim('WORKSHEET_UPLOAD_API_URL') ||
+        envTrim('FLASHCARD_UPLOAD_API_URL') ||
+        'https://gyan-dev-api.creativegalileo.com/api/gyan/V1/media/upload-media',
+      entityName: envTrim('WORKSHEET_UPLOAD_ENTITY_NAME', 'GYAN') || 'GYAN',
+      entityType:
+        envTrim('WORKSHEET_UPLOAD_ENTITY_TYPE', 'ai_worksheets') || 'ai_worksheets',
+      folderName:
+        envTrim('WORKSHEET_UPLOAD_FOLDER_NAME', 'ai_worksheets') || 'ai_worksheets',
+    },
     assetImagePath: envTrim('WORKSHEET_ASSET_IMAGE_PATH', '/worksheets/assets').replace(
       /\/$/,
       '',
@@ -458,8 +527,20 @@ export default (): AppConfig => ({
     pencilIconUrl: envTrim('WORKSHEET_PENCIL_ICON_URL', '/pencil.png'),
     imageConcurrency: parseInt(
       process.env.WORKSHEET_IMAGE_CONCURRENCY ||
-      process.env.FLASHCARD_IMAGE_CONCURRENCY ||
-      '3',
+        process.env.FLASHCARD_IMAGE_CONCURRENCY ||
+        '6',
+      10,
+    ),
+    imageEmbeddingMaxAttempts: parseInt(
+      process.env.WORKSHEET_IMAGE_EMBEDDING_MAX_ATTEMPTS ||
+        process.env.FLASHCARD_IMAGE_EMBEDDING_MAX_ATTEMPTS ||
+        '2',
+      10,
+    ),
+    imageEmbeddingRetryDelayMs: parseInt(
+      process.env.WORKSHEET_IMAGE_EMBEDDING_RETRY_DELAY_MS ||
+        process.env.FLASHCARD_IMAGE_EMBEDDING_RETRY_DELAY_MS ||
+        '200',
       10,
     ),
     signedUrlTtlSeconds: parseInt(
@@ -471,6 +552,9 @@ export default (): AppConfig => ({
     imageSearchLimit: parseInt(
       process.env.WORKSHEET_IMAGE_SEARCH_LIMIT || '1',
       10,
+    ),
+    imageMinSimilarity: Number.parseFloat(
+      process.env.WORKSHEET_IMAGE_MIN_SIMILARITY || '0',
     ),
     imagePickerLimit: parseInt(
       process.env.WORKSHEET_IMAGE_PICKER_LIMIT || '10',
@@ -516,6 +600,17 @@ export default (): AppConfig => ({
         process.env.WORKSHEET_RENDER_HEIGHT || '1316',
         10,
       ),
+    },
+    templateSelectionAi: {
+      enabled: process.env.WORKSHEET_TEMPLATE_SELECTION_AI_ENABLED !== 'false',
+      provider: process.env.WORKSHEET_TEMPLATE_SELECTION_PROVIDER || 'openai',
+      openaiModel: process.env.WORKSHEET_TEMPLATE_SELECTION_OPENAI_MODEL || 'gpt-4.1-mini',
+      geminiModel: process.env.WORKSHEET_TEMPLATE_SELECTION_GEMINI_MODEL || 'gemini-2.5-flash',
+      minConfidence: parseFloat(process.env.WORKSHEET_TEMPLATE_SELECTION_MIN_CONFIDENCE || '0.5'),
+      timeoutMs: parseInt(process.env.WORKSHEET_TEMPLATE_SELECTION_TIMEOUT_MS || '6000', 10),
+      costPerMInputUsd: parseFloat(process.env.WORKSHEET_TEMPLATE_SELECTION_COST_PER_M_INPUT_USD || '0.4'),
+      costPerMCachedInputUsd: parseFloat(process.env.WORKSHEET_TEMPLATE_SELECTION_COST_PER_M_CACHED_INPUT_USD || '0.1'),
+      costPerMOutputUsd: parseFloat(process.env.WORKSHEET_TEMPLATE_SELECTION_COST_PER_M_OUTPUT_USD || '1.6'),
     },
   },
   pipelineTracking: {
