@@ -313,6 +313,103 @@ export function visualQueryFromImageRecord(
   return null;
 }
 
+export function isBeforeAfterNumbersWorksheet(
+  structure: Record<string, unknown>,
+): boolean {
+  const type = String(structure.worksheet_type ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  if (type.includes('numbersafterandbefore') || type.includes('afterandbefore')) {
+    return true;
+  }
+  const items = Array.isArray(structure.items) ? structure.items : [];
+  return (
+    items.length > 0 &&
+    items.every(
+      (item) =>
+        isRecord(item) &&
+        'blank_position' in item &&
+        (typeof item.number === 'number' || typeof item.number === 'string'),
+    )
+  );
+}
+
+/**
+ * Before/after grids use one repeated mascot between every circle pair.
+ * Collapse divergent item imageQueries / assetIds onto the first usable slot.
+ */
+export function unifyBeforeAfterSharedMascot(
+  structure: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!isBeforeAfterNumbersWorksheet(structure)) {
+    return structure;
+  }
+  const items = Array.isArray(structure.items) ? structure.items : [];
+  if (items.length === 0) {
+    return structure;
+  }
+
+  let canonical: Record<string, unknown> | null = null;
+  let fallback: Record<string, unknown> | null = null;
+  for (const item of items) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const hasAsset =
+      (typeof item.assetId === 'string' && item.assetId.trim() !== '') ||
+      (typeof item.assetUrl === 'string' && item.assetUrl.trim() !== '') ||
+      (typeof item.imageUrl === 'string' && item.imageUrl.trim() !== '') ||
+      (typeof item.signedUrl === 'string' && item.signedUrl.trim() !== '');
+    const query = visualQueryFromImageRecord(item);
+    if (hasAsset) {
+      canonical = item;
+      break;
+    }
+    if (!fallback && query) {
+      fallback = item;
+    }
+  }
+  canonical = canonical ?? fallback;
+  if (!canonical) {
+    return structure;
+  }
+
+  const imageQuery =
+    (typeof canonical.imageQuery === 'string' && canonical.imageQuery.trim()) ||
+    visualQueryFromImageRecord(canonical) ||
+    '';
+  const imageName =
+    typeof canonical.image_name === 'string' ? canonical.image_name : undefined;
+
+  return {
+    ...structure,
+    items: items.map((item) => {
+      if (!isRecord(item)) {
+        return item;
+      }
+      const next: Record<string, unknown> = { ...item };
+      if (imageQuery) {
+        next.imageQuery = imageQuery;
+      }
+      if (imageName) {
+        next.image_name = imageName;
+      }
+      for (const key of [
+        'assetId',
+        'assetUrl',
+        'imageUrl',
+        'signedUrl',
+      ] as const) {
+        const value = canonical![key];
+        if (typeof value === 'string' && value.trim() !== '') {
+          next[key] = value;
+        }
+      }
+      return next;
+    }),
+  };
+}
+
 export function normalizeImageQueryFields(
   structure: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -367,7 +464,7 @@ export function normalizeImageQueryFields(
     }
     return next;
   };
-  return asStructureRecord(walk(structure));
+  return unifyBeforeAfterSharedMascot(asStructureRecord(walk(structure)));
 }
 
 /**

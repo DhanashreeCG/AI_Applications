@@ -268,6 +268,15 @@ export function buildWorksheetContentPrompt(input: {
       '- Keep worksheet_type as storytime_maze.',
       ''
     ] : []),
+    ...(input.templateSlug === 'numbers_after_and_before' ? [
+      'For numbers_after_and_before worksheets:',
+      '- Set mode to "before" or "after". Use blank_position "left" for before (given number on the right) and "right" for after.',
+      '- Exactly 8 items[] in row-major order (2 columns × 4 rows): id item_1..item_8, number (the given digit), blank_position.',
+      '- CRITICAL: All 8 items MUST share the SAME imageQuery (one cute mascot character, e.g. "cute cartoon penguin"). Do NOT invent a different image per cell — the worksheet repeats one image between every pair of circles.',
+      '- Include number_line { start, end, show } and/or number_line_numbers covering the printed line (usually 0..10).',
+      '- instruction_text must match the mode (before vs after). Keep worksheet_type as Numbers_afterandbefore.',
+      ''
+    ] : []),
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',

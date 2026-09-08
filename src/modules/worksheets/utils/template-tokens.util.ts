@@ -1,10 +1,14 @@
 import {
   collectImageSlots,
   filenameToSearchQuery,
+  isBeforeAfterNumbersWorksheet,
   resolveAliasFieldPath,
   resolveAliasImagePath,
+  unifyBeforeAfterSharedMascot,
   visualQueryFromImageRecord,
 } from './structure.util';
+
+export { isBeforeAfterNumbersWorksheet };
 import { ImageSlotRef } from '../types/worksheet.types';
 import { generateCircleGridPositions } from './scatter-layout.util';
 
@@ -139,6 +143,10 @@ function pairField(item: unknown, key: string): string {
 
 function looksLikeMatchingPair(item: unknown): boolean {
   if (!isRecord(item)) {
+    return false;
+  }
+  // numbers_after_and_before items also have `number` but use a blank/mascot grid.
+  if ('blank_position' in item) {
     return false;
   }
   return ['number', 'name', 'left', 'right', 'match'].some((key) => key in item);
@@ -593,14 +601,23 @@ export function injectWorksheetItemsMarkup(
   structure: Record<string, unknown>,
   pencilIconUrl = '',
 ): string {
-  const itemsHtml = itemsUseAbsolutePositions(structure)
-    ? buildPositionedItemsMarkup(structure, pencilIconUrl)
-    : buildScatterItemsMarkup(structure, pencilIconUrl, html);
+  const itemsHtml = isBeforeAfterNumbersWorksheet(structure)
+    ? buildBeforeAfterItemsMarkup(structure, pencilIconUrl)
+    : itemsUseAbsolutePositions(structure)
+      ? buildPositionedItemsMarkup(structure, pencilIconUrl)
+      : buildScatterItemsMarkup(structure, pencilIconUrl, html);
 
   let next = html
     .replace(/\{\{\s*ITEMS_HTML\s*\}\}/gi, itemsHtml)
     .replace(/\{\{\s*ITEMS_PLACEHOLDER\s*\}\}/g, itemsHtml)
     .replace(/\{\{\s*ITEMS\s*\}\}/gi, itemsHtml);
+
+  if (/\{\{\s*NUMBER_LINE_DIGITS\s*\}\}/i.test(next)) {
+    next = next.replace(
+      /\{\{\s*NUMBER_LINE_DIGITS\s*\}\}/gi,
+      buildNumberLineDigitsMarkup(structure),
+    );
+  }
 
   if (
     itemsHtml &&
@@ -613,6 +630,169 @@ export function injectWorksheetItemsMarkup(
     );
   }
   return next;
+}
+
+/**
+ * Grid calibrated to the numbers_after_and_before background art
+ * (asset 596×795 stretched onto the 1016×1316 canvas).
+ *
+ * Teal circle centers on canvas ≈ (191,605), (404,605) | (615,605), (828,605)
+ * with rowStride ≈ 171. Tune these if overlays drift:
+ * - originLeft/originTop: top-left of the left circle in cell 0
+ * - rightCircle.left: distance from left-circle left edge → right-circle left edge
+ * - mascot.left: left edge of the image between the two circles
+ * - colStride / rowStride: cell-to-cell steps
+ */
+const BEFORE_AFTER_GRID = {
+  originLeft: 137,
+  originTop: 551,
+  colStride: 424,
+  rowStride: 171,
+  leftCircle: { left: 0, top: 0 },
+  mascot: { left: 113, top: 4 },
+  rightCircle: { left: 213, top: 0 },
+  circleSize: 108,
+  mascotSize: { width: 90, height: 100 },
+};
+
+/**
+ * Number-line digit anchors under the printed ticks.
+ * `.nl-digit` uses margin-left:-22px, so `left` is the tick center.
+ */
+const NUMBER_LINE_LAYOUT = {
+  top: 430,
+  startLeft: 191,
+  endLeft: 599,
+  digitWidth: 44,
+  digitHeight: 34,
+};
+
+function numberLineValues(structure: Record<string, unknown>): number[] {
+  if (Array.isArray(structure.number_line_numbers)) {
+    return structure.number_line_numbers
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n));
+  }
+  const line = isRecord(structure.number_line) ? structure.number_line : null;
+  if (line && Array.isArray(line.numbers)) {
+    return line.numbers.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  }
+  if (line && typeof line.start === 'number' && typeof line.end === 'number') {
+    const out: number[] = [];
+    for (let n = line.start; n <= line.end; n += 1) {
+      out.push(n);
+    }
+    return out;
+  }
+  return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+}
+
+export function buildNumberLineDigitsMarkup(
+  structure: Record<string, unknown>,
+): string {
+  const values = numberLineValues(structure);
+  if (values.length === 0) {
+    return '';
+  }
+  const { top, startLeft, endLeft, digitWidth, digitHeight } = NUMBER_LINE_LAYOUT;
+  const span = Math.max(1, values.length - 1);
+  const step = (endLeft - startLeft) / span;
+
+  return values
+    .map((value, index) => {
+      const left = Math.round(startLeft + index * step);
+      const path = `number_line_numbers[${index}]`;
+      return `<div class="nl-digit" style="left:${left}px;top:${top}px;width:${digitWidth}px;height:${digitHeight}px;" data-editable="nl_digit_${index}" data-field-path="${escapeAttr(path)}">${escapeHtml(String(value))}</div>`;
+    })
+    .join('');
+}
+
+/**
+ * Before/after number grid: blank circle | mascot | given number (or swapped).
+ * Circles on the background art are underlays; we paint the given digit + penguin.
+ */
+export function buildBeforeAfterItemsMarkup(
+  structure: Record<string, unknown>,
+  pencilIconUrl = '',
+): string {
+  const unified = unifyBeforeAfterSharedMascot(structure);
+  const items = Array.isArray(unified.items) ? unified.items : [];
+  if (items.length === 0) {
+    return '';
+  }
+  const icon = pencilIconUrl.trim();
+  const {
+    originLeft,
+    originTop,
+    colStride,
+    rowStride,
+    leftCircle,
+    mascot,
+    rightCircle,
+    circleSize,
+    mascotSize,
+  } = BEFORE_AFTER_GRID;
+
+  // One shared clipart URL for every cell (first resolved asset wins).
+  let sharedSrc = '';
+  let sharedAlt = 'mascot';
+  for (const item of items) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const src =
+      (typeof item.assetUrl === 'string' && item.assetUrl.trim()) ||
+      (typeof item.imageUrl === 'string' && item.imageUrl.trim()) ||
+      (typeof item.signedUrl === 'string' && item.signedUrl.trim()) ||
+      '';
+    if (src) {
+      sharedSrc = src;
+      sharedAlt =
+        visualQueryFromImageRecord(item) ||
+        (typeof item.image_name === 'string' ? item.image_name : '') ||
+        'mascot';
+      break;
+    }
+  }
+
+  return items
+    .map((item, index) => {
+      if (!isRecord(item)) {
+        return '';
+      }
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      const cellLeft = originLeft + col * colStride;
+      const cellTop = originTop + row * rowStride;
+      const blankOnLeft =
+        String(item.blank_position ?? 'left').toLowerCase() !== 'right';
+      const givenLeft = cellLeft + (blankOnLeft ? rightCircle.left : leftCircle.left);
+      const givenTop = cellTop + (blankOnLeft ? rightCircle.top : leftCircle.top);
+      const mascotLeft = cellLeft + mascot.left;
+      const mascotTop = cellTop + mascot.top;
+      const path = `items[${index}]`;
+      const slotId =
+        (typeof item.id === 'string' && item.id.trim()) || `item_${index + 1}`;
+      const value = escapeHtml(pairField(item, 'number'));
+      const rawSrc =
+        sharedSrc ||
+        (typeof item.assetUrl === 'string' && item.assetUrl) ||
+        (typeof item.imageUrl === 'string' && item.imageUrl) ||
+        '';
+      const srcAttr = rawSrc ? ` src="${escapeHtml(rawSrc)}"` : '';
+      const alt = escapeHtml(
+        sharedAlt ||
+          visualQueryFromImageRecord(item) ||
+          (typeof item.image_name === 'string' ? item.image_name : '') ||
+          'mascot',
+      );
+      const pencil = icon
+        ? `<button class="ai-pencil" data-pencil-for="${escapeAttr(path)}.number" type="button" title="AI regenerate" style="top:${givenTop - 8}px;left:${givenLeft + circleSize - 6}px;"><img src="${escapeAttr(icon)}" width="26" height="26" alt=""></button>`
+        : '';
+
+      return `${pencil}<div class="number-circle" style="left:${givenLeft}px;top:${givenTop}px;width:${circleSize}px;height:${circleSize}px;display:flex;align-items:center;justify-content:center;line-height:1;text-align:center;padding-top:6px;box-sizing:border-box;" data-editable="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}.number">${value}</div><div class="item-mascot-box" style="left:${mascotLeft}px;top:${mascotTop}px;width:${mascotSize.width}px;height:${mascotSize.height}px;background:transparent;" data-item-id="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}"><div class="img-zone-box" onclick="selectWorksheetImage('${escapeAttr(slotId)}')" title="Click to replace image"></div><button type="button" class="img-camera-btn" onclick="selectWorksheetImage('${escapeAttr(slotId)}')" title="Replace image"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button><img class="item-mascot-img worksheet-image"${srcAttr} alt="${alt}" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}" style="background:transparent;mix-blend-mode:multiply;" /></div>`;
+    })
+    .join('');
 }
 
 type AbsoluteBox = { left: number; top: number; width: number; height: number };
@@ -1005,9 +1185,7 @@ export function imageZoneForSlot(
 
   for (const key of aliases) {
     const fallback =
-      DEFAULT_TRACING_ZONES[key] ||
-      DEFAULT_TRACING_ZONES[key.toUpperCase()] ||
-      DEFAULT_LOOK_AND_SAY_ZONES[key];
+      DEFAULT_TRACING_ZONES[key] || DEFAULT_TRACING_ZONES[key.toUpperCase()];
     if (fallback) {
       return fallback;
     }
@@ -1017,7 +1195,18 @@ export function imageZoneForSlot(
     /\{\{\s*IMAGE[_:]\d+\s*\}\}/i.test(html) ||
     /caption-q[1-4]/i.test(html) ||
     /look_and_say/i.test(html);
-  if (isLookAndSay && n) {
+  // Never apply look-and-say quadrant defaults to other templates (e.g.
+  // numbers_after_and_before item_1..item_8 mascots already have parent boxes).
+  if (!isLookAndSay) {
+    return undefined;
+  }
+
+  for (const key of aliases) {
+    if (DEFAULT_LOOK_AND_SAY_ZONES[key]) {
+      return DEFAULT_LOOK_AND_SAY_ZONES[key];
+    }
+  }
+  if (n) {
     return DEFAULT_LOOK_AND_SAY_ZONES[`item_${n}`];
   }
   return undefined;

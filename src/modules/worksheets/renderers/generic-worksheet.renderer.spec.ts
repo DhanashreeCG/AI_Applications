@@ -510,6 +510,116 @@ NULL
     expect(html).not.toContain('item-label');
   });
 
+  it('renders numbers_after_and_before digits, given numbers, and mascots', () => {
+    const html = renderer.render({
+      templateHtml:
+        '<body><div class="number-line-container">{{NUMBER_LINE_DIGITS}}</div><div class="items-container">{{ITEMS_HTML}}</div></body>',
+      structure: {
+        worksheet_type: 'Numbers_afterandbefore',
+        mode: 'before',
+        number_line_numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        items: [
+          {
+            id: 'item_1',
+            number: 9,
+            blank_position: 'left',
+            imageQuery: 'cute penguin',
+            assetUrl: '/worksheets/assets/penguin/image',
+          },
+          {
+            id: 'item_2',
+            number: 7,
+            blank_position: 'left',
+            imageQuery: 'cute penguin',
+            assetUrl: '/worksheets/assets/penguin/image',
+          },
+        ],
+      },
+    });
+
+    expect(html).not.toContain('{{NUMBER_LINE_DIGITS}}');
+    expect(html).not.toContain('{{ITEMS_HTML}}');
+    expect(html).toContain('class="nl-digit"');
+    expect(html).toMatch(/data-field-path="number_line_numbers\[0\]"[^>]*>0</);
+    expect(html).toMatch(/data-field-path="number_line_numbers\[10\]"[^>]*>10</);
+    expect(html).toContain('data-image-slot="item_1"');
+    expect(html).toContain('data-image-slot="item_2"');
+    expect(html).toContain('/worksheets/assets/penguin/image');
+    expect(html).toMatch(/data-field-path="items\[0\]\.number"[^>]*>9</);
+    expect(html).toMatch(/data-field-path="items\[1\]\.number"[^>]*>7</);
+    expect(html).toContain('number-circle');
+    expect(html).toContain('item-mascot-box');
+    expect(html).toContain('mix-blend-mode:multiply');
+    // given number sits on the right circle when blank_position is left
+    expect(html).toMatch(/left:350px;top:551px;width:108px;height:108px/);
+    expect(html).toMatch(/left:774px;top:551px;width:108px;height:108px/);
+    expect(html).toMatch(/left:250px;top:555px;width:90px;height:100px/);
+    expect(html).toMatch(/left:674px;top:555px;width:90px;height:100px/);
+  });
+
+  it('repeats one shared mascot image across numbers_after_and_before cells', () => {
+    const html = renderer.render({
+      templateHtml: '<body>{{ITEMS_HTML}}</body>',
+      structure: {
+        worksheet_type: 'Numbers_afterandbefore',
+        mode: 'after',
+        items: [
+          {
+            id: 'item_1',
+            number: 1,
+            blank_position: 'right',
+            imageQuery: 'yellow star',
+            assetUrl: '/worksheets/assets/star/image',
+          },
+          {
+            id: 'item_2',
+            number: 3,
+            blank_position: 'right',
+            imageQuery: 'orange cat',
+            assetUrl: '/worksheets/assets/cat/image',
+          },
+          {
+            id: 'item_3',
+            number: 5,
+            blank_position: 'right',
+            imageQuery: 'bright sun',
+            // missing asset on purpose
+          },
+        ],
+      },
+    });
+
+    expect(html.match(/\/worksheets\/assets\/star\/image/g)?.length).toBe(3);
+    expect(html).not.toContain('/worksheets/assets/cat/image');
+    // Must stay in mascot boxes — not look-and-say default zones (left:55px;top:245px).
+    expect(html).not.toMatch(/item-mascot-img[^>]*left:55px/);
+    expect(html).not.toMatch(/item-mascot-img[^>]*top:245px/);
+    expect(html.match(/class="item-mascot-box"/g)?.length).toBe(3);
+  });
+
+  it('places a mascot between every numbers_after_and_before pair (8 cells)', () => {
+    const items = Array.from({ length: 8 }, (_, i) => ({
+      id: `item_${i + 1}`,
+      number: i + 1,
+      blank_position: 'right' as const,
+      imageQuery: 'cute dog',
+      assetUrl: '/worksheets/assets/dog/image',
+    }));
+    const html = renderer.render({
+      templateHtml: '<body>{{ITEMS_HTML}}</body>',
+      structure: {
+        worksheet_type: 'Numbers_afterandbefore',
+        mode: 'after',
+        items,
+      },
+    });
+
+    expect(html.match(/class="item-mascot-box"/g)?.length).toBe(8);
+    expect(html.match(/\/worksheets\/assets\/dog\/image/g)?.length).toBe(8);
+    expect(html).not.toMatch(/item-mascot-img[^>]*position:absolute;left:55px/);
+    expect(html).not.toMatch(/item-mascot-img[^>]*left:696px/);
+  });
+
   it('renders match-the-pairs images from {{PAIR_IMAGES}} without touching number-name pairs', () => {
     const html = renderer.render({
       templateHtml:

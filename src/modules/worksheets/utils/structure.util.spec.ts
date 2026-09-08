@@ -5,8 +5,41 @@ import {
   resolveAliasFieldPath,
   resolveAliasImagePath,
   stripLineartFromNonImageFields,
+  unifyBeforeAfterSharedMascot,
   withLineartQuery,
 } from './structure.util';
+
+describe('unifyBeforeAfterSharedMascot', () => {
+  it('forces one shared imageQuery and asset across all before/after items', () => {
+    const next = unifyBeforeAfterSharedMascot({
+      worksheet_type: 'Numbers_afterandbefore',
+      items: [
+        {
+          id: 'item_1',
+          number: 1,
+          blank_position: 'right',
+          imageQuery: 'cute cartoon penguin',
+          assetId: 'penguin-1',
+          assetUrl: '/worksheets/assets/penguin-1/image',
+        },
+        {
+          id: 'item_2',
+          number: 3,
+          blank_position: 'right',
+          imageQuery: 'orange cat',
+          assetId: 'cat-1',
+          assetUrl: '/worksheets/assets/cat-1/image',
+        },
+      ],
+    });
+    const items = next.items as Array<Record<string, unknown>>;
+    expect(items[0].imageQuery).toBe('cute cartoon penguin');
+    expect(items[1].imageQuery).toBe('cute cartoon penguin');
+    expect(items[0].assetId).toBe('penguin-1');
+    expect(items[1].assetId).toBe('penguin-1');
+    expect(items[1].assetUrl).toBe('/worksheets/assets/penguin-1/image');
+  });
+});
 
 describe('normalizeImageQueryFields pair images', () => {
   it('wraps left_image and right_image filenames into searchable slots', () => {
