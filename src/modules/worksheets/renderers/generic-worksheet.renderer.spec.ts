@@ -454,9 +454,11 @@ NULL
     expect(html).toContain('data-image-slot="item_start"');
     expect(html).toContain('data-image-slot="item_obstacle"');
     expect(html).toContain('data-image-slot="item_finish"');
-    expect(html).toMatch(/left:35px;top:885px;width:210px;height:150px/);
-    expect(html).toMatch(/left:550px;top:480px;width:265px;height:275px/);
-    expect(html).toMatch(/left:835px;top:875px;width:135px;height:160px/);
+    expect(html).toMatch(/left:35px;top:910px;width:200px;height:140px/);
+    expect(html).toMatch(/left:590px;top:530px;width:155px;height:155px/);
+    expect(html).toMatch(/left:840px;top:905px;width:125px;height:145px/);
+    expect(html).toContain('mix-blend-mode:multiply');
+    expect(html).toContain('background:transparent');
     expect(html).toContain('/worksheets/assets/tortoise/image');
     expect(html).toContain('/worksheets/assets/hare/image');
     expect(html).toContain('/worksheets/assets/flag/image');

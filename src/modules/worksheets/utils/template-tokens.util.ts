@@ -618,12 +618,14 @@ type AbsoluteBox = { left: number; top: number; width: number; height: number };
 
 /** storytime_maze sample anchors (start / obstacle / finish). */
 const DEFAULT_MAZE_POSITIONS_BY_ROLE: Record<string, AbsoluteBox> = {
-  start_character: { left: 35, top: 885, width: 210, height: 150 },
-  start: { left: 35, top: 885, width: 210, height: 150 },
-  story_element: { left: 550, top: 480, width: 265, height: 275 },
-  obstacle: { left: 550, top: 480, width: 265, height: 275 },
-  goal: { left: 835, top: 875, width: 135, height: 160 },
-  finish: { left: 835, top: 875, width: 135, height: 160 },
+  // Start/finish sit slightly below the path openings; obstacle stays compact
+  // inside the maze so it does not cover the white walls.
+  start_character: { left: 35, top: 910, width: 200, height: 140 },
+  start: { left: 35, top: 910, width: 200, height: 140 },
+  story_element: { left: 590, top: 530, width: 155, height: 155 },
+  obstacle: { left: 590, top: 530, width: 155, height: 155 },
+  goal: { left: 840, top: 905, width: 125, height: 145 },
+  finish: { left: 840, top: 905, width: 125, height: 145 },
 };
 
 const DEFAULT_MAZE_POSITIONS_BY_INDEX: AbsoluteBox[] = [
@@ -650,10 +652,8 @@ function resolveMazeItemPosition(
   item: Record<string, unknown>,
   index: number,
 ): AbsoluteBox {
-  const fromField = absoluteBoxFromUnknown(item.position);
-  if (fromField) {
-    return fromField;
-  }
+  // Prefer calibrated anchors by role/id so LLM positions cannot reintroduce
+  // oversized obstacles or float start/finish above the maze openings.
   const roleKey =
     typeof item.role === 'string' ? item.role.trim().toLowerCase() : '';
   if (roleKey && DEFAULT_MAZE_POSITIONS_BY_ROLE[roleKey]) {
@@ -667,7 +667,9 @@ function resolveMazeItemPosition(
     return DEFAULT_MAZE_POSITIONS_BY_ROLE[idKey];
   }
   return (
-    DEFAULT_MAZE_POSITIONS_BY_INDEX[index] || DEFAULT_MAZE_POSITIONS_BY_INDEX[0]
+    absoluteBoxFromUnknown(item.position) ||
+    DEFAULT_MAZE_POSITIONS_BY_INDEX[index] ||
+    DEFAULT_MAZE_POSITIONS_BY_INDEX[0]
   );
 }
 
@@ -725,7 +727,9 @@ export function buildPositionedItemsMarkup(
       const pencil = icon
         ? `<button class="ai-pencil" data-pencil-for="${escapeAttr(path)}" type="button" title="AI regenerate" style="top:-12px;left:-12px;"><img src="${escapeAttr(icon)}" width="26" height="26" alt=""></button>`
         : '';
-      return `<div class="maze-item-container" style="left:${pos.left}px;top:${pos.top}px;width:${pos.width}px;height:${pos.height}px;" data-item-id="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}">${pencil}<div class="img-zone-box" onclick="selectWorksheetImage('${escapeAttr(slotId)}')" title="Click to replace image"></div><button type="button" class="img-camera-btn" onclick="selectWorksheetImage('${escapeAttr(slotId)}')" title="Replace image"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button><img class="maze-item-img worksheet-image"${srcAttr} alt="${alt}" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}" /></div>`;
+      // Transparent container + multiply blend so white clipart plates do not
+      // paint opaque boxes over the grassy maze background.
+      return `<div class="maze-item-container" style="left:${pos.left}px;top:${pos.top}px;width:${pos.width}px;height:${pos.height}px;background:transparent;" data-item-id="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}">${pencil}<div class="img-zone-box" onclick="selectWorksheetImage('${escapeAttr(slotId)}')" title="Click to replace image"></div><button type="button" class="img-camera-btn" onclick="selectWorksheetImage('${escapeAttr(slotId)}')" title="Replace image"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button><img class="maze-item-img worksheet-image"${srcAttr} alt="${alt}" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}" style="background:transparent;mix-blend-mode:multiply;" /></div>`;
     })
     .join('');
 }
