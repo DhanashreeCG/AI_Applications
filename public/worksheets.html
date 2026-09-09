@@ -766,6 +766,58 @@
       user-select: none;
     }
 
+    .preview-wrap.is-loading .preview-toolbar,
+    .preview-wrap.is-loading .frame-zoom-controls,
+    .preview-wrap.is-loading .frame-zoom-stage {
+      display: none;
+    }
+
+    .preview-loading {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      place-items: center;
+      background: #efeaf6;
+      border-radius: 14px;
+    }
+
+    .preview-wrap.is-loading .preview-loading {
+      display: grid;
+    }
+
+    .preview-loading-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .preview-loading .spinner,
+    .toast .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid rgba(122, 63, 201, 0.2);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: preview-spin 0.75s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    .preview-loading .spinner {
+      width: 42px;
+      height: 42px;
+      border-width: 4px;
+    }
+
+    @keyframes preview-spin {
+      to { transform: rotate(360deg); }
+    }
+
     /* ---------- modals ---------- */
 
     .modal {
@@ -1510,6 +1562,12 @@
         <button class="btn-soft" id="downloadPdfBtn" type="button" style="display:none;">⬇ PDF</button>
       </div>
       <div class="frame-shell" id="frameShell">
+        <div class="preview-loading" id="previewLoading" aria-live="polite">
+          <div class="preview-loading-inner">
+            <span class="spinner" aria-hidden="true"></span>
+            <p id="previewLoadingText">Generating worksheet…</p>
+          </div>
+        </div>
         <div class="frame-zoom-stage" id="frameZoomStage">
           <div class="frame-container" id="frameContainer">
             <iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe>
@@ -1657,6 +1715,7 @@
       previewZoomMin: 0.35,
       previewZoomMax: 2.5,
       previewZoomStep: 0.1,
+      expectPreviewFromGeneration: false,
       worksheetId: null,
       preview: null,
       editMode: false,
@@ -1708,6 +1767,8 @@
       frameShell: el('frameShell'),
       frameContainer: el('frameContainer'),
       frameZoomStage: el('frameZoomStage'),
+      previewLoading: el('previewLoading'),
+      previewLoadingText: el('previewLoadingText'),
       zoomInBtn: el('zoomInBtn'),
       zoomOutBtn: el('zoomOutBtn'),
       zoomFitBtn: el('zoomFitBtn'),
@@ -2073,16 +2134,63 @@
     }
 
     function showGrid() {
+      state.expectPreviewFromGeneration = false;
       persistPreviewToItems();
       els.formSection.classList.remove('hidden');
       els.gridSection.classList.remove('hidden');
       els.previewSection.classList.add('hidden');
+      els.previewSection.classList.remove('is-loading');
       state.worksheetId = null;
       state.preview = null;
       state.editMode = false;
       state.pendingImageReplacements = {};
       els.editBtn.textContent = 'Edit';
+      setResultsTab('generated');
       renderGrid();
+    }
+
+    function openPreviewLoading(message) {
+      state.expectPreviewFromGeneration = true;
+      els.formSection.classList.add('hidden');
+      els.gridSection.classList.add('hidden');
+      els.previewSection.classList.remove('hidden');
+      els.previewSection.classList.add('is-loading');
+      state.editMode = false;
+      state.preview = null;
+      state.worksheetId = null;
+      els.editBtn.textContent = 'Edit';
+      if (els.worksheetTitle) els.worksheetTitle.textContent = 'Generating…';
+      if (els.previewLoadingText) {
+        els.previewLoadingText.textContent = message || 'Generating worksheet…';
+      }
+      if (els.worksheetFrame) {
+        els.worksheetFrame.removeAttribute('srcdoc');
+        els.worksheetFrame.srcdoc = '';
+      }
+    }
+
+    function closePreviewLoadingToForm() {
+      state.expectPreviewFromGeneration = false;
+      els.previewSection.classList.add('hidden');
+      els.previewSection.classList.remove('is-loading');
+      els.formSection.classList.remove('hidden');
+      els.gridSection.classList.remove('hidden');
+      state.worksheetId = null;
+      state.preview = null;
+    }
+
+    function prepareGeneratedResults(count) {
+      state.items = [];
+      state.selectedIds.clear();
+      state.selectionMode = false;
+      state.page = 1;
+      els.worksheetGrid.classList.remove('selection-mode');
+      if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.style.display = 'none';
+      if (els.toggleSelectMode) els.toggleSelectMode.textContent = 'Select Options';
+      els.worksheetGrid.innerHTML = '';
+      els.empty.style.display = 'none';
+      els.summary.classList.add('show');
+      els.metaPills.innerHTML = `<span class="pill">Generating: <b>0</b>/${count || 1}</span>`;
     }
 
     function scaleThumb(iframe, canvas) {
@@ -2319,18 +2427,14 @@
       const count = Number(els.countSelect.value) || state.defaultCount;
       clearBanners();
       setBusy(true);
-      setResultsTab('generated');
-      renderSkeletons(count);
-      state.items = [];
-      state.selectedIds.clear();
-      state.selectionMode = false;
-      state.page = 1;
-      els.worksheetGrid.classList.remove('selection-mode');
-      if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.style.display = 'none';
-      if (els.toggleSelectMode) els.toggleSelectMode.textContent = 'Select Options';
+      prepareGeneratedResults(count);
+      openPreviewLoading(
+        count > 1 ? `Generating ${count} worksheets…` : 'Generating worksheet…',
+      );
 
       let received = 0;
       let streamFailed = false;
+      let openedPreview = false;
 
       try {
         const res = await apiFetch('/generate-set/stream', {
@@ -2351,7 +2455,7 @@
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          removeSkeletons();
+          closePreviewLoadingToForm();
           showBanner(
             'error',
             errorBannerHtml(body, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
@@ -2366,17 +2470,22 @@
           }
           if (event.type === 'item' && event.item) {
             received += 1;
-            state.items[event.slotIndex] = {
+            const item = {
               ...event.item,
               template: mergedTemplate(event.item.template),
             };
-            const skeletons = els.worksheetGrid.querySelectorAll('[data-loading-skeleton="true"]');
-            if (skeletons[0]) skeletons[0].remove();
-            appendCard(event.item);
-            els.empty.style.display = 'none';
-            els.summary.classList.add('show');
-            els.metaPills.innerHTML = `<span class="pill">Generated: <b>${received}</b></span>`;
-            toast('<span class="spinner"></span>Generating ' + received + '/' + count + ' worksheet(s)…');
+            state.items[event.slotIndex] = item;
+            els.metaPills.innerHTML = `<span class="pill">Generated: <b>${received}</b>/${count}</span>`;
+            if (els.previewLoadingText && !openedPreview) {
+              els.previewLoadingText.textContent =
+                count > 1
+                  ? `Generating worksheets… ${received}/${count}`
+                  : 'Generating worksheet…';
+            }
+            if (!openedPreview && state.expectPreviewFromGeneration) {
+              openedPreview = true;
+              await openPreview(item);
+            }
             return;
           }
           if (event.type === 'done' && event.payload && Array.isArray(event.payload.items)) {
@@ -2384,6 +2493,10 @@
               ...item,
               template: mergedTemplate(item.template),
             }));
+            if (!openedPreview && state.expectPreviewFromGeneration && state.items[0]) {
+              openedPreview = true;
+              await openPreview(state.items[0]);
+            }
             return;
           }
           if (event.type === 'error') {
@@ -2396,20 +2509,27 @@
         });
 
         if (streamFailed && !received) {
-          removeSkeletons();
+          closePreviewLoadingToForm();
           return;
         }
 
-        toast(`Created ${state.items.length} worksheet(s)`);
         if (!state.items.length) {
+          closePreviewLoadingToForm();
           els.empty.style.display = 'block';
           els.summary.classList.remove('show');
           els.worksheetGrid.innerHTML = '';
-        } else {
-          renderGrid();
+          showBanner('error', '<div>No worksheet was generated. Please try again.</div>');
+          return;
+        }
+
+        if (!openedPreview && state.expectPreviewFromGeneration) {
+          await openPreview(state.items[0]);
+        }
+        if (state.expectPreviewFromGeneration || openedPreview) {
+          toast(`Created ${state.items.length} worksheet(s)`);
         }
       } catch (error) {
-        removeSkeletons();
+        closePreviewLoadingToForm();
         showBanner(
           'error',
           errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
@@ -2433,15 +2553,8 @@
 
       clearBanners();
       setBusy(true);
-      setResultsTab('generated');
-      renderSkeletons(1);
-      state.items = [];
-      state.selectedIds.clear();
-      state.selectionMode = false;
-      state.page = 1;
-      els.worksheetGrid.classList.remove('selection-mode');
-      if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.style.display = 'none';
-      if (els.toggleSelectMode) els.toggleSelectMode.textContent = 'Select Options';
+      prepareGeneratedResults(1);
+      openPreviewLoading('Generating worksheet…');
 
       let received = 0;
       let streamFailed = false;
@@ -2466,15 +2579,13 @@
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          removeSkeletons();
+          closePreviewLoadingToForm();
           showBanner(
             'error',
             errorBannerHtml(body, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
           );
           return;
         }
-
-        toast('<span class="spinner"></span>Generating worksheet from template…');
 
         await readNdjsonStream(res, async (event) => {
           if (!event || !event.type || event.type === 'ping') return;
@@ -2488,13 +2599,8 @@
               template: mergedTemplate(event.item.template),
             };
             state.items[event.slotIndex] = item;
-            const skeletons = els.worksheetGrid.querySelectorAll('[data-loading-skeleton="true"]');
-            if (skeletons[0]) skeletons[0].remove();
-            appendCard(item);
-            els.empty.style.display = 'none';
-            els.summary.classList.add('show');
             els.metaPills.innerHTML = `<span class="pill">Generated: <b>${received}</b></span>`;
-            if (!openedPreview) {
+            if (!openedPreview && state.expectPreviewFromGeneration) {
               openedPreview = true;
               await openPreview(item);
             }
@@ -2505,7 +2611,7 @@
               ...item,
               template: mergedTemplate(item.template),
             }));
-            if (!openedPreview && state.items[0]) {
+            if (!openedPreview && state.expectPreviewFromGeneration && state.items[0]) {
               openedPreview = true;
               await openPreview(state.items[0]);
             }
@@ -2521,24 +2627,27 @@
         });
 
         if (streamFailed && !received) {
-          removeSkeletons();
+          closePreviewLoadingToForm();
           return;
         }
 
         if (!state.items.length) {
-          removeSkeletons();
+          closePreviewLoadingToForm();
           els.empty.style.display = 'block';
           els.summary.classList.remove('show');
           els.worksheetGrid.innerHTML = '';
           showBanner('error', '<div>No worksheet was generated for this template.</div>');
-        } else if (!openedPreview) {
-          renderGrid();
+          return;
+        }
+
+        if (!openedPreview && state.expectPreviewFromGeneration) {
           await openPreview(state.items[0]);
-        } else {
+        }
+        if (state.expectPreviewFromGeneration || openedPreview) {
           toast('Created 1 worksheet');
         }
       } catch (error) {
-        removeSkeletons();
+        closePreviewLoadingToForm();
         showBanner(
           'error',
           errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
@@ -2645,6 +2754,7 @@
       els.formSection.classList.add('hidden');
       els.gridSection.classList.add('hidden');
       els.previewSection.classList.remove('hidden');
+      els.previewSection.classList.remove('is-loading');
       state.previewZoom = fitPreviewZoom();
       updateZoomControls();
 
