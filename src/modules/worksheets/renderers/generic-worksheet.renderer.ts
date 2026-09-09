@@ -9,6 +9,7 @@ import {
   injectLookAndSayCaptions,
   injectMatchingPairMarkup,
   injectPairImagesMarkup,
+  injectPictureGraphMarkup,
   injectSentenceRowMarkup,
   injectWorksheetItemsMarkup,
   positionMatchingPairItems,
@@ -486,10 +487,10 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
       if (!/\bdata-field-path=/i.test(next)) {
         next += ` data-field-path="${escapeHtml(resolved.path)}"`;
       }
-      // Before/after + maze mascots are already absolutely positioned by their
+      // Before/after + maze + picture_graph images are already placed by their
       // parent box. Do not re-apply look-and-say / tracing default zones.
       const alreadyPlaced =
-        /\b(?:item-mascot-img|maze-item-img)\b/i.test(attrs) ||
+        /\b(?:item-mascot-img|maze-item-img|picture-graph-img)\b/i.test(attrs) ||
         /left\s*:/i.test(next);
       const zone = alreadyPlaced ? undefined : imageZoneForSlot(html, slotId);
       if (zone) {
@@ -661,6 +662,7 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     html = injectMatchingPairMarkup(html, structure, input.pencilIconUrl);
     html = injectPairImagesMarkup(html, structure);
     html = injectSentenceRowMarkup(html, structure, input.pencilIconUrl);
+    html = injectPictureGraphMarkup(html, structure);
     html = injectWorksheetItemsMarkup(html, structure, input.pencilIconUrl);
     html = this.renderTemplate(html, context);
     html = positionMatchingPairItems(html, structure);

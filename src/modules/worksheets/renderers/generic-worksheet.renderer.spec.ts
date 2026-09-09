@@ -828,6 +828,88 @@ NULL
     expect(html).not.toContain('{{IMAGE_2}}');
     expect(html).not.toContain('left:70px;top:300px');
   });
+
+  it('renders picture_graph bars, column icons, count images, and bottom choices', () => {
+    const html = renderer.render({
+      templateHtml: `<body>
+<div class="graph-bars-container">{{GRAPH_BARS_HTML}}</div>
+<div class="graph-column-icons">{{GRAPH_ICONS_HTML}}</div>
+<div class="counts-container">{{COUNT_ITEMS_HTML}}</div>
+<div class="bottom-choices-row">{{BOTTOM_CHOICES_HTML}}</div>
+</body>`,
+      structure: {
+        worksheet_type: 'picture_graph',
+        topic: 'Vegetable Graph',
+        items: [
+          {
+            id: 'item_1',
+            name: 'Carrot',
+            count: 9,
+            color: '#85cbf4',
+            imageQuery: 'orange carrot',
+            assetUrl: '/worksheets/assets/carrot/image',
+          },
+          {
+            id: 'item_2',
+            name: 'Tomato',
+            count: 7,
+            color: '#f03a3e',
+            imageQuery: 'red tomato',
+            assetUrl: '/worksheets/assets/tomato/image',
+          },
+          {
+            id: 'item_3',
+            name: 'Corn',
+            count: 3,
+            color: '#fecd59',
+            imageQuery: 'yellow corn',
+            assetUrl: '/worksheets/assets/corn/image',
+          },
+          {
+            id: 'item_4',
+            name: 'Broccoli',
+            count: 5,
+            color: '#67bd47',
+            imageQuery: 'green broccoli',
+            assetUrl: '/worksheets/assets/broccoli/image',
+          },
+        ],
+      },
+      mode: 'export',
+    });
+
+    expect(html).not.toContain('{{GRAPH_BARS_HTML}}');
+    expect(html).not.toContain('{{GRAPH_ICONS_HTML}}');
+    expect(html).not.toContain('{{COUNT_ITEMS_HTML}}');
+    expect(html).not.toContain('{{BOTTOM_CHOICES_HTML}}');
+
+    // count 9 → height 288, top 708-288=420; count 3 → height 96, top 704-96=608
+    expect(html).toMatch(/left:228px;width:82px;top:420px;height:288px;background:#85cbf4/);
+    expect(html).toMatch(/left:388px;width:82px;top:480px;height:224px;background:#f03a3e/);
+    expect(html).toMatch(/left:548px;width:82px;top:608px;height:96px;background:#fecd59/);
+    expect(html).toMatch(/left:708px;width:82px;top:548px;height:160px;background:#67bd47/);
+
+    expect(html).toContain('class="graph-icon-item" style="left:227px;"');
+    expect(html).toContain('class="graph-icon-item" style="left:387px;"');
+    expect(html).toContain('class="graph-icon-item" style="left:547px;"');
+    expect(html).toContain('class="graph-icon-item" style="left:707px;"');
+
+    expect(html).toContain('left:135px;top:818px');
+    expect(html).toContain('left:580px;top:818px');
+    expect(html).toContain('left:140px;top:934px');
+    expect(html).toContain('left:580px;top:940px');
+    expect(html).toContain('data-editable="item_count_1"');
+    expect(html).toContain('data-editable="item_count_4"');
+
+    expect(html).toContain('/worksheets/assets/carrot/image');
+    expect(html).toContain('/worksheets/assets/tomato/image');
+    expect(html).toContain('/worksheets/assets/corn/image');
+    expect(html).toContain('/worksheets/assets/broccoli/image');
+    expect(html).toContain('picture-graph-img');
+    expect(html).toContain('bottom-choice-item');
+    expect(html).toContain('data-image-slot="item_1"');
+    expect(html).not.toContain('name-item');
+  });
 });
 
 describe('WorksheetRendererRegistry', () => {

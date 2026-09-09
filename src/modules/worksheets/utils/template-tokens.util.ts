@@ -149,7 +149,20 @@ function looksLikeMatchingPair(item: unknown): boolean {
   if ('blank_position' in item) {
     return false;
   }
+  // picture_graph bars use name + count (+ color); not matching-pair rows.
+  if ('count' in item) {
+    return false;
+  }
   return ['number', 'name', 'left', 'right', 'match'].some((key) => key in item);
+}
+
+export function isPictureGraphWorksheet(
+  structure: Record<string, unknown>,
+): boolean {
+  const type = String(structure.worksheet_type ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  return type === 'picturegraph' || type.includes('picturegraph');
 }
 
 export function getMatchingPairs(structure: Record<string, unknown>): unknown[] {
@@ -601,6 +614,10 @@ export function injectWorksheetItemsMarkup(
   structure: Record<string, unknown>,
   pencilIconUrl = '',
 ): string {
+  if (isPictureGraphWorksheet(structure)) {
+    return html;
+  }
+
   const itemsHtml = isBeforeAfterNumbersWorksheet(structure)
     ? buildBeforeAfterItemsMarkup(structure, pencilIconUrl)
     : itemsUseAbsolutePositions(structure)
@@ -630,6 +647,191 @@ export function injectWorksheetItemsMarkup(
     );
   }
   return next;
+}
+
+/** Calibrated to the picture_graph background grid (y ticks 1–10, unit = 32px). */
+const PICTURE_GRAPH_UNIT_H = 32;
+const PICTURE_GRAPH_DEFAULT_COUNTS = [9, 7, 3, 5];
+const PICTURE_GRAPH_DEFAULT_NAMES = ['Ant', 'Bee', 'Ladybug', 'Spider'];
+const PICTURE_GRAPH_DEFAULT_COLORS = [
+  '#85cbf4',
+  '#f03a3e',
+  '#fecd59',
+  '#67bd47',
+];
+const PICTURE_GRAPH_COLUMNS = [
+  { barLeft: 228, barWidth: 82, iconLeft: 227, color: '#85cbf4', baseY: 708 },
+  { barLeft: 388, barWidth: 82, iconLeft: 387, color: '#f03a3e', baseY: 704 },
+  { barLeft: 548, barWidth: 82, iconLeft: 547, color: '#fecd59', baseY: 704 },
+  { barLeft: 708, barWidth: 82, iconLeft: 707, color: '#67bd47', baseY: 708 },
+] as const;
+
+/** Count-write layout: row1 item0+item3, row2 item1+item2 (matches dashed boxes). */
+const PICTURE_GRAPH_COUNT_LAYOUT = [
+  { itemIdx: 0, imgLeft: 135, imgTop: 818, boxLeft: 288, boxTop: 818 },
+  { itemIdx: 3, imgLeft: 580, imgTop: 818, boxLeft: 718, boxTop: 818 },
+  { itemIdx: 1, imgLeft: 140, imgTop: 934, boxLeft: 288, boxTop: 932 },
+  { itemIdx: 2, imgLeft: 580, imgTop: 940, boxLeft: 718, boxTop: 932 },
+] as const;
+
+const PICTURE_GRAPH_CAMERA_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+
+type PictureGraphItem = {
+  id: string;
+  name: string;
+  count: number;
+  color: string;
+  path: string;
+  src: string;
+  alt: string;
+};
+
+function resolvePictureGraphItems(
+  structure: Record<string, unknown>,
+): PictureGraphItem[] {
+  const raw = Array.isArray(structure.items) ? structure.items : [];
+  return [0, 1, 2, 3].map((index) => {
+    const existing = isRecord(raw[index]) ? raw[index] : {};
+    const id =
+      (typeof existing.id === 'string' && existing.id.trim()) ||
+      `item_${index + 1}`;
+    const name =
+      (typeof existing.name === 'string' && existing.name.trim()) ||
+      PICTURE_GRAPH_DEFAULT_NAMES[index];
+    const parsed = Number(existing.count);
+    const count = Number.isFinite(parsed)
+      ? parsed
+      : PICTURE_GRAPH_DEFAULT_COUNTS[index];
+    const color =
+      (typeof existing.color === 'string' && existing.color.trim()) ||
+      PICTURE_GRAPH_DEFAULT_COLORS[index];
+    const src =
+      (typeof existing.assetUrl === 'string' && existing.assetUrl.trim()) ||
+      (typeof existing.imageUrl === 'string' && existing.imageUrl.trim()) ||
+      (typeof existing.signedUrl === 'string' && existing.signedUrl.trim()) ||
+      (typeof existing.uploadedImage === 'string' &&
+        existing.uploadedImage.trim()) ||
+      '';
+    const alt =
+      visualQueryFromImageRecord(existing) ||
+      (typeof existing.image_name === 'string' ? existing.image_name : '') ||
+      name;
+    return {
+      id,
+      name,
+      count,
+      color,
+      path: `items[${index}]`,
+      src,
+      alt,
+    };
+  });
+}
+
+function pictureGraphCameraControls(slotId: string): string {
+  const id = escapeAttr(slotId);
+  return `<div class="img-zone-box" onclick="selectWorksheetImage('${id}')" title="Click to replace image"></div><button type="button" class="img-camera-btn" onclick="selectWorksheetImage('${id}')" title="Replace image">${PICTURE_GRAPH_CAMERA_SVG}</button>`;
+}
+
+function pictureGraphImgTag(item: PictureGraphItem): string {
+  const srcAttr = item.src ? ` src="${escapeHtml(item.src)}"` : '';
+  return `<img class="worksheet-image picture-graph-img"${srcAttr} alt="${escapeHtml(item.alt)}" data-item-id="${escapeAttr(item.id)}" data-image-slot="${escapeAttr(item.id)}" data-field-path="${escapeAttr(item.path)}" />`;
+}
+
+export function buildPictureGraphBarsMarkup(
+  structure: Record<string, unknown>,
+): string {
+  const items = resolvePictureGraphItems(structure);
+  return items
+    .map((item, index) => {
+      const cfg = PICTURE_GRAPH_COLUMNS[index];
+      const count = Math.max(0, Math.min(10, Math.round(item.count) || 0));
+      if (count === 0) {
+        return '';
+      }
+      const totalH = count * PICTURE_GRAPH_UNIT_H;
+      const topY = cfg.baseY - totalH;
+      const color = item.color || cfg.color;
+      let innerTicks = '';
+      for (let t = 1; t < count; t += 1) {
+        const tickY = totalH - t * PICTURE_GRAPH_UNIT_H;
+        innerTicks += `<div style="position:absolute;left:0;right:0;top:${tickY}px;border-top:1.5px dashed rgba(255,255,255,0.7);pointer-events:none;"></div>`;
+      }
+      return `<div style="position:absolute;left:${cfg.barLeft}px;width:${cfg.barWidth}px;top:${topY}px;height:${totalH}px;background:${escapeAttr(color)};box-sizing:border-box;border-left:1.5px dashed #4fa3d1;border-right:1.5px dashed #4fa3d1;border-top:2px solid ${escapeAttr(color)};z-index:5;">${innerTicks}</div>`;
+    })
+    .join('\n');
+}
+
+export function buildPictureGraphIconsMarkup(
+  structure: Record<string, unknown>,
+): string {
+  const items = resolvePictureGraphItems(structure);
+  return items
+    .map((item, index) => {
+      const cfg = PICTURE_GRAPH_COLUMNS[index];
+      return `<div class="graph-icon-item" style="left:${cfg.iconLeft}px;" data-item-id="${escapeAttr(item.id)}" data-field-path="${escapeAttr(item.path)}">${pictureGraphImgTag(item)}${pictureGraphCameraControls(item.id)}</div>`;
+    })
+    .join('\n');
+}
+
+export function buildPictureGraphCountItemsMarkup(
+  structure: Record<string, unknown>,
+): string {
+  const items = resolvePictureGraphItems(structure);
+  return PICTURE_GRAPH_COUNT_LAYOUT.map((pos) => {
+    const item = items[pos.itemIdx];
+    return `<div class="count-row-item" style="left:${pos.imgLeft}px;top:${pos.imgTop}px;" data-item-id="${escapeAttr(item.id)}" data-field-path="${escapeAttr(item.path)}"><div class="count-item-img-box">${pictureGraphImgTag(item)}${pictureGraphCameraControls(item.id)}</div></div><div class="count-answer-box" style="left:${pos.boxLeft}px;top:${pos.boxTop}px;" data-editable="item_count_${pos.itemIdx + 1}" data-field-path="${escapeAttr(item.path)}.count"></div>`;
+  }).join('\n');
+}
+
+export function buildPictureGraphBottomChoicesMarkup(
+  structure: Record<string, unknown>,
+): string {
+  const items = resolvePictureGraphItems(structure);
+  return items
+    .map(
+      (item) =>
+        `<div class="bottom-choice-item" data-item-id="${escapeAttr(item.id)}" data-field-path="${escapeAttr(item.path)}">${pictureGraphImgTag(item)}${pictureGraphCameraControls(item.id)}</div>`,
+    )
+    .join('\n');
+}
+
+/**
+ * Port of legacy picture_graph rendererJs: bars on the empty grid, category
+ * icons under columns, count-write images, and bottom circle-choice row.
+ */
+export function injectPictureGraphMarkup(
+  html: string,
+  structure: Record<string, unknown>,
+): string {
+  const needsGraph =
+    /\{\{\s*GRAPH_BARS_HTML\s*\}\}/i.test(html) ||
+    /\{\{\s*GRAPH_ICONS_HTML\s*\}\}/i.test(html) ||
+    /\{\{\s*COUNT_ITEMS_HTML\s*\}\}/i.test(html) ||
+    /\{\{\s*BOTTOM_CHOICES_HTML\s*\}\}/i.test(html) ||
+    isPictureGraphWorksheet(structure);
+  if (!needsGraph) {
+    return html;
+  }
+
+  return html
+    .replace(
+      /\{\{\s*GRAPH_BARS_HTML\s*\}\}/gi,
+      buildPictureGraphBarsMarkup(structure),
+    )
+    .replace(
+      /\{\{\s*GRAPH_ICONS_HTML\s*\}\}/gi,
+      buildPictureGraphIconsMarkup(structure),
+    )
+    .replace(
+      /\{\{\s*COUNT_ITEMS_HTML\s*\}\}/gi,
+      buildPictureGraphCountItemsMarkup(structure),
+    )
+    .replace(
+      /\{\{\s*BOTTOM_CHOICES_HTML\s*\}\}/gi,
+      buildPictureGraphBottomChoicesMarkup(structure),
+    );
 }
 
 /**

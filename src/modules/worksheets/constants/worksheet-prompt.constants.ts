@@ -277,6 +277,14 @@ export function buildWorksheetContentPrompt(input: {
       '- instruction_text must match the mode (before vs after). Keep worksheet_type as Numbers_afterandbefore.',
       ''
     ] : []),
+    ...(input.templateSlug === 'picture_graph' ? [
+      'For picture_graph worksheets:',
+      '- Exactly 4 items[] (columns left→right): id item_1..item_4, name, count (integer 1–10 = bar height), color, imageQuery (visual phrase, not a filename).',
+      '- Prefer distinct theme objects children know (insects, fruits, vehicles, etc.). Counts should vary so one clear "most" exists.',
+      '- Default column colors when unset: #85cbf4, #f03a3e, #fecd59, #67bd47.',
+      '- Set topic, badge_label, instruction_text, bottom_question, theme, y_axis_max (usually 10). Keep worksheet_type as picture_graph.',
+      ''
+    ] : []),
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',
