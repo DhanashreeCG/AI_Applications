@@ -475,7 +475,7 @@
     }
 
     .template-tile .tile-card {
-      cursor: default;
+      cursor: pointer;
     }
 
     .results-tabs {
@@ -2054,6 +2054,14 @@
         card.appendChild(frameWrap);
         card.appendChild(name);
         tile.appendChild(card);
+        tile.addEventListener('click', () => {
+          const samplePrompt = String(template.samplePrompt || '').trim();
+          if (!samplePrompt) {
+            toast('No sample prompt for this template');
+            return;
+          }
+          generateFromTemplate(template);
+        });
         els.templateGrid.appendChild(tile);
       });
     }
@@ -2324,6 +2332,135 @@
           els.worksheetGrid.innerHTML = '';
         } else {
           renderGrid();
+        }
+      } catch (error) {
+        removeSkeletons();
+        showBanner(
+          'error',
+          errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
+        );
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function generateFromTemplate(template) {
+      const samplePrompt = String(template?.samplePrompt || '').trim();
+      if (!samplePrompt) {
+        toast('No sample prompt for this template');
+        return;
+      }
+      const age = selectedAge();
+      if (!age) {
+        showBanner('error', '<div>No age group selected.</div>');
+        return;
+      }
+
+      clearBanners();
+      setBusy(true);
+      setResultsTab('generated');
+      renderSkeletons(1);
+      state.items = [];
+      state.selectedIds.clear();
+      state.selectionMode = false;
+      state.page = 1;
+      els.worksheetGrid.classList.remove('selection-mode');
+      if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.style.display = 'none';
+      if (els.toggleSelectMode) els.toggleSelectMode.textContent = 'Select Options';
+
+      let received = 0;
+      let streamFailed = false;
+      let openedPreview = false;
+
+      try {
+        const res = await apiFetch('/generate-set/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/x-ndjson',
+          },
+          body: JSON.stringify({
+            query: samplePrompt,
+            topic: samplePrompt,
+            age: age.age,
+            ageGroup: age.id,
+            grade: age.grade,
+            count: 1,
+            templateId: template.id,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          removeSkeletons();
+          showBanner(
+            'error',
+            errorBannerHtml(body, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
+          );
+          return;
+        }
+
+        toast('<span class="spinner"></span>Generating worksheet from template…');
+
+        await readNdjsonStream(res, async (event) => {
+          if (!event || !event.type || event.type === 'ping') return;
+          if (event.type === 'meta') {
+            return;
+          }
+          if (event.type === 'item' && event.item) {
+            received += 1;
+            const item = {
+              ...event.item,
+              template: mergedTemplate(event.item.template),
+            };
+            state.items[event.slotIndex] = item;
+            const skeletons = els.worksheetGrid.querySelectorAll('[data-loading-skeleton="true"]');
+            if (skeletons[0]) skeletons[0].remove();
+            appendCard(item);
+            els.empty.style.display = 'none';
+            els.summary.classList.add('show');
+            els.metaPills.innerHTML = `<span class="pill">Generated: <b>${received}</b></span>`;
+            if (!openedPreview) {
+              openedPreview = true;
+              await openPreview(item);
+            }
+            return;
+          }
+          if (event.type === 'done' && event.payload && Array.isArray(event.payload.items)) {
+            state.items = event.payload.items.map((item) => ({
+              ...item,
+              template: mergedTemplate(item.template),
+            }));
+            if (!openedPreview && state.items[0]) {
+              openedPreview = true;
+              await openPreview(state.items[0]);
+            }
+            return;
+          }
+          if (event.type === 'error') {
+            streamFailed = true;
+            showBanner(
+              'error',
+              errorBannerHtml(event, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
+            );
+          }
+        });
+
+        if (streamFailed && !received) {
+          removeSkeletons();
+          return;
+        }
+
+        if (!state.items.length) {
+          removeSkeletons();
+          els.empty.style.display = 'block';
+          els.summary.classList.remove('show');
+          els.worksheetGrid.innerHTML = '';
+          showBanner('error', '<div>No worksheet was generated for this template.</div>');
+        } else if (!openedPreview) {
+          renderGrid();
+          await openPreview(state.items[0]);
+        } else {
+          toast('Created 1 worksheet');
         }
       } catch (error) {
         removeSkeletons();

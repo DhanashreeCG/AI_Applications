@@ -271,6 +271,10 @@ export class WorksheetsController {
         aiConfig: { type: 'string' },
         fieldPrompts: { type: 'string' },
         aiSystemPrompt: { type: 'string' },
+        samplePrompt: {
+          type: 'string',
+          description: 'Sample natural-language prompt for catalog template-click generation',
+        },
         aiEditConfigJs: { type: 'string' },
         aiEditPopupHtml: { type: 'string' },
         aiEditPanelJs: { type: 'string' },

@@ -421,6 +421,7 @@ model WorksheetTemplate {
   rendererJs          String?
   backgroundAssetId   String?
   sampleAssetId       String?
+  samplePrompt        String?                 @db.Text
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   worksheets          Worksheet[]

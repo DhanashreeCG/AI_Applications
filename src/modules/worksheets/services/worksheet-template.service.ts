@@ -46,6 +46,7 @@ export interface CreateWorksheetTemplateResult {
   sampleAssetId: string;
   backgroundUrl?: string;
   sampleUrl?: string;
+  samplePrompt?: string | null;
   aiEditConfigJs?: string | null;
   aiEditPopupHtml?: string | null;
   aiEditPanelJs?: string | null;
@@ -149,6 +150,7 @@ export class WorksheetTemplateService {
           backgroundAssetId: backgroundAsset.id,
           sampleAssetId: sampleAsset.id,
           aiSystemPrompt: this.optionalString(dto.aiSystemPrompt) ?? null,
+          samplePrompt: this.optionalString(dto.samplePrompt) ?? null,
           aiEditConfigJs: this.optionalString(dto.aiEditConfigJs) ?? null,
           aiEditPopupHtml: this.optionalString(dto.aiEditPopupHtml) ?? null,
           aiEditPanelJs: this.optionalString(dto.aiEditPanelJs) ?? null,
@@ -180,6 +182,7 @@ export class WorksheetTemplateService {
         sampleAssetId: sampleAsset.id,
         backgroundUrl: backgroundAsset.url,
         sampleUrl: sampleAsset.url,
+        samplePrompt: template.samplePrompt,
         aiEditConfigJs: template.aiEditConfigJs,
         aiEditPopupHtml: template.aiEditPopupHtml,
         aiEditPanelJs: template.aiEditPanelJs,
@@ -265,6 +268,7 @@ export class WorksheetTemplateService {
       sampleUrl: template.sampleAssetId
         ? `${this.assetImagePath}/${template.sampleAssetId}/image`
         : null,
+      samplePrompt: template.samplePrompt ?? null,
       ...this.parseAiEditUi(template),
     };
   }
