@@ -129,6 +129,7 @@ describe('WorksheetTemplateService.create', () => {
         category: 'language',
         description: 'Colour the picture',
         sampleAssetId: 'sample-1',
+        samplePrompt: 'Generate a story-based comprehension worksheet about farm goats.',
         meta: {},
         aiEditPopupHtml: '<div class="ai-field-group">Topic</div>',
         aiEditConfigJs: 'function buildInstruction(v) { return v.topic; }',
@@ -138,6 +139,7 @@ describe('WorksheetTemplateService.create', () => {
 
     const catalog = await service.listCatalog();
     expect(catalog[0].slug).toBe('answer_and_colour');
+    expect(catalog[0].samplePrompt).toContain('farm goats');
     expect(catalog[0].aiEditPopupHtml).toContain('Topic');
     expect(catalog[0].aiEditConfigJs).toContain('buildInstruction');
   });

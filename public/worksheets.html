@@ -475,7 +475,7 @@
     }
 
     .template-tile .tile-card {
-      cursor: default;
+      cursor: pointer;
     }
 
     .results-tabs {
@@ -678,24 +678,31 @@
     }
 
     .frame-shell {
+      position: relative;
       overflow: auto;
       background: #efeaf6;
       border-radius: 14px;
-      padding: 16px;
       min-height: 480px;
+      height: min(82vh, 920px);
       max-height: 82vh;
+      box-sizing: border-box;
+    }
+
+    .frame-zoom-stage {
       display: flex;
       justify-content: center;
       align-items: flex-start;
+      min-width: 100%;
+      min-height: 100%;
+      padding: 16px;
       box-sizing: border-box;
     }
 
     .frame-container {
       position: relative;
-      transform-origin: top center;
-      transition: transform 0.15s ease-out;
-      display: flex;
-      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+      transform-origin: top left;
     }
 
     iframe.worksheet-frame {
@@ -706,6 +713,109 @@
       height: 1316px;
       border-radius: 8px;
       box-shadow: var(--shadow-sm);
+      transform-origin: top left;
+    }
+
+    .frame-zoom-controls {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1.5px solid var(--line);
+      box-shadow: var(--shadow-sm);
+      backdrop-filter: blur(6px);
+    }
+
+    .frame-zoom-controls button {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      border: 1.5px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+    }
+
+    .frame-zoom-controls button:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .frame-zoom-controls button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .frame-zoom-label {
+      min-width: 52px;
+      text-align: center;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .preview-wrap.is-loading .preview-toolbar,
+    .preview-wrap.is-loading .frame-zoom-controls,
+    .preview-wrap.is-loading .frame-zoom-stage {
+      display: none;
+    }
+
+    .preview-loading {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      place-items: center;
+      background: #efeaf6;
+      border-radius: 14px;
+    }
+
+    .preview-wrap.is-loading .preview-loading {
+      display: grid;
+    }
+
+    .preview-loading-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .preview-loading .spinner,
+    .toast .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid rgba(122, 63, 201, 0.2);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: preview-spin 0.75s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    .preview-loading .spinner {
+      width: 42px;
+      height: 42px;
+      border-width: 4px;
+    }
+
+    @keyframes preview-spin {
+      to { transform: rotate(360deg); }
     }
 
     /* ---------- modals ---------- */
@@ -1452,8 +1562,22 @@
         <button class="btn-soft" id="downloadPdfBtn" type="button" style="display:none;">⬇ PDF</button>
       </div>
       <div class="frame-shell" id="frameShell">
-        <div class="frame-container" id="frameContainer">
-          <iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe>
+        <div class="preview-loading" id="previewLoading" aria-live="polite">
+          <div class="preview-loading-inner">
+            <span class="spinner" aria-hidden="true"></span>
+            <p id="previewLoadingText">Generating worksheet…</p>
+          </div>
+        </div>
+        <div class="frame-zoom-stage" id="frameZoomStage">
+          <div class="frame-container" id="frameContainer">
+            <iframe id="worksheetFrame" class="worksheet-frame" title="Worksheet preview"></iframe>
+          </div>
+        </div>
+        <div class="frame-zoom-controls" id="frameZoomControls" aria-label="Worksheet zoom">
+          <button type="button" id="zoomOutBtn" title="Zoom out" aria-label="Zoom out">−</button>
+          <span class="frame-zoom-label" id="zoomLabel">100%</span>
+          <button type="button" id="zoomInBtn" title="Zoom in" aria-label="Zoom in">+</button>
+          <button type="button" id="zoomFitBtn" title="Fit to view" aria-label="Fit to view" style="width:auto; padding:0 10px; font-size:12px;">Fit</button>
         </div>
       </div>
     </section>
@@ -1587,6 +1711,11 @@
       apiBaseUrl: '',
       apiPrefix: '/worksheets',
       canvas: { width: 1016, height: 1316 },
+      previewZoom: 1,
+      previewZoomMin: 0.35,
+      previewZoomMax: 2.5,
+      previewZoomStep: 0.1,
+      expectPreviewFromGeneration: false,
       worksheetId: null,
       preview: null,
       editMode: false,
@@ -1637,6 +1766,13 @@
       worksheetFrame: el('worksheetFrame'),
       frameShell: el('frameShell'),
       frameContainer: el('frameContainer'),
+      frameZoomStage: el('frameZoomStage'),
+      previewLoading: el('previewLoading'),
+      previewLoadingText: el('previewLoadingText'),
+      zoomInBtn: el('zoomInBtn'),
+      zoomOutBtn: el('zoomOutBtn'),
+      zoomFitBtn: el('zoomFitBtn'),
+      zoomLabel: el('zoomLabel'),
       backBtn: el('backBtn'),
       editBtn: el('editBtn'),
       aiEditBtn: el('aiEditBtn'),
@@ -1998,16 +2134,63 @@
     }
 
     function showGrid() {
+      state.expectPreviewFromGeneration = false;
       persistPreviewToItems();
       els.formSection.classList.remove('hidden');
       els.gridSection.classList.remove('hidden');
       els.previewSection.classList.add('hidden');
+      els.previewSection.classList.remove('is-loading');
       state.worksheetId = null;
       state.preview = null;
       state.editMode = false;
       state.pendingImageReplacements = {};
       els.editBtn.textContent = 'Edit';
+      setResultsTab('generated');
       renderGrid();
+    }
+
+    function openPreviewLoading(message) {
+      state.expectPreviewFromGeneration = true;
+      els.formSection.classList.add('hidden');
+      els.gridSection.classList.add('hidden');
+      els.previewSection.classList.remove('hidden');
+      els.previewSection.classList.add('is-loading');
+      state.editMode = false;
+      state.preview = null;
+      state.worksheetId = null;
+      els.editBtn.textContent = 'Edit';
+      if (els.worksheetTitle) els.worksheetTitle.textContent = 'Generating…';
+      if (els.previewLoadingText) {
+        els.previewLoadingText.textContent = message || 'Generating worksheet…';
+      }
+      if (els.worksheetFrame) {
+        els.worksheetFrame.removeAttribute('srcdoc');
+        els.worksheetFrame.srcdoc = '';
+      }
+    }
+
+    function closePreviewLoadingToForm() {
+      state.expectPreviewFromGeneration = false;
+      els.previewSection.classList.add('hidden');
+      els.previewSection.classList.remove('is-loading');
+      els.formSection.classList.remove('hidden');
+      els.gridSection.classList.remove('hidden');
+      state.worksheetId = null;
+      state.preview = null;
+    }
+
+    function prepareGeneratedResults(count) {
+      state.items = [];
+      state.selectedIds.clear();
+      state.selectionMode = false;
+      state.page = 1;
+      els.worksheetGrid.classList.remove('selection-mode');
+      if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.style.display = 'none';
+      if (els.toggleSelectMode) els.toggleSelectMode.textContent = 'Select Options';
+      els.worksheetGrid.innerHTML = '';
+      els.empty.style.display = 'none';
+      els.summary.classList.add('show');
+      els.metaPills.innerHTML = `<span class="pill">Generating: <b>0</b>/${count || 1}</span>`;
     }
 
     function scaleThumb(iframe, canvas) {
@@ -2054,6 +2237,14 @@
         card.appendChild(frameWrap);
         card.appendChild(name);
         tile.appendChild(card);
+        tile.addEventListener('click', () => {
+          const samplePrompt = String(template.samplePrompt || '').trim();
+          if (!samplePrompt) {
+            toast('No sample prompt for this template');
+            return;
+          }
+          generateFromTemplate(template);
+        });
         els.templateGrid.appendChild(tile);
       });
     }
@@ -2236,18 +2427,14 @@
       const count = Number(els.countSelect.value) || state.defaultCount;
       clearBanners();
       setBusy(true);
-      setResultsTab('generated');
-      renderSkeletons(count);
-      state.items = [];
-      state.selectedIds.clear();
-      state.selectionMode = false;
-      state.page = 1;
-      els.worksheetGrid.classList.remove('selection-mode');
-      if (els.saveSelectedWorksheets) els.saveSelectedWorksheets.style.display = 'none';
-      if (els.toggleSelectMode) els.toggleSelectMode.textContent = 'Select Options';
+      prepareGeneratedResults(count);
+      openPreviewLoading(
+        count > 1 ? `Generating ${count} worksheets…` : 'Generating worksheet…',
+      );
 
       let received = 0;
       let streamFailed = false;
+      let openedPreview = false;
 
       try {
         const res = await apiFetch('/generate-set/stream', {
@@ -2268,7 +2455,7 @@
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          removeSkeletons();
+          closePreviewLoadingToForm();
           showBanner(
             'error',
             errorBannerHtml(body, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
@@ -2283,17 +2470,22 @@
           }
           if (event.type === 'item' && event.item) {
             received += 1;
-            state.items[event.slotIndex] = {
+            const item = {
               ...event.item,
               template: mergedTemplate(event.item.template),
             };
-            const skeletons = els.worksheetGrid.querySelectorAll('[data-loading-skeleton="true"]');
-            if (skeletons[0]) skeletons[0].remove();
-            appendCard(event.item);
-            els.empty.style.display = 'none';
-            els.summary.classList.add('show');
-            els.metaPills.innerHTML = `<span class="pill">Generated: <b>${received}</b></span>`;
-            toast('<span class="spinner"></span>Generating ' + received + '/' + count + ' worksheet(s)…');
+            state.items[event.slotIndex] = item;
+            els.metaPills.innerHTML = `<span class="pill">Generated: <b>${received}</b>/${count}</span>`;
+            if (els.previewLoadingText && !openedPreview) {
+              els.previewLoadingText.textContent =
+                count > 1
+                  ? `Generating worksheets… ${received}/${count}`
+                  : 'Generating worksheet…';
+            }
+            if (!openedPreview && state.expectPreviewFromGeneration) {
+              openedPreview = true;
+              await openPreview(item);
+            }
             return;
           }
           if (event.type === 'done' && event.payload && Array.isArray(event.payload.items)) {
@@ -2301,6 +2493,10 @@
               ...item,
               template: mergedTemplate(item.template),
             }));
+            if (!openedPreview && state.expectPreviewFromGeneration && state.items[0]) {
+              openedPreview = true;
+              await openPreview(state.items[0]);
+            }
             return;
           }
           if (event.type === 'error') {
@@ -2313,20 +2509,27 @@
         });
 
         if (streamFailed && !received) {
-          removeSkeletons();
+          closePreviewLoadingToForm();
           return;
         }
 
-        toast(`Created ${state.items.length} worksheet(s)`);
         if (!state.items.length) {
+          closePreviewLoadingToForm();
           els.empty.style.display = 'block';
           els.summary.classList.remove('show');
           els.worksheetGrid.innerHTML = '';
-        } else {
-          renderGrid();
+          showBanner('error', '<div>No worksheet was generated. Please try again.</div>');
+          return;
+        }
+
+        if (!openedPreview && state.expectPreviewFromGeneration) {
+          await openPreview(state.items[0]);
+        }
+        if (state.expectPreviewFromGeneration || openedPreview) {
+          toast(`Created ${state.items.length} worksheet(s)`);
         }
       } catch (error) {
-        removeSkeletons();
+        closePreviewLoadingToForm();
         showBanner(
           'error',
           errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
@@ -2336,36 +2539,204 @@
       }
     }
 
-    function scaleFrame() {
-      const iframe = els.worksheetFrame;
-      const container = els.frameContainer || iframe.parentElement;
-      const shell = els.frameShell || container.parentElement;
+    async function generateFromTemplate(template) {
+      const samplePrompt = String(template?.samplePrompt || '').trim();
+      if (!samplePrompt) {
+        toast('No sample prompt for this template');
+        return;
+      }
+      const age = selectedAge();
+      if (!age) {
+        showBanner('error', '<div>No age group selected.</div>');
+        return;
+      }
+
+      clearBanners();
+      setBusy(true);
+      prepareGeneratedResults(1);
+      openPreviewLoading('Generating worksheet…');
+
+      let received = 0;
+      let streamFailed = false;
+      let openedPreview = false;
+
+      try {
+        const res = await apiFetch('/generate-set/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/x-ndjson',
+          },
+          body: JSON.stringify({
+            query: samplePrompt,
+            topic: samplePrompt,
+            age: age.age,
+            ageGroup: age.id,
+            grade: age.grade,
+            count: 1,
+            templateId: template.id,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          closePreviewLoadingToForm();
+          showBanner(
+            'error',
+            errorBannerHtml(body, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
+          );
+          return;
+        }
+
+        await readNdjsonStream(res, async (event) => {
+          if (!event || !event.type || event.type === 'ping') return;
+          if (event.type === 'meta') {
+            return;
+          }
+          if (event.type === 'item' && event.item) {
+            received += 1;
+            const item = {
+              ...event.item,
+              template: mergedTemplate(event.item.template),
+            };
+            state.items[event.slotIndex] = item;
+            els.metaPills.innerHTML = `<span class="pill">Generated: <b>${received}</b></span>`;
+            if (!openedPreview && state.expectPreviewFromGeneration) {
+              openedPreview = true;
+              await openPreview(item);
+            }
+            return;
+          }
+          if (event.type === 'done' && event.payload && Array.isArray(event.payload.items)) {
+            state.items = event.payload.items.map((item) => ({
+              ...item,
+              template: mergedTemplate(item.template),
+            }));
+            if (!openedPreview && state.expectPreviewFromGeneration && state.items[0]) {
+              openedPreview = true;
+              await openPreview(state.items[0]);
+            }
+            return;
+          }
+          if (event.type === 'error') {
+            streamFailed = true;
+            showBanner(
+              'error',
+              errorBannerHtml(event, 'Could not generate worksheets. Please try again.', 'Could not generate worksheets'),
+            );
+          }
+        });
+
+        if (streamFailed && !received) {
+          closePreviewLoadingToForm();
+          return;
+        }
+
+        if (!state.items.length) {
+          closePreviewLoadingToForm();
+          els.empty.style.display = 'block';
+          els.summary.classList.remove('show');
+          els.worksheetGrid.innerHTML = '';
+          showBanner('error', '<div>No worksheet was generated for this template.</div>');
+          return;
+        }
+
+        if (!openedPreview && state.expectPreviewFromGeneration) {
+          await openPreview(state.items[0]);
+        }
+        if (state.expectPreviewFromGeneration || openedPreview) {
+          toast('Created 1 worksheet');
+        }
+      } catch (error) {
+        closePreviewLoadingToForm();
+        showBanner(
+          'error',
+          errorBannerHtml(error, 'Could not reach the server. Check your connection and try again.', 'Could not reach the server'),
+        );
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function previewCanvasSize() {
       const canvas = state.preview?.canvas || state.canvas;
-      const canvasW = canvas.width || 1016;
-      const canvasH = canvas.height || 1316;
+      return {
+        width: Number(canvas?.width) || 1016,
+        height: Number(canvas?.height) || 1316,
+      };
+    }
+
+    function fitPreviewZoom() {
+      const shell = els.frameShell;
+      const { width: canvasW, height: canvasH } = previewCanvasSize();
+      if (!shell) return 1;
+      const availW = Math.max(240, shell.clientWidth - 32);
+      const availH = Math.max(280, shell.clientHeight - 32);
+      const scale = Math.min(availW / canvasW, availH / canvasH);
+      return Math.max(state.previewZoomMin, Math.min(1, scale));
+    }
+
+    function clampPreviewZoom(zoom) {
+      const min = state.previewZoomMin;
+      const max = state.previewZoomMax;
+      const stepped = Math.round(Number(zoom) / state.previewZoomStep) * state.previewZoomStep;
+      return Math.min(max, Math.max(min, Number(stepped.toFixed(2))));
+    }
+
+    function updateZoomControls() {
+      if (els.zoomLabel) {
+        els.zoomLabel.textContent = `${Math.round(state.previewZoom * 100)}%`;
+      }
+      if (els.zoomOutBtn) els.zoomOutBtn.disabled = state.previewZoom <= state.previewZoomMin + 0.001;
+      if (els.zoomInBtn) els.zoomInBtn.disabled = state.previewZoom >= state.previewZoomMax - 0.001;
+    }
+
+    function setPreviewZoom(zoom, options) {
+      state.previewZoom = clampPreviewZoom(zoom);
+      scaleFrame({ preserveScroll: Boolean(options?.preserveScroll) });
+      updateZoomControls();
+    }
+
+    function scaleFrame(options) {
+      const iframe = els.worksheetFrame;
+      const container = els.frameContainer || iframe?.parentElement;
+      const shell = els.frameShell;
+      if (!iframe || !container) return;
+
+      const { width: canvasW, height: canvasH } = previewCanvasSize();
+      const zoom = clampPreviewZoom(state.previewZoom || fitPreviewZoom());
+      state.previewZoom = zoom;
+
+      const layoutW = Math.round(canvasW * zoom);
+      const layoutH = Math.round(canvasH * zoom);
+      const scrollLeftRatio = shell && shell.scrollWidth > shell.clientWidth
+        ? shell.scrollLeft / Math.max(1, shell.scrollWidth - shell.clientWidth)
+        : 0.5;
+      const scrollTopRatio = shell && shell.scrollHeight > shell.clientHeight
+        ? shell.scrollTop / Math.max(1, shell.scrollHeight - shell.clientHeight)
+        : 0;
 
       iframe.style.width = canvasW + 'px';
       iframe.style.height = canvasH + 'px';
+      iframe.style.transform = `scale(${zoom})`;
+      iframe.style.transformOrigin = 'top left';
 
-      const availW = Math.max(280, (shell ? shell.clientWidth : container.parentElement.clientWidth) - 36);
-      const availH = Math.max(360, (window.innerHeight * 0.76));
-      const scaleW = availW / canvasW;
-      const scaleH = availH / canvasH;
-      const scale = Math.min(1, scaleW, scaleH);
+      container.style.width = layoutW + 'px';
+      container.style.height = layoutH + 'px';
+      container.style.transform = '';
 
-      if (container && container !== iframe) {
-        container.style.transform = `scale(${scale})`;
-        container.style.width = canvasW + 'px';
-        container.style.height = canvasH + 'px';
-        if (shell) {
-          shell.style.height = Math.round(canvasH * scale + 36) + 'px';
-        }
-      } else {
-        iframe.style.transform = `scale(${scale})`;
-        if (shell) {
-          shell.style.height = Math.round(canvasH * scale + 36) + 'px';
+      if (shell) {
+        shell.style.height = '';
+        if (options?.preserveScroll) {
+          requestAnimationFrame(() => {
+            const maxX = Math.max(0, shell.scrollWidth - shell.clientWidth);
+            const maxY = Math.max(0, shell.scrollHeight - shell.clientHeight);
+            shell.scrollLeft = maxX * scrollLeftRatio;
+            shell.scrollTop = maxY * scrollTopRatio;
+          });
         }
       }
+
+      updateZoomControls();
     }
 
     async function openPreview(item, options) {
@@ -2383,6 +2754,9 @@
       els.formSection.classList.add('hidden');
       els.gridSection.classList.add('hidden');
       els.previewSection.classList.remove('hidden');
+      els.previewSection.classList.remove('is-loading');
+      state.previewZoom = fitPreviewZoom();
+      updateZoomControls();
 
       const apply = (preview) => {
         state.preview = preview;
@@ -2390,6 +2764,7 @@
         const iframe = els.worksheetFrame;
         const html = preview.html || '';
         const onReady = () => {
+          state.previewZoom = fitPreviewZoom();
           scaleFrame();
           wireFrame();
         };
@@ -3969,7 +4344,31 @@
       toast('Worksheet regenerated');
     });
 
-    window.addEventListener('resize', scaleFrame);
+    window.addEventListener('resize', () => {
+      if (els.previewSection?.classList.contains('hidden')) return;
+      // Keep relative zoom vs previous fit when possible; re-apply layout only.
+      scaleFrame({ preserveScroll: true });
+    });
+
+    if (els.zoomInBtn) {
+      els.zoomInBtn.addEventListener('click', () => {
+        setPreviewZoom(state.previewZoom + state.previewZoomStep, { preserveScroll: true });
+      });
+    }
+    if (els.zoomOutBtn) {
+      els.zoomOutBtn.addEventListener('click', () => {
+        setPreviewZoom(state.previewZoom - state.previewZoomStep, { preserveScroll: true });
+      });
+    }
+    if (els.zoomFitBtn) {
+      els.zoomFitBtn.addEventListener('click', () => {
+        setPreviewZoom(fitPreviewZoom());
+        if (els.frameShell) {
+          els.frameShell.scrollLeft = 0;
+          els.frameShell.scrollTop = 0;
+        }
+      });
+    }
 
     function fillCountOptions(defaultCount, maxCount) {
       state.defaultCount = defaultCount;

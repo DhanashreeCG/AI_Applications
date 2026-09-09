@@ -1,0 +1,62 @@
+[
+    {
+      "templateId": "cmswxebxm0028s4bg6clapv7x",
+      "templateSlug": "number_names",
+      "prompt": "Create a matching worksheet for number names from 1 to 20 for Grade 1 students."
+    },
+    {
+      "templateId": "cmsws6mrz0009l4bgdx3em709",
+      "templateSlug": "answer_and_colour",
+      "prompt": "Generate a story-based comprehension and colouring worksheet about farm goats for EYFS children."
+    },
+    {
+      "templateId": "cmtmu146d002ng8bgcae2bvj2",
+      "templateSlug": "look_and_say_letters_and_sounds",
+      "prompt": "Create a 'Look and Say' phonics worksheet for the letter Y featuring uppercase and lowercase word associations."
+    },
+    {
+      "templateId": "cmthbu2zn002n0kbgfadaudre",
+      "templateSlug": "circle_the_words",
+      "prompt": "Generate a sight words worksheet for kindergarten where students circle target words like 'in', 'she', and 'they' inside simple sentences."
+    },
+    {
+      "templateId": "cmtqv0vtc003ho8bg01khunhe",
+      "templateSlug": "matching_single_letter",
+      "prompt": "Create an uppercase to lowercase letter matching worksheet centered around the letter 'A'."
+    },
+    {
+      "templateId": "cmts6roz3002n4obgkgehn7e1",
+      "templateSlug": "storytime_maze",
+      "prompt": "Design a story maze worksheet based on 'The Tortoise and the Hare' where children guide the tortoise to the finish line."
+    },
+    {
+      "templateId": "cmtqx3d7w0048c4bg0i8fe9cy",
+      "templateSlug": "look_and_say_circle_the_letters",
+      "prompt": "Generate a phonics letter recognition worksheet for the letter 'A' with a read-aloud section and vocabulary clouds."
+    },
+    {
+      "templateId": "cmtctkipl002lxcbg6wqtf6q3",
+      "templateSlug": "circle_the_things",
+      "prompt": "Create a personal hygiene worksheet where children circle all the items used to keep their body clean."
+    },
+    {
+      "templateId": "cmtqs9cbc002nnobgwtdins9u",
+      "templateSlug": "tracing",
+      "prompt": "Generate a comparative line-tracing worksheet for early learners focusing on big vs. small animals and objects."
+    },
+    {
+      "templateId": "cmthcnikx003yrobgnng3y2ka",
+      "templateSlug": "match_the_pairs",
+      "prompt": "Create a matching pairs worksheet for toddlers to connect matching human sense organs across two columns."
+    },
+    {
+      "templateId": "cmtsndfnn002n6cbg6o6ny7t3",
+      "templateSlug": "picture_graph",
+      "prompt": "Generate an insect-themed picture graph worksheet where children count bugs and identify which one has the most."
+    },
+    {
+      "templateId": "cmtsdzoj50032ngbgewvpccu6",
+      "templateSlug": "Numbers_afterandbefore",
+      "prompt": "Create a math worksheet using a 0-10 number line for practicing 'before' numbers with penguin illustrations."
+    }
+  ]

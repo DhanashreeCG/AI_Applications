@@ -78,6 +78,12 @@ export class CreateWorksheetTemplateDto {
   aiSystemPrompt?: string;
 
   @ApiPropertyOptional({
+    example: 'Create a matching worksheet for number names from 1 to 20 for Grade 1 students.',
+    description: 'Sample natural-language prompt used when generating from this template in the catalog UI.',
+  })
+  samplePrompt?: string;
+
+  @ApiPropertyOptional({
     description: 'Raw source of ai-edit-config.js (buildInstruction).',
   })
   aiEditConfigJs?: string;
@@ -141,6 +147,9 @@ export class CreateWorksheetTemplateResponseDto {
 
   @ApiPropertyOptional()
   sampleUrl?: string;
+
+  @ApiPropertyOptional()
+  samplePrompt?: string | null;
 
   @ApiPropertyOptional()
   aiEditConfigJs?: string | null;
