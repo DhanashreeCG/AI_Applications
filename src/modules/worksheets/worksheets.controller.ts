@@ -60,6 +60,8 @@ import {
   WorksheetTemplateService,
   UploadedTemplateImage,
 } from './services/worksheet-template.service';
+import { TranslateContentDto } from '../translation/dto/translate-content.dto';
+import { TranslationService } from '../translation/translation.service';
 
 @ApiTags('worksheets')
 @Controller('worksheets')
@@ -71,6 +73,7 @@ export class WorksheetsController {
     private readonly renderNotifyService: WorksheetRenderNotifyService,
     private readonly templateService: WorksheetTemplateService,
     private readonly assetImageService: AssetImageService,
+    private readonly translationService: TranslationService,
   ) {}
 
   @Post('generate')
@@ -94,6 +97,18 @@ export class WorksheetsController {
         correlationId: correlationId || traceId,
       },
     );
+  }
+
+  @Post('translate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Translate user-facing text in already-generated worksheet JSON via GCP Cloud Translation (service-account auth; no regeneration / no image retrieval)',
+  })
+  async translate(@Body() dto: TranslateContentDto) {
+    return this.translationService.translateContent(dto.content, dto.language, {
+      product: 'worksheets',
+    });
   }
 
   @Post('generate-set/stream')

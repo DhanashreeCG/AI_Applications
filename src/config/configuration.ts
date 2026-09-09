@@ -28,12 +28,30 @@ export interface AppConfig {
     db: number;
     searchCacheTtlSeconds: number;
     assetMetadataCacheTtlSeconds: number;
+    translationCacheTtlSeconds: number;
   };
   googleDrive: {
     clientEmail?: string;
     privateKey?: string;
     credentialsPath?: string;
     apiKey?: string;
+  };
+  translation: {
+    /** When false, translate endpoints return 503. */
+    enabled: boolean;
+    /** GCP project id (optional; often present on the service-account JSON). */
+    projectId?: string;
+    /**
+     * Optional dedicated service-account JSON path.
+     * Falls back to googleDrive.credentialsPath when unset.
+     */
+    credentialsPath?: string;
+    clientEmail?: string;
+    privateKey?: string;
+    /** Max strings per GCP translate request. */
+    maxBatchSize: number;
+    /** Approximate max UTF-16 code units per GCP request. */
+    maxBatchCodeUnits: number;
   };
   ai: {
     /**
@@ -300,12 +318,48 @@ export default (): AppConfig => ({
       process.env.REDIS_ASSET_METADATA_CACHE_TTL_SECONDS || '3600',
       10,
     ),
+    translationCacheTtlSeconds: parseInt(
+      process.env.REDIS_TRANSLATION_CACHE_TTL_SECONDS || '86400',
+      10,
+    ),
   },
   googleDrive: {
     clientEmail: process.env.GOOGLE_DRIVE_CLIENT_EMAIL,
     privateKey: process.env.GOOGLE_DRIVE_PRIVATE_KEY,
     credentialsPath: process.env.GOOGLE_DRIVE_CREDENTIALS_PATH,
     apiKey: process.env.GOOGLE_DRIVE_API_KEY,
+  },
+  translation: {
+    enabled: process.env.TRANSLATION_ENABLED !== 'false',
+    projectId:
+      process.env.GOOGLE_TRANSLATION_PROJECT_ID ||
+      process.env.GOOGLE_CLOUD_PROJECT ||
+      process.env.GCLOUD_PROJECT ||
+      undefined,
+    credentialsPath:
+      process.env.GOOGLE_TRANSLATION_CREDENTIALS_PATH ||
+      process.env.GOOGLE_DRIVE_CREDENTIALS_PATH ||
+      undefined,
+    clientEmail:
+      process.env.GOOGLE_TRANSLATION_CLIENT_EMAIL ||
+      process.env.GOOGLE_DRIVE_CLIENT_EMAIL ||
+      undefined,
+    privateKey:
+      process.env.GOOGLE_TRANSLATION_PRIVATE_KEY ||
+      process.env.GOOGLE_DRIVE_PRIVATE_KEY ||
+      undefined,
+    maxBatchSize: parseInt(
+      process.env.TRANSLATION_MAX_BATCH_SIZE ||
+        process.env.GOOGLE_TRANSLATION_MAX_BATCH_SIZE ||
+        '100',
+      10,
+    ),
+    maxBatchCodeUnits: parseInt(
+      process.env.TRANSLATION_MAX_BATCH_CODE_UNITS ||
+        process.env.GOOGLE_TRANSLATION_MAX_BATCH_CODE_UNITS ||
+        '25000',
+      10,
+    ),
   },
   ai: {
     // Shared platform: ingestion vision + embeddings. Prefer dedicated shared keys;

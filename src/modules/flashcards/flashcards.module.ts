@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AiModule } from '../ai/ai.module';
 import { SearchModule } from '../search/search.module';
 import { StorageModule } from '../storage/storage.module';
+import { TranslationModule } from '../translation/translation.module';
 import { FlashcardsController } from './flashcards.controller';
 import { ContentRestrictionController } from './content-restriction.controller';
 import { AssetImageService } from './services/asset-image.service';
@@ -26,7 +27,7 @@ import { ImageQueryRefinementService } from './services/image-query-refinement.s
 import { AssetVocabularyService } from './services/asset-vocabulary.service';
 
 @Module({
-  imports: [AiModule, SearchModule, StorageModule],
+  imports: [AiModule, SearchModule, StorageModule, TranslationModule],
   controllers: [FlashcardsController, ContentRestrictionController],
   providers: [
     AssetImageService,

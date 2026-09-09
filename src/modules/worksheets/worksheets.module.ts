@@ -4,6 +4,7 @@ import { FlashcardsModule } from '../flashcards/flashcards.module';
 import { ImageModule } from '../image/image.module';
 import { SearchModule } from '../search/search.module';
 import { StorageModule } from '../storage/storage.module';
+import { TranslationModule } from '../translation/translation.module';
 import { GenericWorksheetRenderer } from './renderers/generic-worksheet.renderer';
 import { CircleTheThingsRenderer } from './renderers/circle-the-things.renderer';
 import { WorksheetRendererRegistry } from './renderers/worksheet-renderer.registry';
@@ -21,7 +22,14 @@ import { WorksheetValidationService } from './services/worksheet-validation.serv
 import { WorksheetsController } from './worksheets.controller';
 
 @Module({
-  imports: [AiModule, SearchModule, StorageModule, ImageModule, FlashcardsModule],
+  imports: [
+    AiModule,
+    SearchModule,
+    StorageModule,
+    ImageModule,
+    FlashcardsModule,
+    TranslationModule,
+  ],
   controllers: [WorksheetsController],
   providers: [
     WorksheetTemplateService,
