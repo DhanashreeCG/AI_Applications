@@ -39,10 +39,15 @@ export interface AppConfig {
   translation: {
     /** When false, translate endpoints return 503. */
     enabled: boolean;
-    /** GCP project id (optional; often present on the service-account JSON). */
+    /** GCP project id (billing / quota). */
     projectId?: string;
     /**
-     * Optional dedicated service-account JSON path.
+     * Preferred auth for Cloud Translation Basic (v2): standard GCP API key.
+     * Not a Google AI Studio / Gemini key.
+     */
+    apiKey?: string;
+    /**
+     * Optional dedicated service-account JSON path (fallback when apiKey unset).
      * Falls back to googleDrive.credentialsPath when unset.
      */
     credentialsPath?: string;
@@ -336,6 +341,7 @@ export default (): AppConfig => ({
       process.env.GOOGLE_CLOUD_PROJECT ||
       process.env.GCLOUD_PROJECT ||
       undefined,
+    apiKey: process.env.GOOGLE_TRANSLATION_API_KEY || undefined,
     credentialsPath:
       process.env.GOOGLE_TRANSLATION_CREDENTIALS_PATH ||
       process.env.GOOGLE_DRIVE_CREDENTIALS_PATH ||

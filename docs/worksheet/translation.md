@@ -1,8 +1,8 @@
 Implement a production-ready **translation layer for the existing flashcard/worksheet generation system**.
 
-> **Implemented:** shared `TranslationModule` (GCP Cloud Translation v2 + service-account auth via `GOOGLE_TRANSLATION_*` / fallback `GOOGLE_DRIVE_*`) + `POST /flashcards/translate` / `POST /worksheets/translate`. See [`../flashcards/FLASHCARD_TRANSLATION.md`](../flashcards/FLASHCARD_TRANSLATION.md).
+> **Implemented:** shared `TranslationModule` (GCP Cloud Translation **Basic v2**) + `POST /flashcards/translate` / `POST /worksheets/translate`. See [`../flashcards/FLASHCARD_TRANSLATION.md`](../flashcards/FLASHCARD_TRANSLATION.md).
 >
-> **Auth note:** Cloud Translation requires OAuth2 / service-account credentials — Google AI Studio API keys are not supported by this API.
+> **Auth:** Prefer `GOOGLE_TRANSLATION_API_KEY` (standard GCP API key). Service-account (`GOOGLE_TRANSLATION_*` / `GOOGLE_DRIVE_*`) is the fallback. Gemini / AI Studio keys are not valid for this API.
 
 ## Context
 This project currently generates flashcards/worksheets using JSON templates.

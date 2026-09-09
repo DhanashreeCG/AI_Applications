@@ -21,9 +21,13 @@ interface ServiceAccountCredentials {
 }
 
 /**
- * Google Cloud Translation (v2) with service-account credentials.
- * Reuses GOOGLE_TRANSLATION_* or falls back to GOOGLE_DRIVE_* SA credentials.
- * AI Studio / Gemini API keys are NOT used (Cloud Translation rejects API keys).
+ * Google Cloud Translation — Basic (v2).
+ *
+ * Auth order:
+ * 1. Standard GCP API key (`GOOGLE_TRANSLATION_API_KEY`) — supported by v2 only
+ * 2. Service account (`GOOGLE_TRANSLATION_*` or fallback `GOOGLE_DRIVE_*`)
+ *
+ * Do not use Google AI Studio / Gemini API keys here.
  */
 @Injectable()
 export class GcpTranslationProvider
@@ -55,7 +59,7 @@ export class GcpTranslationProvider
 
     if (!this.client) {
       throw new Error(
-        'GCP Translation client is not configured. Set GOOGLE_TRANSLATION_* or GOOGLE_DRIVE service-account credentials.',
+        'GCP Translation client is not configured. Set GOOGLE_TRANSLATION_API_KEY (preferred) or service-account credentials.',
       );
     }
 
@@ -88,6 +92,31 @@ export class GcpTranslationProvider
       return;
     }
 
+    const projectId =
+      this.configService.get<string>('translation.projectId') || undefined;
+    const apiKey = this.configService.get<string>('translation.apiKey')?.trim();
+
+    if (apiKey) {
+      try {
+        this.client = new v2.Translate({
+          projectId,
+          key: apiKey,
+        });
+        this.logger.log(
+          `GCP Translation ready (API key${projectId ? `, project=${projectId}` : ''})`,
+        );
+        return;
+      } catch (error) {
+        this.client = null;
+        this.logger.error(
+          `Failed to initialize GCP Translation with API key: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return;
+      }
+    }
+
     const credentialsPath =
       this.configService.get<string>('translation.credentialsPath') ||
       this.configService.get<string>('googleDrive.credentialsPath');
@@ -109,14 +138,11 @@ export class GcpTranslationProvider
         ? normalizePrivateKey(privateKeyRaw)
         : undefined;
 
-    const projectId =
-      this.configService.get<string>('translation.projectId') ||
-      fromFile?.project_id ||
-      undefined;
+    const resolvedProjectId = projectId || fromFile?.project_id || undefined;
 
     if (!email || !privateKey) {
       this.logger.warn(
-        'GCP Translation credentials not provided (need service-account email + private key via GOOGLE_TRANSLATION_* or GOOGLE_DRIVE_*). Translation unavailable.',
+        'GCP Translation credentials not provided. Set GOOGLE_TRANSLATION_API_KEY (recommended) or a service account via GOOGLE_TRANSLATION_* / GOOGLE_DRIVE_*.',
       );
       return;
     }
@@ -124,7 +150,7 @@ export class GcpTranslationProvider
     try {
       assertValidPrivateKeyPem(privateKey);
       this.client = new v2.Translate({
-        projectId,
+        projectId: resolvedProjectId,
         credentials: {
           client_email: email,
           private_key: privateKey,
@@ -132,8 +158,8 @@ export class GcpTranslationProvider
       });
       this.logger.log(
         fromFile && credentialsPath
-          ? `GCP Translation ready (service account from ${credentialsPath}${projectId ? `, project=${projectId}` : ''})`
-          : `GCP Translation ready (service account env credentials${projectId ? `, project=${projectId}` : ''})`,
+          ? `GCP Translation ready (service account from ${credentialsPath}${resolvedProjectId ? `, project=${resolvedProjectId}` : ''})`
+          : `GCP Translation ready (service account env credentials${resolvedProjectId ? `, project=${resolvedProjectId}` : ''})`,
       );
     } catch (error) {
       this.client = null;

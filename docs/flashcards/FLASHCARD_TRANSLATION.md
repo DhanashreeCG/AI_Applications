@@ -1,41 +1,51 @@
 # Flashcard / Worksheet Translation
 
 Orthogonal localization layer on top of English-canonical generation.
-Uses **Google Cloud Translation (v2)** with **service-account credentials** (same pattern as Google Drive).
+Uses **Google Cloud Translation — Basic (v2)**.
+
+## Auth (pick one)
+
+### 1. Standard GCP API key (preferred)
+
+Cloud Translation **Basic (v2)** supports API keys. Advanced (v3) does not.
+
+| Variable | Purpose |
+|---|---|
+| `GOOGLE_TRANSLATION_API_KEY` | GCP Console API key with Cloud Translation API enabled |
+| `GOOGLE_TRANSLATION_PROJECT_ID` | Project used for billing / quota |
+
+**Not** a Google AI Studio / Gemini key (`AQ.…`). Use a key from  
+Google Cloud Console → APIs & Services → Credentials → API key.
+
+### 2. Service account (fallback)
+
+Used only when `GOOGLE_TRANSLATION_API_KEY` is empty.
+
+| Variable | Purpose |
+|---|---|
+| `GOOGLE_TRANSLATION_CREDENTIALS_PATH` | SA JSON path |
+| `GOOGLE_TRANSLATION_CLIENT_EMAIL` / `PRIVATE_KEY` | SA credentials |
+| or `GOOGLE_DRIVE_*` | Same SA already used for Drive |
 
 ## Flow
 
 ```text
-POST /flashcards/generate  →  English JSON + images
-Frontend language change   →  POST /flashcards/translate { language, content }
-                           →  GCP Cloud Translation (service account)
-                           →  Translated JSON
+POST /flashcards/translate | /worksheets/translate
+  → extract translatable strings
+  → GCP Translation v2 (batched)
+  → reconstruct JSON
 ```
 
-Same for `POST /worksheets/translate`. Generation and image retrieval are never re-run.
-
-## Auth
-
-Cloud Translation does **not** accept AI Studio / Gemini API keys. Use a service account:
-
-| Variable | Purpose |
-|---|---|
-| `GOOGLE_TRANSLATION_CREDENTIALS_PATH` | Optional dedicated SA JSON |
-| `GOOGLE_TRANSLATION_CLIENT_EMAIL` / `PRIVATE_KEY` | Optional dedicated SA |
-| `GOOGLE_TRANSLATION_PROJECT_ID` | Optional; else from SA JSON / `GOOGLE_CLOUD_PROJECT` |
-
-If translation-specific vars are unset, credentials fall back to `GOOGLE_DRIVE_*` (already used in this repo).
-
-Enable **Cloud Translation API** on the GCP project and grant the service account access (e.g. Cloud Translation User).
+Generation and image retrieval are never re-run.
 
 ## Other config
 
-| Variable | Purpose |
+| Variable | Default |
 |---|---|
-| `TRANSLATION_ENABLED` | Default `true` |
-| `TRANSLATION_MAX_BATCH_SIZE` | Default `100` |
-| `TRANSLATION_MAX_BATCH_CODE_UNITS` | Default `25000` |
-| `REDIS_TRANSLATION_CACHE_TTL_SECONDS` | Fragment cache TTL |
+| `TRANSLATION_ENABLED` | `true` |
+| `TRANSLATION_MAX_BATCH_SIZE` | `100` |
+| `TRANSLATION_MAX_BATCH_CODE_UNITS` | `25000` |
+| `REDIS_TRANSLATION_CACHE_TTL_SECONDS` | `86400` |
 
 ## Code
 

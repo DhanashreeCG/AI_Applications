@@ -34,7 +34,7 @@ export class TranslationService {
 
   /**
    * Translate user-facing text in flashcard/worksheet JSON via GCP Translation.
-   * Auth uses service-account credentials (GOOGLE_TRANSLATION_* or GOOGLE_DRIVE_*).
+   * Auth prefers GOOGLE_TRANSLATION_API_KEY, else service-account credentials.
    * Never mutates the input object.
    */
   async translateContent(
@@ -247,7 +247,7 @@ export class TranslationService {
     if (!this.provider.isReady(product)) {
       throw new TranslationException(
         'TRANSLATION_UNAVAILABLE',
-        'Translation provider is not configured. Set GOOGLE_TRANSLATION_* or GOOGLE_DRIVE service-account credentials and enable Cloud Translation API.',
+        'Translation provider is not configured. Set GOOGLE_TRANSLATION_API_KEY (preferred) or GOOGLE_TRANSLATION_* / GOOGLE_DRIVE service-account credentials, and enable Cloud Translation API.',
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
