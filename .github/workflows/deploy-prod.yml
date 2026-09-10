@@ -1,0 +1,128 @@
+name: Deploy Prod Backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod-backend
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26.5.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Build application
+        run: npm run build
+
+      - name: Prepare deployment package
+        run: |
+          mkdir -p deploy
+
+          cp -r dist deploy/
+          cp -r public deploy/
+          cp -r prisma deploy/
+          cp prisma.config.ts deploy/
+          cp package.json deploy/
+          cp package-lock.json deploy/
+
+          if [ -d "storage" ]; then
+            cp -r storage deploy/
+          fi
+
+          echo "Deploy package contents:"
+          find deploy -maxdepth 3 -type d | sort
+
+      - name: Deploy files to Prod VPS
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          source: "deploy/"
+          target: "~/www/flashcard"
+          strip_components: 1
+          overwrite: true
+
+      - name: Install dependencies and restart backend
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -euo pipefail
+
+            # Non-interactive SSH often misses nvm/npm/pm2 PATH
+            export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+
+            if [ -f "$HOME/.nvm/nvm.sh" ]; then
+              # shellcheck disable=SC1091
+              . "$HOME/.nvm/nvm.sh"
+            elif [ -f "$HOME/.bashrc" ]; then
+              # shellcheck disable=SC1091
+              . "$HOME/.bashrc"
+            elif [ -f "$HOME/.profile" ]; then
+              # shellcheck disable=SC1091
+              . "$HOME/.profile"
+            fi
+
+            if command -v fnm >/dev/null 2>&1; then
+              eval "$(fnm env)" || true
+            fi
+
+            cd ~/www/flashcard
+
+            if ! command -v npm >/dev/null 2>&1; then
+              echo "ERROR: npm not found in PATH after loading shell env."
+              echo "PATH=$PATH"
+              exit 127
+            fi
+
+            if ! command -v pm2 >/dev/null 2>&1; then
+              echo "ERROR: pm2 not found in PATH after loading shell env."
+              echo "PATH=$PATH"
+              exit 127
+            fi
+
+            echo "Using node: $(command -v node) ($(node -v))"
+            echo "Using npm:  $(command -v npm) ($(npm -v))"
+            echo "Using pm2:  $(command -v pm2)"
+
+            # prisma is a devDependency; generated client is already in dist/
+            echo "Installing production dependencies..."
+            npm ci --omit=dev --ignore-scripts
+
+            echo "Restarting backend..."
+            if pm2 describe ai-flashcard-backend >/dev/null 2>&1; then
+              pm2 restart ai-flashcard-backend --update-env
+            else
+              echo "ERROR: PM2 process 'ai-flashcard-backend' does not exist."
+              echo "Create it once on the VPS before relying on restart, e.g.:"
+              echo "  cd ~/www/ai-flashcard/backend && pm2 start dist/src/main.js --name ai-flashcard-backend"
+              pm2 list || true
+              exit 1
+            fi
+
+            echo "PM2 status:"
+            pm2 describe ai-flashcard-backend
+
+            echo "Deployment completed successfully."
