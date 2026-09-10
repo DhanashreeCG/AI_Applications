@@ -1,10 +1,14 @@
-```yaml
 name: Deploy Dev
 
 on:
   push:
     branches:
       - feat/translation
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: true
 
 jobs:
   build-and-deploy:
@@ -34,6 +38,7 @@ jobs:
 
       # --------------------------------------------------
       # 4. Generate Prisma Client
+      # (also runs via postinstall; kept explicit for clarity)
       # --------------------------------------------------
       - name: Generate Prisma Client
         run: npx prisma generate
@@ -49,18 +54,19 @@ jobs:
       #
       # Only runtime-required files are copied.
       # Development/build configuration is NOT deployed.
+      # Prisma client is already compiled into dist/generated.
       # --------------------------------------------------
       - name: Prepare deployment package
         run: |
           mkdir -p deploy
 
-          # Compiled NestJS application
+          # Compiled NestJS application (includes dist/generated/prisma)
           cp -r dist deploy/
 
           # Runtime static assets
           cp -r public deploy/
 
-          # Prisma schema/config/migrations
+          # Prisma schema/config/migrations (for future migrate runs)
           cp -r prisma deploy/
           cp prisma.config.ts deploy/
 
@@ -73,6 +79,9 @@ jobs:
             cp -r storage deploy/
           fi
 
+          echo "Deploy package contents:"
+          find deploy -maxdepth 3 -type d | sort
+
       # --------------------------------------------------
       # 7. Deploy runtime files to Dev VPS
       # --------------------------------------------------
@@ -82,9 +91,10 @@ jobs:
           host: ${{ secrets.DEV_HOST }}
           username: ${{ secrets.DEV_USER }}
           key: ${{ secrets.DEV_SSH_KEY }}
-          source: "deploy/*"
+          source: "deploy/"
           target: "~/www/ai-flashcard/backend"
           strip_components: 1
+          overwrite: true
 
       # --------------------------------------------------
       # 8. Install production dependencies and restart PM2
@@ -96,15 +106,19 @@ jobs:
           username: ${{ secrets.DEV_USER }}
           key: ${{ secrets.DEV_SSH_KEY }}
           script: |
-            set -e
+            set -euo pipefail
 
             cd ~/www/ai-flashcard/backend
 
+            # prisma is a devDependency; postinstall runs `prisma generate`.
+            # Generated client is already inside dist/, so skip lifecycle scripts.
             echo "Installing production dependencies..."
-            npm ci --omit=dev
+            npm ci --omit=dev --ignore-scripts
 
             echo "Restarting backend..."
-            pm2 restart ai-flashcard-backend
+            pm2 restart ai-flashcard-backend --update-env
+
+            echo "PM2 status:"
+            pm2 describe ai-flashcard-backend | head -n 40
 
             echo "Deployment completed successfully."
-```
