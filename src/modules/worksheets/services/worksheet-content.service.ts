@@ -29,7 +29,21 @@ import {
 } from '../telemetry/worksheet-pipeline.events';
 import { WorksheetTemplateRecord } from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
-import { normalizeLlmWorksheetPayload } from '../utils/structure.util';
+import { normalizeLlmWorksheetPayload, parseJsonObject } from '../utils/structure.util';
+
+function readContentRegion(
+  rendererConfig: unknown,
+): { width?: number; height?: number; left?: number; top?: number } | null {
+  const cfg = parseJsonObject(rendererConfig);
+  const region = parseJsonObject(cfg?.contentRegion);
+  if (!region) return null;
+  return {
+    left: typeof region.left === 'number' ? region.left : undefined,
+    top: typeof region.top === 'number' ? region.top : undefined,
+    width: typeof region.width === 'number' ? region.width : undefined,
+    height: typeof region.height === 'number' ? region.height : undefined,
+  };
+}
 
 @Injectable()
 export class WorksheetContentService {
@@ -100,6 +114,7 @@ export class WorksheetContentService {
             systemPrompt: extras?.systemPrompt,
             currentStructure: extras?.currentStructure,
             adaptationNote: template.selectionProfile?.adaptationNote ?? null,
+            contentRegion: readContentRegion(template.rendererConfig),
           }),
         {
           completeMetadata: {

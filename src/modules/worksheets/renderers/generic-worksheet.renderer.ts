@@ -18,6 +18,11 @@ import {
   type ImageZoneBox,
 } from '../utils/template-tokens.util';
 import { unifyBeforeAfterSharedMascot, visualQueryFromImageRecord } from '../utils/structure.util';
+import {
+  injectUniversalContentHtml,
+  isUniversalStructure,
+  normalizeUniversalStructure,
+} from '../utils/universal-content-html.util';
 import { WorksheetRenderer } from './worksheet-renderer.interface';
 
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -306,6 +311,9 @@ function itemNodeBySlot(
     }
   }
   const n = slotId.match(/^(?:item|image|img|slot)_?(\d+)$/i)?.[1];
+  if (n && Array.isArray(structure.images)) {
+    return structure.images[Number(n) - 1];
+  }
   if (!n || !Array.isArray(structure.items)) {
     return undefined;
   }
@@ -653,7 +661,10 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
   render(input: WorksheetRenderInput): string {
     const mode: WorksheetRenderMode = input.mode ?? 'export';
     const fontPath = input.fontPath?.trim() || toondemyFontUrl();
-    const structure = unifyBeforeAfterSharedMascot(input.structure);
+    let structure = unifyBeforeAfterSharedMascot(input.structure);
+    if (isUniversalStructure(structure)) {
+      structure = normalizeUniversalStructure(structure);
+    }
     const extras: Record<string, unknown> = {
       backgroundAssetUrl: input.backgroundAssetUrl ?? '',
       BACKGROUND_IMAGE: input.backgroundAssetUrl ?? '',
@@ -663,7 +674,14 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
       FONT_PATH: fontPath,
     };
     const context = flattenTemplateTokens(structure, extras);
+    // Never escape LLM HTML through token substitution — inject trusted skeleton.
+    delete context.content_html;
+    delete context.contentHtml;
+    delete context.CONTENT_HTML;
     let html = restoreNullPlaceholders(input.templateHtml);
+    if (isUniversalStructure(structure)) {
+      html = injectUniversalContentHtml(html, structure);
+    }
     html = injectMatchingPairMarkup(html, structure, input.pencilIconUrl);
     html = injectPairImagesMarkup(html, structure);
     html = injectSentenceRowMarkup(html, structure, input.pencilIconUrl);

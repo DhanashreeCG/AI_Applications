@@ -425,7 +425,17 @@ export class WorksheetTemplateSelectionService {
     templates: WorksheetTemplateRecord[],
     ageBand: AgeBand | null,
   ): WorksheetTemplateRecord[] {
-    return templates.filter((template) => this.passesAgeHardFilter(template, ageBand));
+    return templates.filter((template) => {
+      if (this.isExplicitOnlyTemplate(template)) {
+        return false;
+      }
+      return this.passesAgeHardFilter(template, ageBand);
+    });
+  }
+
+  private isExplicitOnlyTemplate(template: WorksheetTemplateRecord): boolean {
+    const meta = this.templateService.parseMeta(template);
+    return String(meta.selectionMode ?? '').toLowerCase() === 'explicit_only';
   }
 
   private passesAgeHardFilter(

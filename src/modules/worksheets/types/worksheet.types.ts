@@ -37,6 +37,11 @@ export interface WorksheetTemplateMeta {
   /** Required for auto-select eligibility (Stage 1). */
   ageMax?: number;
   difficulty?: string[];
+  /**
+   * When `"explicit_only"`, template is skipped during auto-pick
+   * (still available via explicit templateId / slug).
+   */
+  selectionMode?: string;
 }
 
 export type WorksheetEditableFieldType =

@@ -77,9 +77,14 @@ export function buildWorksheetContentPrompt(input: {
   currentStructure?: Record<string, unknown> | null;
   /** From WorksheetTemplateSelectionProfile — how to adapt the layout to the topic. */
   adaptationNote?: string | null;
+  /** Measured content viewport for universal_template (px). */
+  contentRegion?: { width?: number; height?: number; left?: number; top?: number } | null;
 }): string {
   const request = input.request;
   const count = Math.max(1, input.count ?? (request.count ? Number(request.count) : 1));
+  const isUniversal =
+    input.templateSlug === 'universal_template' ||
+    input.templateSlug === 'universal';
   const userRequest =
     request.query?.trim() ||
     [
@@ -106,9 +111,15 @@ export function buildWorksheetContentPrompt(input: {
           '}',
           `IMPORTANT: Each of the ${count} worksheets must be unique, non-repetitive, with different educational questions/exercises and distinct visual imageQueries.`,
         ].join('\n')
-      : [
-          'Return a JSON object matching the template structure definition (either directly as the structure or wrapped as { "worksheets": [ ... ] }).',
-        ].join('\n');
+      : isUniversal
+        ? [
+            'Return ONE JSON object matching the structure definition.',
+            'You invent a UNIQUE HTML activity layout for this query (strictly dynamic — no fixed layout catalog).',
+            'content_html is an HTML FRAGMENT only. Header fields stay plain text.',
+          ].join(' ')
+        : [
+            'Return a JSON object matching the template structure definition (either directly as the structure or wrapped as { "worksheets": [ ... ] }).',
+          ].join('\n');
 
   const fieldEntries = Object.entries(request.fields ?? {}).filter(
     ([, value]) => typeof value === 'string' && value.trim(),
@@ -137,14 +148,27 @@ export function buildWorksheetContentPrompt(input: {
       ].join('\n')
     : '';
 
+  const viewportW = input.contentRegion?.width ?? 920;
+  const viewportH = input.contentRegion?.height ?? 930;
+
   return [
-    input.systemPrompt?.trim() || 'You generate educational worksheet CONTENT only.',
+    input.systemPrompt?.trim() ||
+      (isUniversal
+        ? "You are a children's worksheet designer. For each request you invent a brand-new printable ACTIVITY as HTML (content_html) that teaches the educational objective for the selected age. Fixed page chrome already exists — you only design the activity body."
+        : 'You generate educational worksheet CONTENT only.'),
     formatInstruction,
-    'Do not generate HTML, CSS, JavaScript, layout, positions, or asset IDs.',
+    isUniversal
+      ? 'main_topic, sub_topic, and instruction_text are plain text. content_html is the ONLY HTML field (fragment). No <html>/<body>/<script>/<style>. No JavaScript or asset IDs.'
+      : 'Do not generate HTML, CSS, JavaScript, layout, positions, or asset IDs.',
     'Do not invent image file names. Describe needed images with imageQuery strings.',
     'Every imageQuery must be a short visual search phrase (e.g. "three red apples").',
-    'All text fields must be plain text suitable for young learners.',
+    isUniversal
+      ? 'All learner-facing copy must be age-appropriate, educational, and child-friendly for the selected age. Match vocabulary, task length, and visual density to that age.'
+      : 'All text fields must be plain text suitable for young learners.',
     `Language: ${request.language?.trim() || 'English'}`,
+    isUniversal && (request.age != null || request.ageGroup || request.grade)
+      ? `SELECTED LEARNER: age=${request.age ?? 'n/a'}; ageGroup=${request.ageGroup ?? 'n/a'}; grade=${request.grade ?? 'n/a'}. Design difficulty and wording for this learner only.`
+      : '',
     '',
     'CONTENT SAFETY & RESTRICTIONS:',
     countrySafetyClause,
@@ -296,6 +320,50 @@ export function buildWorksheetContentPrompt(input: {
       '- Set topic, badge_label, instruction_text, bottom_question, theme, y_axis_max (usually 10). Keep worksheet_type as picture_graph.',
       ''
     ] : []),
+    ...(isUniversal
+      ? [
+          'For universal_template — STRICT DYNAMIC HTML ONLY:',
+          '  • There is NO layout catalog, NO template set, NO fixed activity skeleton, NO reusable card pack.',
+          '  • Do NOT emit layout / layout_type / cards / items fields. Put the full activity in content_html.',
+          '  • Invent a unique DOM + inline styles for THIS educational objective and THIS age. Different skills ⇒ different structure.',
+          '',
+          'FIXED PAGE CHROME (already drawn — never recreate inside content_html):',
+          '  • purple header title = main_topic (plain text field)',
+          '  • blue banner skill label = sub_topic (plain text, never a question)',
+          '  • Name: / Date: write-on pills',
+          '  • yellow footer stars + Teacher signature',
+          '',
+          `CONTENT VIEWPORT: ${viewportW}px × ${viewportH}px. content_html MUST fill this area with a cohesive, printable design — no huge empty bands, no scroll/overflow, no clipping.`,
+          '',
+          'DESIGN PROCESS (follow in order):',
+          '  1) State the educational objective implied by the user query for the selected age.',
+          '  2) Choose the best activity pattern for that objective (invent the markup — do not pick from a fixed list).',
+          '  3) Write short, child-friendly prompts/questions that teach that objective.',
+          '  4) Build beautiful HTML with clear hierarchy, even spacing, and aligned columns/rows.',
+          '',
+          'BEAUTY & SPACING (required):',
+          '  • Font inherits Toondemy — do not set font-family',
+          '  • Brand colors: #2a1b4a ink, #6d28d9/#4c1d95 purple, #85cbf4 blue, #fecd59/#fff8e1 yellow, #67bd47 green, #f03a3e red, #eef7ff soft fill',
+          '  • Use flex or CSS grid with gap 12–20px; padding 10–16px; border-radius 12–16px; soft borders',
+          '  • Section titles bold purple; body ink; large enough type for the age (younger → fewer words, bigger type)',
+          '  • Align like elements; balance left/right; avoid cramped piles and uneven gaps',
+          '',
+          'IMAGES (critical):',
+          '  • Pictures ONLY as bare tokens {{IMAGE_1}} {{IMAGE_2}} … — never <img>, never src=, never filenames',
+          '  • images[] length = highest IMAGE_N; images[i].imageQuery describes {{IMAGE_(i+1)}}',
+          '  • 3–8 distinct concrete child-friendly imageQuery phrases that support the activity',
+          '',
+          'CONTENT RULES:',
+          '  • content_html must contain the real educational activity (questions, prompts, answer lines, picture slots) — not a placeholder',
+          '  • Age-appropriate + child-friendly; no scary/violent/adult themes',
+          '  • instruction_text: one clear learner task sentence',
+          '  • main_topic: 2–4 words; sub_topic: 1–3 word skill label (no ?)',
+          '  • Allowed tags: div,span,p,h1-h4,ul,ol,li,table,thead,tbody,tr,td,th,br,hr,strong,em,u,b,i,label,section,article,header,footer',
+          '  • worksheet_type: "universal_template"',
+          '  • Do NOT put Name/Date/signature/stars/main_topic/sub_topic inside content_html',
+          '',
+        ]
+      : []),
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',

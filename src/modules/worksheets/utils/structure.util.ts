@@ -207,7 +207,7 @@ export function validateAgainstSchema(
         `${path} has an unsupported value`,
       );
     }
-    if (looksLikeHtml(value)) {
+    if (looksLikeHtml(value) && !allowsHtmlStringField(path)) {
       throw new WorksheetException(
         'INVALID_STRUCTURE',
         `${path} must not contain HTML`,
@@ -273,6 +273,11 @@ const SKIP_IMAGE_WALK_KEYS = new Set([
 
 export function looksLikeHtml(value: string): boolean {
   return /<\/?[a-z][\s\S]*>/i.test(value) || /javascript:/i.test(value);
+}
+
+/** Universal template stores a sanitized HTML fragment in content_html. */
+export function allowsHtmlStringField(path: string): boolean {
+  return /(^|\.)content_html$/i.test(path) || /(^|\.)contentHtml$/i.test(path);
 }
 
 export function looksLikeImageFileName(query: string): boolean {

@@ -1,0 +1,20 @@
+﻿{
+    "label":  "cvc",
+    "main_topic":  "Phonics Fun",
+    "sub_topic":  "CVC Word Writing",
+    "instruction":  "Look at each picture. Say the word out loud, then write the letters to spell the word on the lines.",
+    "contentLen":  6093,
+    "hasLayoutField":  false,
+    "hasCards":  false,
+    "images":  6,
+    "hasNamePill":  true,
+    "hasDatePill":  true,
+    "hasContentRegion":  true,
+    "hasImageSlots":  true,
+    "noRawToken":  true,
+    "usesGrid":  true,
+    "usesFlex":  true,
+    "usesTable":  false,
+    "usesOl":  false,
+    "preview":  "\u003cdiv style=\"display:grid;grid-template-columns:repeat(3, 1fr);gap:16px;height:100%;align-content:start;padding:10px\"\u003e\u003cdiv style=\"background:#eef7ff;border:2px solid #85cbf4;border-radius:14px;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:space"
+}
