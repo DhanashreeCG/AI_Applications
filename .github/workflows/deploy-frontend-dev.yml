@@ -1,0 +1,41 @@
+name: Deploy Frontend Dev
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - "public/flashcards.html"
+      - "public/worksheets.html"
+      - ".github/workflows/deploy-frontend-dev.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-frontend-dev
+  cancel-in-progress: true
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Rename only in the runner workspace — not committed to GitHub
+      - name: Prepare frontend files
+        run: |
+          mkdir -p deploy-frontend
+          cp public/flashcards.html deploy-frontend/index.html
+          cp public/worksheets.html deploy-frontend/worksheets.html
+
+      - name: Deploy HTML files to Dev VPS
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USER }}
+          key: ${{ secrets.DEV_SSH_KEY }}
+          source: "deploy-frontend/"
+          target: "/home/ubuntu/www/ai-flashcard/frontend"
+          strip_components: 1
+          overwrite: true
