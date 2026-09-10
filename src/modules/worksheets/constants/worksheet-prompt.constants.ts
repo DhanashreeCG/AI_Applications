@@ -208,6 +208,17 @@ export function buildWorksheetContentPrompt(input: {
           '',
         ]
       : []),
+    ...(input.templateSlug === 'letters_craft' ? [
+      'For letters_craft worksheets:',
+      '- One target letter: set target_letter, letter_upper, letter_lower, topic (e.g. "Letter S"), word, and caption ("s is for sun").',
+      '- craft_image must be an object with imageQuery describing a BLACK OUTLINE / lineart of the craft object for colouring (e.g. "sun black outline lineart for kids colouring").',
+      '- tool_icon must be an object with imageQuery for the craft tool (e.g. "cartoon sponge craft tool").',
+      '- steps[] must have exactly 4 items. Each step needs: step_num (1-4), text (short instruction), and imageQuery (simple cartoon of that step).',
+      '- Also set tool_name, activity_name, instruction_text, badge_label ("Letters and Sounds"), and encouragement_badge.',
+      '- Do not put filenames in imageQuery. Keep worksheet_type as Letters_craft or letters_craft.',
+      '- letter_image is optional (the hollow letter is rendered from letter_upper as SVG).',
+      '',
+    ] : []),
     ...(input.templateSlug === 'look_and_say_letters_and_sounds' ? [
       'For look_and_say_letters_and_sounds worksheets:',
       '- Return exactly 4 items[] in this order: top_left, top_right, bottom_left, bottom_right.',

@@ -464,7 +464,99 @@ export function normalizeImageQueryFields(
     }
     return next;
   };
-  return unifyBeforeAfterSharedMascot(asStructureRecord(walk(structure)));
+  return unifyBeforeAfterSharedMascot(
+    enrichLettersCraftStructure(asStructureRecord(walk(structure))),
+  );
+}
+
+export function isLettersCraftWorksheet(
+  structure: Record<string, unknown>,
+): boolean {
+  const type = String(structure.worksheet_type ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  if (type === 'letterscraft' || type.includes('letterscraft')) {
+    return true;
+  }
+  return isRecord(structure.craft_image);
+}
+
+/**
+ * Ensure letters_craft image slots have searchable imageQuery values so
+ * craft outline, tool icon, and step illustrations can be retrieved.
+ */
+export function enrichLettersCraftStructure(
+  structure: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!isLettersCraftWorksheet(structure)) {
+    return structure;
+  }
+
+  const next: Record<string, unknown> = { ...structure };
+  const word =
+    typeof next.word === 'string' && next.word.trim()
+      ? next.word.trim()
+      : '';
+  const toolName =
+    typeof next.tool_name === 'string' && next.tool_name.trim()
+      ? next.tool_name.trim()
+      : '';
+
+  const craft = isRecord(next.craft_image)
+    ? { ...next.craft_image }
+    : ({ id: 'craft_main_img' } as Record<string, unknown>);
+  if (!visualQueryFromImageRecord(craft)) {
+    const hint =
+      typeof craft.image_hint === 'string' && craft.image_hint.trim()
+        ? craft.image_hint.trim()
+        : '';
+    craft.imageQuery = word
+      ? `${word} black outline lineart simple kids colouring craft`
+      : hint ||
+        'simple black outline object for kids craft colouring lineart';
+  }
+  if (typeof craft.id !== 'string' || !craft.id.trim()) {
+    craft.id = 'craft_main_img';
+  }
+  next.craft_image = craft;
+
+  const toolIcon = isRecord(next.tool_icon)
+    ? { ...next.tool_icon }
+    : ({ id: 'tool_icon' } as Record<string, unknown>);
+  if (!visualQueryFromImageRecord(toolIcon)) {
+    toolIcon.imageQuery = toolName
+      ? `cartoon ${toolName} craft tool for kids art`
+      : 'cartoon sponge paint craft tool for kids';
+  }
+  if (typeof toolIcon.id !== 'string' || !toolIcon.id.trim()) {
+    toolIcon.id = 'tool_icon';
+  }
+  next.tool_icon = toolIcon;
+
+  if (Array.isArray(next.steps)) {
+    next.steps = next.steps.map((step, index) => {
+      if (!isRecord(step)) {
+        return step;
+      }
+      const row: Record<string, unknown> = { ...step };
+      if (!visualQueryFromImageRecord(row)) {
+        const iconType =
+          typeof row.icon_type === 'string'
+            ? row.icon_type.replace(/[_-]+/g, ' ').trim()
+            : '';
+        const text = typeof row.text === 'string' ? row.text.trim() : '';
+        row.imageQuery = iconType
+          ? `simple cartoon kids craft step ${iconType}`
+          : `simple cartoon kids craft step ${index + 1}${text ? ` ${text.slice(0, 48)}` : ''}`;
+      }
+      if (typeof row.id !== 'string' || !row.id.trim()) {
+        row.id = `step_${index + 1}_icon`;
+      }
+      return row;
+    });
+  }
+
+  return next;
 }
 
 /**

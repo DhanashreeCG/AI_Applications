@@ -1,5 +1,6 @@
 import {
   collectImageSlots,
+  enrichLettersCraftStructure,
   normalizeImageQueryFields,
   normalizeLlmWorksheetPayload,
   resolveAliasFieldPath,
@@ -256,5 +257,27 @@ describe('alias field paths', () => {
     };
     expect(resolveAliasImagePath(structure, 'item_start')).toBe('items[0]');
     expect(resolveAliasImagePath(structure, 'item_obstacle')).toBe('items[1]');
+  });
+});
+
+describe('enrichLettersCraftStructure', () => {
+  it('adds imageQuery for craft, tool, and steps so slots are searchable', () => {
+    const next = enrichLettersCraftStructure({
+      worksheet_type: 'Letters_craft',
+      word: 'sun',
+      tool_name: 'sponge',
+      craft_image: { id: 'craft_main_img', image_source: 'svg' },
+      steps: [
+        { step_num: 1, text: 'Dip the sponge.', icon_type: 'sponge_paint' },
+        { step_num: 2, text: 'Dab gently.', icon_type: 'sponge_dab' },
+      ],
+    });
+    const craft = next.craft_image as Record<string, unknown>;
+    const tool = next.tool_icon as Record<string, unknown>;
+    const steps = next.steps as Array<Record<string, unknown>>;
+    expect(String(craft.imageQuery)).toMatch(/sun/i);
+    expect(String(tool.imageQuery)).toMatch(/sponge/i);
+    expect(String(steps[0].imageQuery)).toMatch(/sponge paint/i);
+    expect(collectImageSlots(next).length).toBeGreaterThanOrEqual(4);
   });
 });

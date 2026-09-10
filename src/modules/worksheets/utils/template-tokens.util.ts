@@ -2,6 +2,7 @@ import {
   collectImageSlots,
   filenameToSearchQuery,
   isBeforeAfterNumbersWorksheet,
+  isLettersCraftWorksheet,
   resolveAliasFieldPath,
   resolveAliasImagePath,
   unifyBeforeAfterSharedMascot,
@@ -82,6 +83,11 @@ export function flattenTemplateTokens(
           ) {
             addToken(tokens, `CL_${n}`, value);
             addToken(tokens, `cl_${n}`, value);
+          }
+          // letters_craft: {{STEP_1_TEXT}}… from steps[].text
+          if (/^steps$/i.test(key) && field === 'text') {
+            addToken(tokens, `STEP_${n}_TEXT`, value);
+            addToken(tokens, `step_${n}_text`, value);
           }
         }
         if (field === 'options' && Array.isArray(value)) {
@@ -834,6 +840,114 @@ export function injectPictureGraphMarkup(
     );
 }
 
+function craftSlotImg(
+  structure: Record<string, unknown>,
+  path: string,
+  fallbackSlotId: string,
+  style: string,
+): string {
+  const node = path
+    .replace(/\[(\d+)\]/g, '.$1')
+    .split('.')
+    .reduce<unknown>((cur, key) => {
+      if (cur == null) {
+        return undefined;
+      }
+      if (Array.isArray(cur) && /^\d+$/.test(key)) {
+        return cur[Number(key)];
+      }
+      return isRecord(cur) ? cur[key] : undefined;
+    }, structure);
+  const record = isRecord(node) ? node : {};
+  const slotMatch = resolveImageSlot(structure, fallbackSlotId);
+  const slotId =
+    (typeof record.id === 'string' && record.id.trim()) ||
+    slotMatch?.slotId ||
+    fallbackSlotId;
+  const rawSrc =
+    (typeof record.assetUrl === 'string' && record.assetUrl) ||
+    (typeof record.imageUrl === 'string' && record.imageUrl) ||
+    '';
+  const srcAttr = rawSrc ? ` src="${escapeHtml(rawSrc)}"` : '';
+  const alt = escapeHtml(
+    slotMatch?.imageQuery ||
+      visualQueryFromImageRecord(record) ||
+      fallbackSlotId,
+  );
+  return `<img class="worksheet-image"${srcAttr} alt="${alt}" data-image-slot="${escapeAttr(slotId)}" data-field-path="${escapeAttr(path)}" style="${style}" />`;
+}
+
+/**
+ * Hollow bubble letter for letters_craft (paint/print craft target).
+ */
+export function buildBubbleLetterSvg(letter: string): string {
+  const ch = (letter.trim() || 'A').slice(0, 1);
+  return `<svg class="bubble-letter-svg" viewBox="0 0 240 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Letter ${escapeAttr(ch)}"><text x="120" y="215" text-anchor="middle" font-family="Arial Black, Helvetica, sans-serif" font-size="220" font-weight="900" fill="#ffffff" stroke="#111111" stroke-width="12" paint-order="stroke fill" stroke-linejoin="round">${escapeHtml(ch)}</text></svg>`;
+}
+
+/**
+ * letters_craft tokens: letter outline SVG, craft object image, tool icon,
+ * and per-step icons (step texts come from flattenTemplateTokens).
+ */
+export function injectLettersCraftMarkup(
+  html: string,
+  structure: Record<string, unknown>,
+): string {
+  const needsCraft =
+    /\{\{\s*(LETTER_CONTENT|CRAFT_OBJECT_IMAGE|TOOL_ICON|STEP_\d+_ICON)\s*\}\}/i.test(
+      html,
+    ) || isLettersCraftWorksheet(structure);
+  if (!needsCraft) {
+    return html;
+  }
+
+  const letter =
+    (typeof structure.letter_upper === 'string' && structure.letter_upper) ||
+    (typeof structure.target_letter === 'string' && structure.target_letter) ||
+    (typeof structure.letter_lower === 'string' && structure.letter_lower) ||
+    'A';
+
+  let next = html.replace(
+    /\{\{\s*LETTER_CONTENT\s*\}\}/gi,
+    buildBubbleLetterSvg(String(letter)),
+  );
+
+  next = next.replace(
+    /\{\{\s*CRAFT_OBJECT_IMAGE\s*\}\}/gi,
+    craftSlotImg(
+      structure,
+      'craft_image',
+      'craft_main_img',
+      'max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;',
+    ),
+  );
+
+  next = next.replace(
+    /\{\{\s*TOOL_ICON\s*\}\}/gi,
+    craftSlotImg(
+      structure,
+      'tool_icon',
+      'tool_icon',
+      'width:64px;height:64px;object-fit:contain;',
+    ),
+  );
+
+  for (let n = 1; n <= 8; n++) {
+    const path = `steps[${n - 1}]`;
+    next = next.replace(
+      new RegExp(`\\{\\{\\s*STEP_${n}_ICON\\s*\\}\\}`, 'gi'),
+      craftSlotImg(
+        structure,
+        path,
+        `step_${n}_icon`,
+        'max-width:92%;max-height:92%;width:auto;height:auto;object-fit:contain;',
+      ),
+    );
+  }
+
+  return next;
+}
+
 /**
  * Grid calibrated to the numbers_after_and_before background art
  * (asset 596×795 stretched onto the 1016×1316 canvas).
@@ -1189,6 +1303,46 @@ export function resolveImageSlot(
           slot.path === 'image' ||
           slot.path.endsWith('.image'),
       ) || null
+    );
+  }
+  if (
+    [
+      'craft',
+      'craft_object',
+      'craft_object_image',
+      'craft_image',
+      'craft_main_img',
+    ].includes(needle)
+  ) {
+    return (
+      slots.find(
+        (slot) =>
+          slot.path === 'craft_image' ||
+          slot.slotId === 'craft_main_img' ||
+          slot.slotId.toLowerCase() === 'craft_image',
+      ) || null
+    );
+  }
+  if (needle === 'tool' || needle === 'tool_icon') {
+    return (
+      slots.find(
+        (slot) =>
+          slot.path === 'tool_icon' ||
+          slot.slotId.toLowerCase() === 'tool_icon',
+      ) || null
+    );
+  }
+  const stepIcon = needle.match(/^step[_-]?(\d+)(?:[_-]?icon)?$/i);
+  if (stepIcon && Array.isArray(structure.steps)) {
+    const index = Number(stepIcon[1]) - 1;
+    const path = `steps[${index}]`;
+    return (
+      slots.find((slot) => slot.path === path) || {
+        slotId: `step_${index + 1}_icon`,
+        path,
+        assetId: null,
+        imageQuery: '',
+      }
     );
   }
   const pairSide = parsePairSideSlot(needle);
