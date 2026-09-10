@@ -39,3 +39,15 @@ jobs:
           target: "/home/ubuntu/www/ai-flashcard/frontend"
           strip_components: 1
           overwrite: true
+
+      - name: Reload nginx
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USER }}
+          key: ${{ secrets.DEV_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            echo "Reloading nginx..."
+            sudo systemctl reload nginx
+            echo "Nginx reloaded successfully."
