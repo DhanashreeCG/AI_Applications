@@ -108,7 +108,42 @@ jobs:
           script: |
             set -euo pipefail
 
+            # Non-interactive SSH does not load interactive shell RC files,
+            # so nvm/npm/pm2 are often missing from PATH. Load them explicitly.
+            export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+
+            if [ -f "$HOME/.nvm/nvm.sh" ]; then
+              # shellcheck disable=SC1091
+              . "$HOME/.nvm/nvm.sh"
+            elif [ -f "$HOME/.bashrc" ]; then
+              # shellcheck disable=SC1091
+              . "$HOME/.bashrc"
+            elif [ -f "$HOME/.profile" ]; then
+              # shellcheck disable=SC1091
+              . "$HOME/.profile"
+            fi
+
+            if [ -f "$HOME/.fnm/fnm" ] || command -v fnm >/dev/null 2>&1; then
+              eval "$(fnm env)" || true
+            fi
+
             cd ~/www/ai-flashcard/backend
+
+            if ! command -v npm >/dev/null 2>&1; then
+              echo "ERROR: npm not found in PATH after loading shell env."
+              echo "PATH=$PATH"
+              exit 127
+            fi
+
+            if ! command -v pm2 >/dev/null 2>&1; then
+              echo "ERROR: pm2 not found in PATH after loading shell env."
+              echo "PATH=$PATH"
+              exit 127
+            fi
+
+            echo "Using node: $(command -v node) ($(node -v))"
+            echo "Using npm:  $(command -v npm) ($(npm -v))"
+            echo "Using pm2:  $(command -v pm2)"
 
             # prisma is a devDependency; postinstall runs `prisma generate`.
             # Generated client is already inside dist/, so skip lifecycle scripts.
@@ -116,9 +151,17 @@ jobs:
             npm ci --omit=dev --ignore-scripts
 
             echo "Restarting backend..."
-            pm2 restart ai-flashcard-backend --update-env
+            if pm2 describe ai-flashcard-backend >/dev/null 2>&1; then
+              pm2 restart ai-flashcard-backend --update-env
+            else
+              echo "ERROR: PM2 process 'ai-flashcard-backend' does not exist."
+              echo "Create it once on the VPS before relying on restart, e.g.:"
+              echo "  cd ~/www/ai-flashcard/backend && pm2 start dist/src/main.js --name ai-flashcard-backend"
+              pm2 list || true
+              exit 1
+            fi
 
             echo "PM2 status:"
-            pm2 describe ai-flashcard-backend | head -n 40
+            pm2 describe ai-flashcard-backend
 
             echo "Deployment completed successfully."
