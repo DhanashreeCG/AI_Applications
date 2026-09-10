@@ -419,6 +419,75 @@ NULL
     expect(html).not.toMatch(/left:70px;top:300px/);
   });
 
+  it('renders letters_craft letter SVG, craft image, tool icon, and step texts', () => {
+    const html = renderer.render({
+      templateHtml: `
+        <div class="instruction-card">{{TOOL_ICON}}<div>{{INSTRUCTION_TEXT}}</div></div>
+        <div class="bubble-letter-box">{{LETTER_CONTENT}}</div>
+        <div class="phonics-caption">{{CAPTION}}</div>
+        <div class="craft-outline-container">{{CRAFT_OBJECT_IMAGE}}</div>
+        <div class="step-img-box">{{STEP_1_ICON}}</div>
+        <div class="step-text">{{STEP_1_TEXT}}</div>
+        <div class="step-img-box">{{STEP_2_ICON}}</div>
+        <div class="step-text">{{STEP_2_TEXT}}</div>
+      `,
+      structure: {
+        worksheet_type: 'Letters_craft',
+        topic: 'Letter S',
+        caption: 's is for sun',
+        word: 'sun',
+        letter_upper: 'S',
+        letter_lower: 's',
+        tool_name: 'sponge',
+        instruction_text: 'Use a sponge to colour the sun.',
+        craft_image: {
+          id: 'craft_main_img',
+          imageQuery: 'sun black outline lineart',
+          assetUrl: '/worksheets/assets/sun/image',
+        },
+        tool_icon: {
+          id: 'tool_icon',
+          imageQuery: 'cartoon sponge',
+          assetUrl: '/worksheets/assets/sponge/image',
+        },
+        steps: [
+          {
+            step_num: 1,
+            text: 'Dip the sponge in paint.',
+            imageQuery: 'sponge paint',
+            assetUrl: '/worksheets/assets/step1/image',
+          },
+          {
+            step_num: 2,
+            text: 'Coat the sponge.',
+            imageQuery: 'sponge coated',
+            assetUrl: '/worksheets/assets/step2/image',
+          },
+        ],
+      },
+    });
+
+    expect(html).not.toContain('{{CRAFT_OBJECT_IMAGE}}');
+    expect(html).not.toContain('{{LETTER_CONTENT}}');
+    expect(html).not.toContain('{{TOOL_ICON}}');
+    expect(html).not.toContain('{{STEP_1_TEXT}}');
+    expect(html).toContain('bubble-letter-svg');
+    expect(html).toMatch(/aria-label="Letter S"/);
+    expect(html).toContain('s is for sun');
+    expect(html).toContain('Dip the sponge in paint.');
+    expect(html).toContain('Coat the sponge.');
+    expect(html).toMatch(
+      /data-image-slot="craft_main_img"[^>]*src="\/worksheets\/assets\/sun\/image"/,
+    );
+    expect(html).toMatch(
+      /data-image-slot="tool_icon"[^>]*src="\/worksheets\/assets\/sponge\/image"/,
+    );
+    expect(html).toMatch(
+      /data-field-path="steps\[0\]"[^>]*src="\/worksheets\/assets\/step1\/image"|src="\/worksheets\/assets\/step1\/image"[^>]*data-field-path="steps\[0\]"/,
+    );
+    expect(html).not.toMatch(/left:70px;top:300px/);
+  });
+
   it('fills look_and_say_circle_the_letters read-aloud, circle box, and vocab highlights', () => {
     const html = renderer.render({
       templateHtml: `

@@ -6,6 +6,7 @@ import {
   bindGenericEditorHooks,
   flattenTemplateTokens,
   imageZoneForSlot,
+  injectLettersCraftMarkup,
   injectLookAndSayCaptions,
   injectMatchingPairMarkup,
   injectPairImagesMarkup,
@@ -441,7 +442,7 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
   });
 
   const withNamed = withTokens.replace(
-    /\{\{([A-Za-z0-9]+_IMAGE)\}\}/g,
+    /\{\{([A-Za-z0-9_]+_IMAGE)\}\}/g,
     (full, name: string) => {
       if (name === 'BACKGROUND_IMAGE') {
         return full;
@@ -456,6 +457,8 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
         `${base.toLowerCase()}_image`,
         'scene_image',
         'image',
+        'craft_image',
+        'craft_main_img',
       ];
       if (zoneKeys.some((id) => htmlHasImageSlot(withTokens, id))) {
         return '';
@@ -463,7 +466,9 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
       const zone =
         zoneKeys.map((id) => imageZoneForSlot(withTokens, id)).find(Boolean) ||
         undefined;
-      return imageTag(slotId, resolved, true, zone);
+      // Without a measured zone, keep the img in normal flow (flex parents like
+      // letters_craft craft-outline-container). Absolute defaults break those layouts.
+      return imageTag(slotId, resolved, Boolean(zone), zone);
     },
   );
 
@@ -663,6 +668,7 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     html = injectPairImagesMarkup(html, structure);
     html = injectSentenceRowMarkup(html, structure, input.pencilIconUrl);
     html = injectPictureGraphMarkup(html, structure);
+    html = injectLettersCraftMarkup(html, structure);
     html = injectWorksheetItemsMarkup(html, structure, input.pencilIconUrl);
     html = this.renderTemplate(html, context);
     html = positionMatchingPairItems(html, structure);
