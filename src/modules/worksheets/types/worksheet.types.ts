@@ -37,6 +37,11 @@ export interface WorksheetTemplateMeta {
   /** Required for auto-select eligibility (Stage 1). */
   ageMax?: number;
   difficulty?: string[];
+  /**
+   * When `"explicit_only"`, template is skipped during auto-pick
+   * (still available via explicit templateId / slug).
+   */
+  selectionMode?: string;
 }
 
 export type WorksheetEditableFieldType =
@@ -52,6 +57,11 @@ export interface WorksheetAiConfig {
   linkedFields?: Record<string, string[]>;
   /** Prototype-style map; normalized to EditableField before the editor sees it. */
   editable_fields?: Record<string, Record<string, unknown>>;
+  /**
+   * Optional Gemini model override for full-structure generation
+   * (used by universal_template for denser HTML layout quality).
+   */
+  contentModel?: string;
 }
 
 export interface EditableField {
@@ -133,6 +143,15 @@ export interface WorksheetRenderInput {
   baseHref?: string;
   pencilIconUrl?: string;
   fontPath?: string;
+  /** When set, used with worksheet_type to detect universal_template safely. */
+  templateSlug?: string;
+  /** Age / viewport hints for universal_template normalize + image clamp. */
+  normalizeOptions?: {
+    age?: number | null;
+    ageGroup?: string | null;
+    grade?: string | null;
+    viewportContentH?: number;
+  };
 }
 
 export interface ResolvedAssetSlot {

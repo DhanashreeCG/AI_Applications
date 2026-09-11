@@ -323,7 +323,10 @@ export class PipelineTrackerService implements PipelineTrackerPort {
         estimatedCost: payload.estimatedCost,
         durationMs: payload.durationMs,
       });
-      if (updated.purpose === 'flashcard_image_search_embedding') {
+      if (
+        updated.purpose === 'flashcard_image_search_embedding' ||
+        updated.purpose === 'worksheet_image_search_embedding'
+      ) {
         this.metrics.onEmbeddingCall(updated.durationMs ?? undefined);
       } else {
         this.metrics.onAiCall(updated.durationMs ?? undefined);

@@ -236,6 +236,55 @@ describe('WorksheetAssetService', () => {
     });
   });
 
+  it('mirrors library replace across match_the_pairs left/right slots', () => {
+    const next = service.applyLibraryImage(
+      {
+        worksheet_type: 'match_the_pairs',
+        pairs: [
+          {
+            id: 'pair_1',
+            left_image: { imageQuery: 'mars', assetId: 'old-left' },
+            right_image: { imageQuery: 'mars', assetId: 'old-right' },
+          },
+        ],
+      },
+      'pairs[0].left_image',
+      'mars-new',
+    );
+    const pair = (next.pairs as Array<Record<string, unknown>>)[0];
+    expect((pair.left_image as { assetId: string }).assetId).toBe('mars-new');
+    expect((pair.right_image as { assetId: string }).assetId).toBe('mars-new');
+  });
+
+  it('mirrors library replace across all before/after mascot items', () => {
+    const next = service.applyLibraryImage(
+      {
+        worksheet_type: 'Numbers_afterandbefore',
+        items: [
+          {
+            id: 'item_1',
+            number: 1,
+            blank_position: 'right',
+            imageQuery: 'penguin',
+            assetId: 'old',
+          },
+          {
+            id: 'item_2',
+            number: 2,
+            blank_position: 'left',
+            imageQuery: 'penguin',
+            assetId: 'old',
+          },
+        ],
+      },
+      'items[1]',
+      'new-mascot',
+    );
+    const items = next.items as Array<Record<string, unknown>>;
+    expect(items[0].assetId).toBe('new-mascot');
+    expect(items[1].assetId).toBe('new-mascot');
+  });
+
   it('appends lineart to search queries for answer_and_colour', async () => {
     searchService.searchMany.mockResolvedValue(
       new Map([

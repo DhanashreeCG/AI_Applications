@@ -18,6 +18,12 @@ import {
   type ImageZoneBox,
 } from '../utils/template-tokens.util';
 import { unifyBeforeAfterSharedMascot, visualQueryFromImageRecord } from '../utils/structure.util';
+import {
+  injectUniversalContentHtml,
+  isUniversalSlug,
+  isUniversalStructure,
+  normalizeUniversalStructure,
+} from '../utils/universal-content-html.util';
 import { WorksheetRenderer } from './worksheet-renderer.interface';
 
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -107,20 +113,33 @@ const EDITOR_BRIDGE = `
       if (!el) return null;
       return el.tagName === 'IMG' ? el : (el.querySelector && el.querySelector('img'));
     }
-    var node = asImg(document.querySelector('[data-ws-target="active"]'));
-    if (!node && data.path) {
-      var byPath = document.querySelectorAll('img' + cssAttr('data-field-path', data.path));
-      node = byPath.length === 1 ? byPath[0] : asImg(document.querySelector('[data-ws-target="active"]'));
-      if (!node && byPath.length) node = byPath[0];
+    var targets = [];
+    function pushTargets(list) {
+      for (var i = 0; i < list.length; i += 1) {
+        var img = asImg(list[i]);
+        if (img && targets.indexOf(img) < 0) targets.push(img);
+      }
     }
-    if (!node && data.slotId) {
-      var bySlot = document.querySelectorAll('img' + cssAttr('data-image-slot', data.slotId));
-      if (bySlot.length === 1) node = bySlot[0];
+    var paths = Array.isArray(data.paths) && data.paths.length
+      ? data.paths
+      : (data.path ? [data.path] : []);
+    for (var p = 0; p < paths.length; p += 1) {
+      pushTargets(document.querySelectorAll('img' + cssAttr('data-field-path', paths[p])));
     }
-    if (!node && (data.path === 'image' || data.slotId === 'image' || data.slotId === 'main_image' || data.slotId === 'goat')) {
-      node = asImg(document.querySelector('.image-wrap img:not(.worksheet-bg), .img-zone-box img, img[data-field-path="image"]'));
+    if (!targets.length) {
+      var active = asImg(document.querySelector('[data-ws-target="active"]'));
+      if (active) targets.push(active);
     }
-    if (node) applySrc(node, data.src);
+    if (!targets.length && data.slotId) {
+      pushTargets(document.querySelectorAll('img' + cssAttr('data-image-slot', data.slotId)));
+    }
+    if (!targets.length && (data.path === 'image' || data.slotId === 'image' || data.slotId === 'main_image' || data.slotId === 'goat')) {
+      pushTargets(document.querySelectorAll('.image-wrap img:not(.worksheet-bg), .img-zone-box img, img[data-field-path="image"]'));
+      if (targets.length > 1) targets.length = 1;
+    }
+    for (var t = 0; t < targets.length; t += 1) {
+      applySrc(targets[t], data.src);
+    }
   });
   function parseSelectId(el) {
     if (!el || !el.getAttribute) return '';
@@ -306,6 +325,9 @@ function itemNodeBySlot(
     }
   }
   const n = slotId.match(/^(?:item|image|img|slot)_?(\d+)$/i)?.[1];
+  if (n && Array.isArray(structure.images)) {
+    return structure.images[Number(n) - 1];
+  }
   if (!n || !Array.isArray(structure.items)) {
     return undefined;
   }
@@ -653,7 +675,15 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
   render(input: WorksheetRenderInput): string {
     const mode: WorksheetRenderMode = input.mode ?? 'export';
     const fontPath = input.fontPath?.trim() || toondemyFontUrl();
-    const structure = unifyBeforeAfterSharedMascot(input.structure);
+    let structure = unifyBeforeAfterSharedMascot(input.structure);
+    const useUniversal =
+      isUniversalStructure(structure) || isUniversalSlug(input.templateSlug);
+    if (useUniversal) {
+      structure = normalizeUniversalStructure(
+        structure,
+        input.normalizeOptions,
+      );
+    }
     const extras: Record<string, unknown> = {
       backgroundAssetUrl: input.backgroundAssetUrl ?? '',
       BACKGROUND_IMAGE: input.backgroundAssetUrl ?? '',
@@ -663,7 +693,18 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
       FONT_PATH: fontPath,
     };
     const context = flattenTemplateTokens(structure, extras);
+    // Never escape LLM HTML through token substitution — inject trusted skeleton.
+    delete context.content_html;
+    delete context.contentHtml;
+    delete context.CONTENT_HTML;
     let html = restoreNullPlaceholders(input.templateHtml);
+    if (useUniversal) {
+      html = injectUniversalContentHtml(
+        html,
+        structure,
+        input.normalizeOptions,
+      );
+    }
     html = injectMatchingPairMarkup(html, structure, input.pencilIconUrl);
     html = injectPairImagesMarkup(html, structure);
     html = injectSentenceRowMarkup(html, structure, input.pencilIconUrl);

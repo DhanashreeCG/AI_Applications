@@ -22,6 +22,7 @@ import {
 } from '../constants/worksheet.constants';
 import { GenerateWorksheetResponse } from '../types/worksheet.types';
 import { asStructureRecord, collectImageQueries, normalizeImageQueryFields } from '../utils/structure.util';
+import { normalizeUniversalStructure } from '../utils/universal-content-html.util';
 import {
   WorksheetPipelineEmitter,
   createTelemetryContext,
@@ -312,7 +313,19 @@ export class WorksheetGenerationService {
       count,
       telemetry,
     );
-    this.logger.log(`content generation completed structuresCount=${generatedList.length}`);
+    // Universal: normalize headers/images before asset search (no layout catalog).
+    const normalizedList =
+      template.slug === 'universal_template' || template.slug === 'universal'
+        ? generatedList.map((item) =>
+            normalizeUniversalStructure(item, {
+              age: dto.age,
+              ageGroup: dto.ageGroup,
+              grade: dto.grade,
+              viewportContentH: 1104,
+            }),
+          )
+        : generatedList;
+    this.logger.log(`content generation completed structuresCount=${normalizedList.length}`);
 
     const meta = this.templateService.parseMeta(template);
     const ageGroups =
@@ -326,7 +339,7 @@ export class WorksheetGenerationService {
       PIPELINE_STAGES.IMAGE_RETRIEVAL,
       () =>
         this.assetService.attachAssetsBatch(
-          generatedList,
+          normalizedList,
           { templateSlug: template.slug },
           telemetry,
         ),
@@ -334,6 +347,8 @@ export class WorksheetGenerationService {
         startMetadata: { worksheetCount: generatedList.length },
         completeMetadata: (results) => ({
           worksheetCount: results.length,
+          templateId: template.id,
+          templateSlug: template.slug,
           totalSlotCount: results.reduce((acc, r) => acc + r.slots.length, 0),
           resolvedSlotCount: results.reduce(
             (acc, r) => acc + r.slots.filter((s) => s.assetId).length,

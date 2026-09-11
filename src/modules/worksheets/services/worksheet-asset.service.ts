@@ -27,9 +27,11 @@ import {
 import {
   collectImageQueries,
   isAnswerAndColourSlug,
+  linkedRepeatedImagePaths,
   normalizeImageQueryFields,
   patchImageSlot,
   stripLineartFromNonImageFields,
+  syncRepeatedImageSlots,
   withLineartQuery,
   setUserUploadedImageIndex,
   setValueAtPath,
@@ -198,14 +200,34 @@ export class WorksheetAssetService {
           uniqueQueryStrings,
           hasFilters ? filters : undefined,
         );
+        const batchDurationMs = Date.now() - startedAt;
+
+        // Emit embedding usage once for the batch (not once per query).
+        const uncachedResponse = uniqueQueryStrings
+          .map((q) => responses.get(q))
+          .find((r) => r && !r.fromCache && r.usage);
+        if (uncachedResponse) {
+          this.emitEmbeddingUsage(
+            telemetry,
+            `batch:${uniqueQueryStrings.length}`,
+            uncachedResponse,
+          );
+        }
+
+        let vectorSumMs = 0;
+        let cacheHits = 0;
         for (const queryString of uniqueQueryStrings) {
           const response = responses.get(queryString);
-          this.emitEmbeddingUsage(telemetry, queryString, response);
           const hit = this.selectHit(response);
           if (hit) {
             queryToAssetIdMap.set(queryString, hit);
           } else {
             this.logger.warn(`No asset found for imageQuery "${queryString}"`);
+          }
+          if (response?.fromCache) {
+            cacheHits += 1;
+          } else {
+            vectorSumMs += response?.phaseMs?.vectorMs ?? 0;
           }
           if (telemetry) {
             this.emitter.emitImageSearchCompleted({
@@ -218,10 +240,20 @@ export class WorksheetAssetService {
               selectedAssetId: hit ?? null,
               cacheHit: response?.fromCache === true,
               failed: false,
-              durationMs: Date.now() - startedAt,
+              // Per-query vector time (or 0 on cache hit) — NOT full batch wall clock.
+              durationMs:
+                response?.phaseMs?.vectorMs ??
+                (response?.fromCache ? 0 : undefined),
             });
           }
         }
+
+        this.logger.log(
+          `batch image search finished slots=${uniqueQueryStrings.length} ` +
+            `cacheHits=${cacheHits} batchMs=${batchDurationMs} ` +
+            `embedMs=${uncachedResponse?.phaseMs?.embedMs ?? uncachedResponse?.usage?.latencyMs ?? 0} ` +
+            `vectorSumMs=${vectorSumMs}`,
+        );
       } catch (error) {
         this.logger.warn(
           `Batch asset search failed: ${getErrorMessage(error)}`,
@@ -583,9 +615,12 @@ export class WorksheetAssetService {
       assetId,
       userUploadedKey: '',
     });
-    return this.persistableStructure(
-      setUserUploadedImageIndex(withSlot, path, null),
-    );
+    const synced = syncRepeatedImageSlots(withSlot, path);
+    let next = synced;
+    for (const linked of linkedRepeatedImagePaths(synced, path)) {
+      next = setUserUploadedImageIndex(next, linked, null);
+    }
+    return this.persistableStructure(next);
   }
 
   public applyUserUploadedImage(
@@ -597,12 +632,15 @@ export class WorksheetAssetService {
       assetId: null,
       userUploadedKey: upload.key,
     });
-    return this.persistableStructure(
-      setUserUploadedImageIndex(withSlot, path, {
+    const synced = syncRepeatedImageSlots(withSlot, path);
+    let next = synced;
+    for (const linked of linkedRepeatedImagePaths(synced, path)) {
+      next = setUserUploadedImageIndex(next, linked, {
         key: upload.key,
         contentType: upload.contentType,
-      }),
-    );
+      });
+    }
+    return this.persistableStructure(next);
   }
 
   public userUploadProxyUrl(worksheetId: string, uploadId: string): string {
@@ -723,6 +761,8 @@ export class WorksheetAssetService {
     }
     const invocationId = randomUUID();
     const model = response.usage.model || 'text-embedding-3-small';
+    const durationMs =
+      response.phaseMs?.embedMs ?? response.usage.latencyMs ?? 0;
     this.emitter.emitAiStarted({
       ...telemetry,
       invocationId,
@@ -739,7 +779,7 @@ export class WorksheetAssetService {
       status: 'success',
       inputTokens: response.usage.inputTokens,
       totalTokens: response.usage.totalTokens,
-      durationMs: response.usage.latencyMs,
+      durationMs,
     });
   }
 }

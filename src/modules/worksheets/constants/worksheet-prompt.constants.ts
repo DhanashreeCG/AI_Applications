@@ -1,5 +1,6 @@
 import { buildCountryForbiddenPromptClause } from '../../flashcards/utils/content-restriction.registry';
 import { GenerateWorksheetRequest } from '../types/worksheet.types';
+import { resolveAgeBand } from '../utils/age-band.util';
 
 export function buildAgeGroupSafetyClause(
   ageGroup?: string | null,
@@ -22,6 +23,40 @@ export function buildAgeGroupSafetyClause(
     'No weapons, blood, death, alcohol, drugs, romance, or political content.',
     'Characters should be kind, familiar, and reassuring.',
   ].join(' ');
+}
+
+/** True when resolved learner age band is entirely ≤ 4 years (or point age ≤ 4). */
+export function isAgeFourOrUnder(request: {
+  age?: number | null;
+  ageGroup?: string | null;
+  grade?: string | null;
+}): boolean {
+  const band = resolveAgeBand(request as GenerateWorksheetRequest);
+  if (band) {
+    return band.max <= 4;
+  }
+  const raw = (request.ageGroup || '').trim();
+  if (/toddler|nursery|FS1|Pre-K|prek|LKG/i.test(raw)) {
+    return true;
+  }
+  return typeof request.age === 'number' && request.age <= 4;
+}
+
+/** True when resolved learner age band is entirely ≤ 3 years (e.g. 2-3). */
+export function isAgeThreeOrUnder(request: {
+  age?: number | null;
+  ageGroup?: string | null;
+  grade?: string | null;
+}): boolean {
+  const band = resolveAgeBand(request as GenerateWorksheetRequest);
+  if (band) {
+    return band.max <= 3;
+  }
+  const raw = (request.ageGroup || '').trim();
+  if (/^2-3$|toddler|nursery|FS1/i.test(raw)) {
+    return true;
+  }
+  return typeof request.age === 'number' && request.age <= 3;
 }
 
 const REGEN_CONTEXT_OMIT = new Set([
@@ -77,9 +112,16 @@ export function buildWorksheetContentPrompt(input: {
   currentStructure?: Record<string, unknown> | null;
   /** From WorksheetTemplateSelectionProfile — how to adapt the layout to the topic. */
   adaptationNote?: string | null;
+  /** Measured content viewport for universal_template (px). */
+  contentRegion?: { width?: number; height?: number; left?: number; top?: number } | null;
 }): string {
   const request = input.request;
   const count = Math.max(1, input.count ?? (request.count ? Number(request.count) : 1));
+  const isUniversal =
+    input.templateSlug === 'universal_template' ||
+    input.templateSlug === 'universal';
+  const toddlerOrUnder4 = isUniversal && isAgeFourOrUnder(request);
+  const ageTwoToThree = isUniversal && isAgeThreeOrUnder(request);
   const userRequest =
     request.query?.trim() ||
     [
@@ -106,9 +148,15 @@ export function buildWorksheetContentPrompt(input: {
           '}',
           `IMPORTANT: Each of the ${count} worksheets must be unique, non-repetitive, with different educational questions/exercises and distinct visual imageQueries.`,
         ].join('\n')
-      : [
-          'Return a JSON object matching the template structure definition (either directly as the structure or wrapped as { "worksheets": [ ... ] }).',
-        ].join('\n');
+      : isUniversal
+        ? [
+            'Return ONE JSON object matching the structure definition.',
+            'You invent a UNIQUE HTML activity layout for this query (strictly dynamic — no fixed layout catalog).',
+            'content_html is an HTML FRAGMENT only. Header fields stay plain text.',
+          ].join(' ')
+        : [
+            'Return a JSON object matching the template structure definition (either directly as the structure or wrapped as { "worksheets": [ ... ] }).',
+          ].join('\n');
 
   const fieldEntries = Object.entries(request.fields ?? {}).filter(
     ([, value]) => typeof value === 'string' && value.trim(),
@@ -137,14 +185,29 @@ export function buildWorksheetContentPrompt(input: {
       ].join('\n')
     : '';
 
+  const viewportW =
+    input.contentRegion?.width ?? (isUniversal ? 936 : 920);
+  const viewportH =
+    input.contentRegion?.height ?? (isUniversal ? 1104 : 930);
+
   return [
-    input.systemPrompt?.trim() || 'You generate educational worksheet CONTENT only.',
+    input.systemPrompt?.trim() ||
+      (isUniversal
+        ? "You are an expert children's printable worksheet art director + HTML layout engineer. You invent dense, beautiful, age-appropriate multi-activity worksheets as HTML fragments that fill a fixed decorative page frame. Every pixel of the content viewport should earn its place — teach something, invite an action, or guide the eye. Never leave large empty white bands."
+        : 'You generate educational worksheet CONTENT only.'),
     formatInstruction,
-    'Do not generate HTML, CSS, JavaScript, layout, positions, or asset IDs.',
+    isUniversal
+      ? 'main_topic, sub_topic, and instruction_text are plain text. content_html is the ONLY HTML field (fragment). No <html>/<body>/<script>/<style>. No JavaScript or asset IDs.'
+      : 'Do not generate HTML, CSS, JavaScript, layout, positions, or asset IDs.',
     'Do not invent image file names. Describe needed images with imageQuery strings.',
     'Every imageQuery must be a short visual search phrase (e.g. "three red apples").',
-    'All text fields must be plain text suitable for young learners.',
+    isUniversal
+      ? 'All learner-facing copy must be age-appropriate, educational, and child-friendly for the selected age. Match vocabulary, task length, and visual density to that age.'
+      : 'All text fields must be plain text suitable for young learners.',
     `Language: ${request.language?.trim() || 'English'}`,
+    isUniversal && (request.age != null || request.ageGroup || request.grade)
+      ? `SELECTED LEARNER: age=${request.age ?? 'n/a'}; ageGroup=${request.ageGroup ?? 'n/a'}; grade=${request.grade ?? 'n/a'}. Design difficulty and wording for this learner only.`
+      : '',
     '',
     'CONTENT SAFETY & RESTRICTIONS:',
     countrySafetyClause,
@@ -296,6 +359,116 @@ export function buildWorksheetContentPrompt(input: {
       '- Set topic, badge_label, instruction_text, bottom_question, theme, y_axis_max (usually 10). Keep worksheet_type as picture_graph.',
       ''
     ] : []),
+    ...(isUniversal
+      ? [
+          'For universal_template — INTELLIGENT DYNAMIC HTML (premium printable quality):',
+          '',
+          'FIXED PAGE CHROME (already drawn — NEVER recreate in content_html):',
+          '  • purple header = main_topic',
+          '  • blue banner = sub_topic (skill label only, never a question)',
+          '  • yellow footer stars + Teacher signature',
+          '  • Do NOT include Name/Date fields (removed from this template)',
+          '',
+          `CONTENT VIEWPORT BUDGET: exactly ${viewportW}px wide × ${viewportH}px tall (ONE printable page — nothing below Teacher signature).`,
+          '  • Root of content_html MUST be ONE container: width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:10px; (do NOT set height:100%, max-height:100%, or overflow:hidden — the host already constrains height).',
+          '  • HARD FIT RULE: every section outline, label, and {{IMAGE_N}} MUST be fully visible. NEVER crop, clip, overlap, or stack sections on top of each other. No position:absolute, no negative margins.',
+          `  • PIXEL MATH: after the instruction (~70px) you have ~${Math.max(240, viewportH - 100)}px for ALL activity sections. With 3 sections each gets ~${Math.floor((viewportH - 100) / 3)}px TOTAL (title + padding + images). Size content to fit that budget.`,
+          '  • Prefer 2–3 activity sections (rarely 4). Prefer **2 match pairs** unless image boxes are compact; with 3 pairs boxes MUST be ≤88px. Never emit more rows than the per-section pixel budget.',
+          ...(toddlerOrUnder4
+            ? [
+                '',
+                'TODDLER / AGE ≤ 4 HARD RULES (override other density guidance when they conflict):',
+                '  • Activity count: choose **1 or 2** activity sections (plus the instruction box). NEVER 3+. Prefer 1 big clear activity when that keeps pictures large; use 2 only when both stay easy and readable. Extra sections will be removed.',
+                '  • Picture + simple text only: large clear pictures, 1–2 word labels (or very short phrases a teacher reads aloud).',
+                '  • NO writing/tracing letters, NO multi-step matching grids, NO reading sentences, NO counting above 5, NO dense facts, NO third “trace the words” block.',
+                '  • Allowed activities only: look-and-name pictures, circle/tick one picture, simple 2-pair picture match, colour/point.',
+                '  • COHERENCE: if there are 2 sections, section 2 must reuse the SAME animals/objects from section 1 (e.g. look-and-point Dog/Cat → match Dog/Cat). NEVER introduce a new creature only in the match section.',
+                '  • MATCH LAYOUT: exactly 2 pairs; every side uses the SAME square .ws-img-box px; left column = pets, right column = matches; scramble so correct answers are not same-row. Prefer picture↔picture (short label OK for teacher to read).',
+                '  • IMAGE SIZE: decide per section. A section with TWO image rows must use SMALLER equal boxes so BOTH rows stay fully inside that section border (never clip the bottom row). A single-row section may use larger boxes.',
+                '  • Every {{IMAGE_N}} must sit fully inside its own activity section and inside the page canvas — no overflow, no clipping, no spilling into the next section or footer.',
+                '  • Keep tasks playful and easy for ages 2–4 — one clear action per section.',
+                '  • instruction_text: one short teacher-spoken line that covers the page (if 2 activities, mention both briefly).',
+                '  • imageQuery: “cute cartoon [name], centered in square frame, simple white background” so retrieved art fills the box evenly.',
+              ]
+            : []),
+          ...(ageTwoToThree
+            ? [
+                '',
+                'AGE 2–3 EXTRA HARD RULES (stricter than age ≤ 4):',
+                '  • Prefer ONE activity when that keeps pictures biggest. If using 2: look-and-name (≤4 pictures) + one simple 2-pair match of those same pets only.',
+                '  • No food/object names that need reading unless a clear picture sits beside the word. Prefer matching pet picture → food picture.',
+                '  • Keep labels to 1 familiar word (Dog, Cat). Avoid long words toddlers do not know unless the picture is obvious.',
+              ]
+            : []),
+          '  • FILL the viewport (sections use flex:1) without leaving a huge empty band above Teacher signature, and without overflowing into the next section.',
+          '  • LAST ACTIVITY OUTLINE MUST CLOSE near the bottom of the viewport with a FULL 4-sided border. Never leave a cut-off box.',
+          '  • Colour/trace or multi-card sets: 4 cards → 2×2 grid; 6 cards → 2×3 or 3×2. Only emit images that fit on THIS page (max 10).',
+          '  • Keep content_html compact (prefer ≤16k characters). Reuse short inline styles; avoid huge repeated style blobs.',
+          '',
+          'ASSET REALITY (critical for sizing):',
+          '  • Every picture asset is a SQUARE 1:1 image (source ~500×500). Never assume landscape/portrait.',
+          '  • Place each picture ONLY as {{IMAGE_N}} inside a sized .ws-img-box wrapper, e.g.',
+          '    <div class="ws-img-box" style="width:160px;height:160px;">{{IMAGE_1}}</div>',
+          '  • Never use bare <img>, never src=, never filenames.',
+          '  • INTELLIGENT SIZE GUIDE (LLM decides by layout density — pictures must be clearly recognizable; never leave large empty cards with tiny icons):',
+          '      1 section only → box 160–200px (fill the section)',
+          '      1–2 sections + ≤4 images → box 150–180px (LARGE)',
+          '      2 sections + 5–7 images → box 130–160px (still clearly visible)',
+          '      3 sections + 4–6 images → box 110–140px',
+          '      Match rows / 3 stacked pairs → box 72–88px (compact only when dense)',
+          '      Circle/tick grids (many cells) → box 72–96px',
+          '  • If a section has empty white space around a picture, INCREASE .ws-img-box size or use fewer pictures. If content would crop/overflow the section or canvas, DECREASE size or drop an activity — never overflow.',
+          '  • images[] length = highest IMAGE_N; images[i].imageQuery describes {{IMAGE_(i+1)}}',
+          '  • imageQuery MUST match the on-page label/trace word (kite image ↔ “Kite”, lamp ↔ “Lamp”). Never mismatch.',
+          '',
+          'EDITABLE TEXT (required):',
+          '  • All learner-facing words are real HTML text — NEVER paint words into images.',
+          '  • Wrap every title / card label / trace word in:',
+          '    <span data-editable="labels[N]" data-field-path="labels[N]">Word</span>',
+          '  • Also return labels[] as a string array matching those spans (labels[0] = first span, etc.).',
+          '  • main_topic, sub_topic, instruction_text stay plain-text fields (also editable).',
+          '',
+          'PUNCTUATION:',
+          '  • Use ! or ? ONLY inside full sentences (5+ words).',
+          '  • NEVER put ! or ? on single words, 1–3 word titles, skill labels, or numbered headings like “1. Trace the Words”.',
+          '  • Prefer calm titles: “1. Trace the Words” not “1. Trace the Words!”.',
+          '',
+          'COMPOSITION RECIPES (inspiration — invent fresh markup; do NOT copy fixed IDs; pick what fits the educational objective):',
+          '  A) Teach strip + split practice: full-width learn row (3–4 square cards) → then match OR circle (not both oversized) → optional compact trace strip',
+          '  B) Quad activities: 2×2 equal panels',
+          '  C) Fact cards + practice: compact fact row → bottom practice',
+          '  Vary section count when the topic changes. Never emit the same skeleton every time.',
+          '',
+          'INTERACTION PATTERNS TO MIX (age-appropriate):',
+          '  • Tick/check boxes under pictures',
+          '  • Circle the correct picture/word (leave padding around icons)',
+          '  • Match with blue dots between columns (space for drawn lines) — prefer 2 pairs with medium/large boxes; max 3 pairs only with ≤88px boxes',
+          '  • Short write lines / traceable dotted letters (letter-spacing + dashed text; words as editable spans)',
+          '  • Numbered circular badges (1)(2)(3) for task order',
+          '  • Soft speech-bubble labels for sounds/words',
+          '',
+          'AGE & EDUCATION QUALITY:',
+          '  • Age ≤ 4 / toddler: 1 or 2 simple picture+label activities (LLM chooses; see TODDLER rules)',
+          '  • Younger (5–6): fewer words, larger boxes, 2–3 sections, mostly pictures',
+          '  • Mid (7–8): short sentences, 3 sections, mix picture + simple writing',
+          '  • Older (9–10): denser facts + practice, still child-friendly and playful',
+          '  • Every section must teach the query objective — not decoration-only',
+          '  • No scary / violent / adult themes',
+          '',
+          'VISUAL SYSTEM (inline styles only):',
+          '  • Font inherits Toondemy — do not set font-family',
+          '  • Ink #2a1b4a; accents #6d28d9 #85cbf4 #fecd59 #67bd47 #f03a3e #eef7ff #fff8e1',
+          '  • Section cards: border 2–3px soft color, border-radius 14–16px, padding 8–12px, background white or soft tint',
+          '  • Consistent gutters 8–12px; equal column widths; align rows; balanced left/right',
+          '  • instruction_text: one clear whole-page directive (also shown if missing from HTML)',
+          '  • main_topic: 2–4 words; sub_topic: 1–3 word skill label (no ? or !)',
+          '  • Allowed tags: div,span,p,h1-h4,ul,ol,li,table,thead,tbody,tr,td,th,br,hr,strong,em,u,b,i,label,section,article,header,footer',
+          '  • worksheet_type: "universal_template"',
+          '  • Do NOT emit layout / layout_type / cards / items catalog fields — everything lives in content_html + labels[] + images[]',
+          '  • Do NOT put Name/Date/signature/stars/main_topic/sub_topic inside content_html',
+          '',
+        ]
+      : []),
     'Template metadata:',
     JSON.stringify(input.meta ?? {}, null, 2),
     '',
