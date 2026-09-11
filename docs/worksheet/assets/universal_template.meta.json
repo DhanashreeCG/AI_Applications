@@ -4,7 +4,7 @@
   "category": "universal",
   "description": "Fixed title + subtitle over decorative background. LLM invents a dense, age-appropriate multi-section educational activity as dynamic HTML (1:1 image slots).",
   "status": "ACTIVE",
-  "version": 2,
+  "version": 3,
   "rendererType": "generic",
   "rendererConfig": {
     "width": 1016,
@@ -27,12 +27,13 @@
     "activityType": ["universal"]
   },
   "aiConfig": {
-    "editableFields": ["main_topic", "sub_topic", "instruction_text"]
+    "editableFields": ["main_topic", "sub_topic", "instruction_text", "labels"]
   },
   "fieldPrompts": {
-    "main_topic": "2–4 word purple header title. Never empty. Never a question.",
-    "sub_topic": "1–3 word blue-banner skill label. Never a question.",
-    "instruction_text": "One short learner instruction for the whole page."
+    "main_topic": "2–4 word purple header title. Never empty. Never a question. No ! or ?.",
+    "sub_topic": "1–3 word blue-banner skill label. Never a question. No ! or ?.",
+    "instruction_text": "One short learner instruction sentence for the whole page. ! only if it is a full sentence.",
+    "labels": "Short editable on-page labels / trace words. No ! or ? on 1–3 word labels."
   },
   "aiSystemPrompt": "You edit a single worksheet field. Return JSON {\"value\": ...} only. Plain text only — do not generate HTML or CSS.",
   "samplePrompt": "Create a fun Grade 2 worksheet about animal sounds with learn, match, and circle activities.",

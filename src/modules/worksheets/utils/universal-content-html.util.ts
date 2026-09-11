@@ -223,7 +223,13 @@ function sanitizeStyleValue(raw: string): string {
   for (const [prop, val] of map) {
     if (!SAFE_STYLE_PROPS.has(prop) || !val) continue;
     if (/expression\s*\(|javascript:|url\s*\(/i.test(val)) continue;
-    if (prop === 'position' && !/^(static|relative|absolute)$/i.test(val)) continue;
+    // Absolute / fixed / sticky causes overlap + crop across sections
+    if (prop === 'position' && !/^(static|relative)$/i.test(val)) continue;
+    // Negative margins pull sections on top of each other
+    if (/^margin/.test(prop) && /-\d/.test(val)) continue;
+    if (prop === 'z-index' && /^-?\d+$/.test(val.trim()) && Number(val) > 2) {
+      continue;
+    }
     parts.push(`${prop}:${val}`);
   }
   return parts.join(';');
@@ -427,7 +433,7 @@ export function fitUniversalContentLayout(html: string): string {
     if (sectionKids.length >= 2) {
       blocks = innerBlocks;
     } else if (sectionKids.length === 0 && isActivitySectionBlock(root)) {
-      return retagBlock(root, 'section');
+      return clampUniversalImageBoxes(retagBlock(root, 'section'));
     } else {
       const fittedInner = (innerBlocks.length ? innerBlocks : [])
         .map((child) => {
@@ -442,11 +448,13 @@ export function fitUniversalContentLayout(html: string): string {
         (style) => fitSectionOrStackStyle(style, 'stack'),
         'ws-stack',
       );
-      return `${open}${fittedInner || root.inner}</${root.tag}>`;
+      return clampUniversalImageBoxes(
+        `${open}${fittedInner || root.inner}</${root.tag}>`,
+      );
     }
   }
 
-  return blocks
+  const fitted = blocks
     .map((block) => {
       if (isInstructionBlock(block)) {
         const open = rewriteOpenTag(block.tag, block.attrs, (style) => {
@@ -456,10 +464,13 @@ export function fitUniversalContentLayout(html: string): string {
           map.delete('overflow');
           return styleMapToString(map);
         }, 'ws-instruction');
-        return `${open}${block.inner}</${block.tag}>`;
+        return `${open}${scrubShortPhrasePunctuation(block.inner)}</${block.tag}>`;
       }
       if (isActivitySectionBlock(block)) {
-        return retagBlock(block, 'section');
+        return retagBlock(
+          { ...block, inner: scrubShortPhrasePunctuation(block.inner) },
+          'section',
+        );
       }
       // Nested stack (model root kept) — still scrub height:100%.
       if (block.tag === 'div' || block.tag === 'section') {
@@ -468,7 +479,13 @@ export function fitUniversalContentLayout(html: string): string {
           const fittedInner = innerBlocks
             .map((child) =>
               isActivitySectionBlock(child)
-                ? retagBlock(child, 'section')
+                ? retagBlock(
+                    {
+                      ...child,
+                      inner: scrubShortPhrasePunctuation(child.inner),
+                    },
+                    'section',
+                  )
                 : child.full,
             )
             .join('');
@@ -486,9 +503,157 @@ export function fitUniversalContentLayout(html: string): string {
         scrubViewportFightingStyles(map);
         return styleMapToString(map);
       });
-      return `${open}${block.inner}</${block.tag}>`;
+      return `${open}${scrubShortPhrasePunctuation(block.inner)}</${block.tag}>`;
     })
     .join('');
+
+  return clampUniversalImageBoxes(fitted);
+}
+
+/**
+ * Exclamation / question marks only belong on real sentences — strip them from
+ * short titles, single words, and numbered section headings that are ≤3 words.
+ */
+export function scrubShortPhrasePunctuation(text: string): string {
+  if (!text) return text;
+  return text.replace(/>([^<>]+)</g, (full, raw: string) => {
+    const original = String(raw);
+    const trimmed = original.trim();
+    if (!trimmed || !/[!?]/.test(trimmed)) return full;
+
+    const withoutNumbering = trimmed.replace(
+      /^(?:\(?\d+\)?[.)]|[①②③④⑤⑥⑦⑧⑨⑩])\s*/u,
+      '',
+    );
+    const words = withoutNumbering.split(/\s+/).filter(Boolean);
+    // Keep sentence punctuation when there are enough words to read as a sentence
+    if (words.length >= 5) return full;
+    const cleaned = original.replace(/[!?]+/g, '');
+    return `>${cleaned}<`;
+  });
+}
+
+/** Title / skill labels: never keep ? or ! */
+export function scrubTitlePunctuation(text: string): string {
+  return readString(text, 80).replace(/[!?]+/g, '').trim();
+}
+
+function clampPxInStyle(style: string, maxPx: number): string {
+  const map = parseStyleMap(style);
+  for (const prop of [
+    'width',
+    'height',
+    'min-width',
+    'min-height',
+    'max-width',
+    'max-height',
+  ]) {
+    const val = map.get(prop);
+    if (!val) continue;
+    const m = val.trim().match(/^(\d+(?:\.\d+)?)px$/i);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (n > maxPx) map.set(prop, `${maxPx}px`);
+  }
+  map.set('box-sizing', 'border-box');
+  return styleMapToString(map);
+}
+
+/**
+ * Cap picture frames so stacked match/teach rows cannot overflow a flex section.
+ */
+export function clampUniversalImageBoxes(html: string): string {
+  if (!html) return html;
+  const imageCount = (html.match(/\{\{\s*IMAGE[_:]?\d+\s*\}\}/gi) || []).length;
+  const sectionCount = Math.max(
+    1,
+    (html.match(/\bws-section\b/gi) || []).length ||
+      (html.match(/<section\b/gi) || []).length,
+  );
+  // ~300px content per section after headers; keep frames small enough for 3 rows
+  let maxPx = 96;
+  if (imageCount >= 10 || sectionCount >= 4) maxPx = 72;
+  else if (imageCount >= 7) maxPx = 80;
+  else if (imageCount >= 5) maxPx = 88;
+
+  let out = html.replace(
+    /<div\b([^>]*\bws-img-box\b[^>]*)>/gi,
+    (full, rawAttrs: string) => {
+      const styleMatch = rawAttrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
+      const style = styleMatch?.[2] ?? styleMatch?.[3] ?? `width:${maxPx}px;height:${maxPx}px`;
+      const nextStyle = clampPxInStyle(style, maxPx);
+      let attrs = rawAttrs;
+      if (styleMatch) attrs = attrs.replace(styleMatch[0], '');
+      attrs += ` style="${escapeAttr(nextStyle)}"`;
+      return `<div${attrs}>`;
+    },
+  );
+
+  // Also clamp square frames that wrap an image token without ws-img-box
+  out = out.replace(
+    /<(div|span)\b([^>]*)>(\s*\{\{\s*IMAGE[_:]?\d+\s*\}\}[\s\S]*?)<\/\1>/gi,
+    (full, tag: string, rawAttrs: string, inner: string) => {
+      if (/\bws-img-box\b/i.test(rawAttrs)) return full;
+      const styleMatch = rawAttrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
+      if (!styleMatch) return full;
+      const style = styleMatch[2] ?? styleMatch[3] ?? '';
+      if (!/(?:^|;)\s*(?:width|height)\s*:/i.test(style)) return full;
+      const nextStyle = clampPxInStyle(style, maxPx);
+      let attrs = rawAttrs.replace(styleMatch[0], '');
+      attrs += ` style="${escapeAttr(nextStyle)}"`;
+      return `<${tag}${attrs}>${inner}</${tag}>`;
+    },
+  );
+
+  return out;
+}
+
+/** Sync labels[] from data-editable spans so chrome editor can change copy. */
+export function syncEditableLabels(
+  html: string,
+  prior: unknown,
+): { html: string; labels: string[] } {
+  const priorLabels = Array.isArray(prior)
+    ? prior.map((v) => readString(v, 80))
+    : [];
+  const found = new Map<number, string>();
+  const re =
+    /data-(?:editable|field-path)=["']labels\[(\d+)\]["'][^>]*>([^<]*)</gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) != null) {
+    const idx = Number(m[1]);
+    const text = scrubTitlePunctuation(m[2] || '');
+    if (Number.isFinite(idx) && idx >= 0) found.set(idx, text);
+  }
+
+  const maxIdx = Math.max(
+    found.size ? Math.max(...found.keys()) : -1,
+    priorLabels.length - 1,
+  );
+  const labels: string[] = [];
+  for (let i = 0; i <= maxIdx; i += 1) {
+    const fromPrior = priorLabels[i];
+    const fromHtml = found.get(i) || '';
+    // Prefer structure labels when the array was provided (supports field edits).
+    labels.push(
+      priorLabels.length > 0 && i < priorLabels.length
+        ? scrubTitlePunctuation(fromPrior || fromHtml)
+        : fromHtml,
+    );
+  }
+  while (labels.length && !labels[labels.length - 1]) labels.pop();
+
+  let nextHtml = html;
+  for (let i = 0; i < labels.length; i += 1) {
+    if (!labels[i]) continue;
+    const spanRe = new RegExp(
+      `(data-(?:editable|field-path)=["']labels\\[${i}\\]["'][^>]*>)([^<]*)(<)`,
+      'gi',
+    );
+    nextHtml = nextHtml.replace(spanRe, `$1${escapeText(labels[i])}$3`);
+  }
+
+  return { html: nextHtml, labels };
 }
 
 function sanitizeClassValue(raw: string): string {
@@ -524,6 +689,14 @@ function rebuildAllowedAttributes(tag: string, rawAttrs: string): string {
     if (name === 'class' && value != null) {
       const safe = sanitizeClassValue(value);
       if (safe) kept.push(`class="${escapeAttr(safe)}"`);
+      continue;
+    }
+    if (
+      (name === 'data-editable' || name === 'data-field-path') &&
+      value != null &&
+      /^(labels\[\d+\]|main_topic|sub_topic|instruction_text)$/i.test(value.trim())
+    ) {
+      kept.push(`${name}="${escapeAttr(value.trim())}"`);
       continue;
     }
     if (
@@ -640,12 +813,17 @@ export function normalizeUniversalStructure(
     'Practice';
   if (subTopic.includes('?')) subTopic = 'Practice';
 
-  next.main_topic = mainTopic || 'Worksheet';
-  next.sub_topic = subTopic;
-  next.instruction_text =
+  next.main_topic = scrubTitlePunctuation(mainTopic || 'Worksheet') || 'Worksheet';
+  next.sub_topic = scrubTitlePunctuation(subTopic) || 'Practice';
+  const instructionRaw =
     readString(next.instruction_text, 220) ||
     readString(next.instruction, 220) ||
     '';
+  // Instruction may be a sentence — only strip marks from short phrases
+  next.instruction_text =
+    instructionRaw.split(/\s+/).filter(Boolean).length <= 3
+      ? scrubTitlePunctuation(instructionRaw)
+      : instructionRaw;
 
   const contentHtml =
     typeof next.content_html === 'string'
@@ -664,8 +842,13 @@ export function normalizeUniversalStructure(
   delete next.blocks;
 
   // Sanitize early so stored structure matches what will render
-  const sanitized = sanitizeUniversalContentHtml(contentHtml);
+  let sanitized = scrubShortPhrasePunctuation(
+    sanitizeUniversalContentHtml(contentHtml),
+  );
+  const synced = syncEditableLabels(sanitized, next.labels);
+  sanitized = clampUniversalImageBoxes(synced.html);
   next.content_html = sanitized;
+  if (synced.labels.length) next.labels = synced.labels;
 
   const existing = Array.isArray(next.images) ? next.images : [];
   const tokenNums = new Set<number>();

@@ -4,6 +4,7 @@ import {
   normalizeImgTagsToImageTokens,
   normalizeUniversalStructure,
   sanitizeUniversalContentHtml,
+  scrubShortPhrasePunctuation,
 } from './universal-content-html.util';
 
 describe('universal strict dynamic HTML', () => {
@@ -110,5 +111,36 @@ describe('universal strict dynamic HTML', () => {
       '',
     );
     expect(withoutHost).not.toMatch(/height\s*:\s*100%/i);
+  });
+
+  it('strips ! from short titles and clamps oversized image boxes', () => {
+    const next = normalizeUniversalStructure({
+      main_topic: 'Fun Festivals!',
+      sub_topic: 'Matching!',
+      instruction_text: 'Look at the festivals and match the items.',
+      labels: ['Kite!', 'Lamp'],
+      content_html:
+        `<div style="display:flex;flex-direction:column;">` +
+        `<div style="border:2px solid #85cbf4;"><span data-editable="labels[0]" data-field-path="labels[0]">Kite!</span>` +
+        `<div class="ws-img-box" style="width:180px;height:180px;">{{IMAGE_1}}</div></div>` +
+        `<div style="border:2px solid #67bd47;"><span data-editable="labels[1]" data-field-path="labels[1]">Lamp</span>` +
+        `<div class="ws-img-box" style="width:160px;height:160px;">{{IMAGE_2}}</div></div>` +
+        `</div>`,
+      images: [{ imageQuery: 'kite' }, { imageQuery: 'lamp' }],
+    });
+    expect(next.main_topic).toBe('Fun Festivals');
+    expect(next.sub_topic).toBe('Matching');
+    expect(next.labels).toEqual(['Kite', 'Lamp']);
+    expect(String(next.content_html)).not.toMatch(/width:180px/);
+    expect(String(next.content_html)).toMatch(/width:96px/);
+    expect(String(next.content_html)).toContain('data-editable="labels[0]"');
+  });
+
+  it('scrubs ! from short HTML phrases but keeps sentence exclamations', () => {
+    const html = scrubShortPhrasePunctuation(
+      `<div><span>Hi!</span><p>Look at the fun festivals today!</p></div>`,
+    );
+    expect(html).toContain('>Hi<');
+    expect(html).toContain('Look at the fun festivals today!');
   });
 });
