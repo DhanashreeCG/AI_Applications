@@ -1,5 +1,6 @@
 import { buildCountryForbiddenPromptClause } from '../../flashcards/utils/content-restriction.registry';
 import { GenerateWorksheetRequest } from '../types/worksheet.types';
+import { resolveAgeBand } from '../utils/age-band.util';
 
 export function buildAgeGroupSafetyClause(
   ageGroup?: string | null,
@@ -22,6 +23,23 @@ export function buildAgeGroupSafetyClause(
     'No weapons, blood, death, alcohol, drugs, romance, or political content.',
     'Characters should be kind, familiar, and reassuring.',
   ].join(' ');
+}
+
+/** True when resolved learner age band is entirely ≤ 4 years (or point age ≤ 4). */
+export function isAgeFourOrUnder(request: {
+  age?: number | null;
+  ageGroup?: string | null;
+  grade?: string | null;
+}): boolean {
+  const band = resolveAgeBand(request as GenerateWorksheetRequest);
+  if (band) {
+    return band.max <= 4;
+  }
+  const raw = (request.ageGroup || '').trim();
+  if (/toddler|nursery|FS1|Pre-K|prek|LKG/i.test(raw)) {
+    return true;
+  }
+  return typeof request.age === 'number' && request.age <= 4;
 }
 
 const REGEN_CONTEXT_OMIT = new Set([
@@ -85,6 +103,7 @@ export function buildWorksheetContentPrompt(input: {
   const isUniversal =
     input.templateSlug === 'universal_template' ||
     input.templateSlug === 'universal';
+  const toddlerOrUnder4 = isUniversal && isAgeFourOrUnder(request);
   const userRequest =
     request.query?.trim() ||
     [
@@ -337,6 +356,18 @@ export function buildWorksheetContentPrompt(input: {
           '  • HARD FIT RULE: every section outline, label, and {{IMAGE_N}} MUST be fully visible. NEVER crop, clip, overlap, or stack sections on top of each other. No position:absolute, no negative margins.',
           `  • PIXEL MATH: after the instruction (~70px) you have ~${Math.max(240, viewportH - 100)}px for ALL activity sections. With 3 sections each gets ~${Math.floor((viewportH - 100) / 3)}px TOTAL (title + padding + images). Size content to fit that budget.`,
           '  • Prefer 2–3 activity sections (rarely 4). Prefer **2 match pairs** unless image boxes are ≤72px; with 3 pairs boxes MUST be ≤72px. Never emit more rows than the per-section pixel budget.',
+          ...(toddlerOrUnder4
+            ? [
+                '',
+                'TODDLER / AGE ≤ 4 HARD RULES (override other density guidance when they conflict):',
+                '  • MAXIMUM 2 activity sections total (plus the instruction box). Never 3 or 4.',
+                '  • Picture + simple text only: large clear pictures, 1–2 word labels (or very short phrases a teacher reads aloud).',
+                '  • NO writing/tracing letters, NO multi-step matching grids, NO reading sentences, NO counting above 5, NO dense facts.',
+                '  • Allowed activities only: look-and-name pictures, circle/tick one picture, simple 2-pair picture match, colour/point.',
+                '  • Keep tasks playful and easy for ages 2–4 — one clear action per section; big image boxes (~90–120px); few images (typically 4–6).',
+                '  • instruction_text: one short teacher-spoken line (e.g. "Look at the animals. Point to the cat.").',
+              ]
+            : []),
           '  • FILL the viewport (sections use flex:1) without leaving a huge empty band above Teacher signature, and without overflowing into the next section.',
           '  • LAST ACTIVITY OUTLINE MUST CLOSE near the bottom of the viewport with a FULL 4-sided border. Never leave a cut-off box.',
           '  • Colour/trace or multi-card sets: 4 cards → 2×2 grid; 6 cards → 2×3 or 3×2. Only emit images that fit on THIS page (max 10).',
@@ -382,6 +413,7 @@ export function buildWorksheetContentPrompt(input: {
           '  • Soft speech-bubble labels for sounds/words',
           '',
           'AGE & EDUCATION QUALITY:',
+          '  • Age ≤ 4 / toddler: MAX 2 simple picture+label activities only (see TODDLER rules above when selected)',
           '  • Younger (5–6): fewer words, larger boxes, 2–3 sections, mostly pictures',
           '  • Mid (7–8): short sentences, 3 sections, mix picture + simple writing',
           '  • Older (9–10): denser facts + practice, still child-friendly and playful',

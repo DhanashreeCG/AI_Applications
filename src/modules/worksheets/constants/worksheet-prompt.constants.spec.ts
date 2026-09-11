@@ -1,5 +1,6 @@
 import {
   buildWorksheetContentPrompt,
+  isAgeFourOrUnder,
   sanitizeStructureForRegenPrompt,
 } from './worksheet-prompt.constants';
 
@@ -105,5 +106,39 @@ describe('worksheet regen prompt', () => {
     expect(prompt).toContain('right_image');
     expect(prompt).toContain('imageQuery');
     expect(prompt).toContain('Do NOT invent left_imageQuery / right_imageQuery');
+  });
+
+  it('detects age ≤ 4 bands for toddler rules', () => {
+    expect(isAgeFourOrUnder({ age: 4 })).toBe(true);
+    expect(isAgeFourOrUnder({ ageGroup: '2-3' })).toBe(true);
+    expect(isAgeFourOrUnder({ ageGroup: '3-4' })).toBe(true);
+    expect(isAgeFourOrUnder({ ageGroup: '4-5' })).toBe(false);
+    expect(isAgeFourOrUnder({ age: 5 })).toBe(false);
+  });
+
+  it('injects toddler hard rules for universal when age ≤ 4', () => {
+    const prompt = buildWorksheetContentPrompt({
+      request: { topic: 'animals', ageGroup: '3-4' },
+      templateName: 'Universal Template',
+      templateSlug: 'universal_template',
+      structureDefinition: { type: 'object' },
+      meta: {},
+      contentRegion: { width: 936, height: 1104 },
+    });
+    expect(prompt).toContain('TODDLER / AGE ≤ 4 HARD RULES');
+    expect(prompt).toContain('MAXIMUM 2 activity sections');
+    expect(prompt).toContain('Picture + simple text only');
+  });
+
+  it('does not inject toddler hard rules for universal when age band is above 4', () => {
+    const prompt = buildWorksheetContentPrompt({
+      request: { topic: 'animals', ageGroup: '5-6' },
+      templateName: 'Universal Template',
+      templateSlug: 'universal_template',
+      structureDefinition: { type: 'object' },
+      meta: {},
+      contentRegion: { width: 936, height: 1104 },
+    });
+    expect(prompt).not.toContain('TODDLER / AGE ≤ 4 HARD RULES');
   });
 });
