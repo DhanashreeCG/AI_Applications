@@ -1,3 +1,5 @@
+import { resolveAgeBand } from './age-band.util';
+
 /**
  * Universal template: fixed chrome (title / subtopic / Name / Date) +
  * STRICTLY dynamic LLM HTML for the content viewport.
@@ -5,6 +7,24 @@
  * No layout catalog. The model invents structure + content each request.
  * We only sanitize, fix image slots, and inject into #content-region.
  */
+
+export type UniversalNormalizeOptions = {
+  age?: number | null;
+  ageGroup?: string | null;
+  grade?: string | null;
+  viewportContentH?: number;
+};
+
+function isToddlerAgeOptions(options?: UniversalNormalizeOptions): boolean {
+  if (!options) return false;
+  const band = resolveAgeBand({
+    age: options.age ?? undefined,
+    ageGroup: options.ageGroup ?? undefined,
+    grade: options.grade ?? undefined,
+  });
+  if (band) return band.max <= 4;
+  return typeof options.age === 'number' && options.age <= 4;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -616,24 +636,63 @@ export function resolveUniversalImageBoxBudget(
   return { minPx: 110, maxPx: 170, targetPx: 140 };
 }
 
-/**
- * Cap or boost picture frames from page density so images stay readable
- * without overflowing the viewport on dense layouts.
- */
-export function clampUniversalImageBoxes(html: string): string {
-  if (!html) return html;
-  const imageCount = (html.match(/\{\{\s*IMAGE[_:]?\d+\s*\}\}/gi) || []).length;
-  const sectionCount = Math.max(
-    1,
-    (html.match(/\bws-section\b/gi) || []).length ||
-      (html.match(/<section\b/gi) || []).length,
-  );
-  const { minPx, maxPx, targetPx } = resolveUniversalImageBoxBudget(
-    imageCount,
-    sectionCount,
-  );
+function estimateImageRows(imageCount: number): number {
+  if (imageCount <= 3) return 1;
+  if (imageCount <= 6) return 2;
+  return 3;
+}
 
-  let out = html.replace(
+/**
+ * Size boxes so N image rows fit inside one flex section without clipping.
+ */
+export function resolveSectionImageBoxBudget(
+  sectionHeightPx: number,
+  imagesInSection: number,
+): { minPx: number; maxPx: number; targetPx: number } {
+  const rows = estimateImageRows(Math.max(1, imagesInSection));
+  // Title + padding + match anchors / labels under pictures
+  const usable = Math.max(120, sectionHeightPx - 88);
+  const gaps = 12 * Math.max(0, rows - 1);
+  const perRow = Math.floor((usable - gaps) / rows);
+  // Multi-row sections must stay conservative or the bottom row clips
+  // (overflow:hidden on .ws-section). Single-row may fill more.
+  const hardCap = rows >= 2 ? 140 : 200;
+  const maxPx = Math.min(hardCap, Math.max(64, perRow - 36));
+  const targetPx = Math.min(maxPx, Math.max(64, maxPx - 8));
+  const minPx = Math.min(targetPx, Math.max(56, Math.floor(targetPx * 0.88)));
+  return { minPx, maxPx, targetPx };
+}
+
+function countImageSlots(html: string): number {
+  const tokens = (html.match(/\{\{\s*IMAGE[_:]?\d+\s*\}\}/gi) || []).length;
+  if (tokens > 0) return tokens;
+  return (html.match(/data-image-slot=/gi) || []).length;
+}
+
+function countActivitySectionsDeep(html: string): number {
+  const blocks = splitTopLevelElementBlocks(html);
+  let n = 0;
+  for (const block of blocks) {
+    if (isInstructionBlock(block)) continue;
+    if (isActivitySectionBlock(block)) {
+      n += 1;
+      continue;
+    }
+    if (block.inner) n += countActivitySectionsDeep(block.inner);
+  }
+  return n;
+}
+
+function rewriteBlockInner(block: TopBlock, nextInner: string): string {
+  return `${block.openTag}${nextInner}</${block.tag}>`;
+}
+
+function applyBoxBudgetToFragment(
+  fragment: string,
+  budget: { minPx: number; maxPx: number; targetPx: number },
+): string {
+  const { minPx, maxPx, targetPx } = budget;
+  let out = fragment.replace(
     /<div\b([^>]*\bws-img-box\b[^>]*)>/gi,
     (_full, rawAttrs: string) => {
       const styleMatch = rawAttrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
@@ -650,11 +709,12 @@ export function clampUniversalImageBoxes(html: string): string {
   );
 
   out = out.replace(
-    /<(div|span)\b([^>]*)>(\s*\{\{\s*IMAGE[_:]?\d+\s*\}\}[\s\S]*?)<\/\1>/gi,
+    /<(div|span)\b([^>]*)>(\s*(?:\{\{\s*IMAGE[_:]?\d+\s*\}\}|<img\b[^>]*>)[\s\S]*?)<\/\1>/gi,
     (full, tag: string, rawAttrs: string, inner: string) => {
       if (/\bws-img-box\b/i.test(rawAttrs)) return full;
       const styleMatch = rawAttrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
       if (!styleMatch) {
+        if (!/\{\{\s*IMAGE|worksheet-image/i.test(inner)) return full;
         return `<${tag}${rawAttrs} style="${escapeAttr(
           `width:${targetPx}px;height:${targetPx}px;box-sizing:border-box`,
         )}">${inner}</${tag}>`;
@@ -669,6 +729,109 @@ export function clampUniversalImageBoxes(html: string): string {
   );
 
   return out;
+}
+
+/**
+ * Cap or boost picture frames so each section's rows fit inside that section
+ * (avoids 2nd-row clipping when global "large" sizing is too tall).
+ *
+ * Uses balanced tag parsing — never a naive `[\s\S]*?</div>` regex, which
+ * truncates at the first nested `.ws-img-box` and leaves later rows unclamped.
+ */
+export function clampUniversalImageBoxes(
+  html: string,
+  options?: { viewportContentH?: number },
+): string {
+  if (!html) return html;
+  const viewportH = options?.viewportContentH ?? 1040;
+  const totalImages = countImageSlots(html);
+  const sectionCount = Math.max(1, countActivitySectionsDeep(html));
+  const sectionH = Math.floor((viewportH - 80) / sectionCount);
+  const pageBudget = resolveUniversalImageBoxBudget(totalImages, sectionCount);
+
+  const walk = (fragment: string): string => {
+    const blocks = splitTopLevelElementBlocks(fragment);
+    if (!blocks.length) {
+      return countImageSlots(fragment) > 0
+        ? applyBoxBudgetToFragment(fragment, pageBudget)
+        : fragment;
+    }
+
+    return blocks
+      .map((block) => {
+        if (isInstructionBlock(block)) return block.full;
+
+        const kids = splitTopLevelElementBlocks(block.inner);
+        const hasNestedSections = kids.some((k) => isActivitySectionBlock(k));
+        // Wrapper / stack: clamp each child section, don't treat wrapper as one section.
+        if (hasNestedSections && !isActivitySectionBlock(block)) {
+          return rewriteBlockInner(block, walk(block.inner));
+        }
+
+        if (isActivitySectionBlock(block)) {
+          const imgs = countImageSlots(block.inner);
+          const sectionBudget = resolveSectionImageBoxBudget(
+            sectionH,
+            Math.max(1, imgs),
+          );
+          const rows = estimateImageRows(Math.max(1, imgs));
+          // Multi-row sections must respect height or the bottom row clips.
+          const budget =
+            rows >= 2
+              ? sectionBudget
+              : {
+                  minPx: Math.min(sectionBudget.maxPx, pageBudget.minPx),
+                  maxPx: Math.min(sectionBudget.maxPx, pageBudget.maxPx),
+                  targetPx: Math.min(sectionBudget.maxPx, pageBudget.targetPx),
+                };
+          return rewriteBlockInner(
+            block,
+            applyBoxBudgetToFragment(block.inner, budget),
+          );
+        }
+
+        if (countImageSlots(block.full) > 0) {
+          return applyBoxBudgetToFragment(block.full, pageBudget);
+        }
+        return block.full;
+      })
+      .join('');
+  };
+
+  return walk(html);
+}
+
+/** Keep at most `maxSections` activity blocks (toddler / age ≤ 4). */
+export function enforceUniversalActivitySectionLimit(
+  html: string,
+  maxSections: number,
+): string {
+  if (!html || maxSections < 1) return html;
+  let kept = 0;
+
+  const walk = (fragment: string): string => {
+    const blocks = splitTopLevelElementBlocks(fragment);
+    if (!blocks.length) return fragment;
+    return blocks
+      .map((block) => {
+        if (isInstructionBlock(block)) return block.full;
+        const kids = splitTopLevelElementBlocks(block.inner);
+        if (
+          kids.some((k) => isActivitySectionBlock(k)) &&
+          !isActivitySectionBlock(block)
+        ) {
+          return rewriteBlockInner(block, walk(block.inner));
+        }
+        if (isActivitySectionBlock(block)) {
+          kept += 1;
+          return kept <= maxSections ? block.full : '';
+        }
+        return block.full;
+      })
+      .join('');
+  };
+
+  return walk(html);
 }
 
 /** Sync labels[] from data-editable spans so chrome editor can change copy. */
@@ -1022,9 +1185,12 @@ export function expandUniversalImagePlaceholders(html: string): string {
  */
 export function normalizeUniversalStructure(
   structure: Record<string, unknown>,
+  options?: UniversalNormalizeOptions,
 ): Record<string, unknown> {
   const next: Record<string, unknown> = { ...structure };
   next.worksheet_type = 'universal_template';
+  const viewportH = options?.viewportContentH ?? 1104;
+  const toddler = isToddlerAgeOptions(options);
 
   const mainTopic =
     readString(next.main_topic, 80) ||
@@ -1070,10 +1236,20 @@ export function normalizeUniversalStructure(
     sanitizeUniversalContentHtml(contentHtml),
   );
   sanitized = ensureEditableLabels(sanitized);
+  // Tag sections early so we can limit toddler activities + size per section.
+  sanitized = fitUniversalContentLayout(sanitized);
+  if (toddler) {
+    sanitized = enforceUniversalActivitySectionLimit(sanitized, 2);
+  }
   let synced = syncEditableLabels(sanitized, next.labels);
-  sanitized = clampUniversalImageBoxes(synced.html);
+  sanitized = clampUniversalImageBoxes(synced.html, {
+    viewportContentH: viewportH,
+  });
   sanitized = trimUniversalImageTokens(sanitized, UNIVERSAL_MAX_IMAGES);
-  synced = syncEditableLabels(sanitized, synced.labels.length ? synced.labels : next.labels);
+  synced = syncEditableLabels(
+    sanitized,
+    synced.labels.length ? synced.labels : next.labels,
+  );
   sanitized = synced.html;
   next.content_html = sanitized;
   if (synced.labels.length) next.labels = synced.labels;
@@ -1096,18 +1272,52 @@ export function normalizeUniversalStructure(
       : existing.length;
   const maxToken = Math.min(Math.max(maxTokenRaw, 0), UNIVERSAL_MAX_IMAGES);
 
+  // Rebuild images[] only for tokens that remain (after toddler section trim).
+  const orderedTokens = [...tokenNums].filter((n) => n >= 1).sort((a, b) => a - b);
   const images: Array<Record<string, unknown>> = [];
-  for (let i = 0; i < maxToken; i += 1) {
-    const prior = isRecord(existing[i]) ? existing[i] : {};
-    const imageQuery =
-      readString(prior.imageQuery, 120) ||
-      readString(prior.image_query, 120) ||
-      `age appropriate educational illustration ${i + 1}`;
-    images.push({
-      imageQuery,
-      ...(typeof prior.assetId === 'string' ? { assetId: prior.assetId } : {}),
-      ...(typeof prior.assetUrl === 'string' ? { assetUrl: prior.assetUrl } : {}),
+  if (orderedTokens.length) {
+    for (const n of orderedTokens) {
+      if (images.length >= UNIVERSAL_MAX_IMAGES) break;
+      const prior = isRecord(existing[n - 1]) ? existing[n - 1] : {};
+      const imageQuery =
+        readString(prior.imageQuery, 120) ||
+        readString(prior.image_query, 120) ||
+        `age appropriate educational illustration ${n}`;
+      images.push({
+        imageQuery,
+        ...(typeof prior.assetId === 'string' ? { assetId: prior.assetId } : {}),
+        ...(typeof prior.assetUrl === 'string' ? { assetUrl: prior.assetUrl } : {}),
+      });
+    }
+    // Remap IMAGE_N to dense 1..k after dropping sections
+    let remapHtml = sanitized;
+    const remap = new Map<number, number>();
+    orderedTokens.forEach((n, idx) => {
+      if (idx < UNIVERSAL_MAX_IMAGES) remap.set(n, idx + 1);
     });
+    remapHtml = remapHtml.replace(
+      /\{\{\s*IMAGE[_:]?(\d+)\s*\}\}/gi,
+      (full, nRaw: string) => {
+        const n = Number(nRaw);
+        const nextN = remap.get(n);
+        return nextN ? `{{IMAGE_${nextN}}}` : '';
+      },
+    );
+    sanitized = remapHtml;
+    next.content_html = sanitized;
+  } else {
+    for (let i = 0; i < maxToken; i += 1) {
+      const prior = isRecord(existing[i]) ? existing[i] : {};
+      const imageQuery =
+        readString(prior.imageQuery, 120) ||
+        readString(prior.image_query, 120) ||
+        `age appropriate educational illustration ${i + 1}`;
+      images.push({
+        imageQuery,
+        ...(typeof prior.assetId === 'string' ? { assetId: prior.assetId } : {}),
+        ...(typeof prior.assetUrl === 'string' ? { assetUrl: prior.assetUrl } : {}),
+      });
+    }
   }
   const labelsArr = Array.isArray(next.labels)
     ? (next.labels as unknown[]).map((v) => readString(v, 80))
@@ -1118,9 +1328,12 @@ export function normalizeUniversalStructure(
 
 export function buildUniversalSkeletonHtml(
   structure: Record<string, unknown>,
+  options?: UniversalNormalizeOptions,
 ): string {
-  const normalized = normalizeUniversalStructure(structure);
+  const normalized = normalizeUniversalStructure(structure, options);
   const instruction = readString(normalized.instruction_text, 220);
+  const viewportH = options?.viewportContentH ?? 1104;
+  const toddler = isToddlerAgeOptions(options);
   let fragment = expandUniversalImagePlaceholders(
     sanitizeUniversalContentHtml(String(normalized.content_html || '')),
   );
@@ -1141,8 +1354,11 @@ export function buildUniversalSkeletonHtml(
 
   // Re-fit after instruction injection so top-level sections stay host flex children.
   fragment = fitUniversalContentLayout(fragment);
-  // Re-clamp after .ws-section tags exist so sparse pages get large recognizable art.
-  fragment = clampUniversalImageBoxes(fragment);
+  if (toddler) {
+    fragment = enforceUniversalActivitySectionLimit(fragment, 2);
+  }
+  // Per-section clamp so multi-row match blocks never clip the bottom row.
+  fragment = clampUniversalImageBoxes(fragment, { viewportContentH: viewportH });
 
   // Full-height flex host so activity sections can stretch and close above footer.
   return (
@@ -1155,9 +1371,10 @@ export function buildUniversalSkeletonHtml(
 export function injectUniversalContentHtml(
   templateHtml: string,
   structure: Record<string, unknown>,
+  options?: UniversalNormalizeOptions,
 ): string {
   if (!templateHtml) return templateHtml;
-  const fragment = buildUniversalSkeletonHtml(structure);
+  const fragment = buildUniversalSkeletonHtml(structure, options);
 
   if (/\{\{\s*CONTENT_HTML\s*\}\}/i.test(templateHtml)) {
     return templateHtml.replace(/\{\{\s*CONTENT_HTML\s*\}\}/gi, () => fragment);

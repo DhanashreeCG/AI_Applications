@@ -145,6 +145,13 @@ export interface WorksheetRenderInput {
   fontPath?: string;
   /** When set, used with worksheet_type to detect universal_template safely. */
   templateSlug?: string;
+  /** Age / viewport hints for universal_template normalize + image clamp. */
+  normalizeOptions?: {
+    age?: number | null;
+    ageGroup?: string | null;
+    grade?: string | null;
+    viewportContentH?: number;
+  };
 }
 
 export interface ResolvedAssetSlot {

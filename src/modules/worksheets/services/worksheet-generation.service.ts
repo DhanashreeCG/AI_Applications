@@ -316,7 +316,14 @@ export class WorksheetGenerationService {
     // Universal: normalize headers/images before asset search (no layout catalog).
     const normalizedList =
       template.slug === 'universal_template' || template.slug === 'universal'
-        ? generatedList.map((item) => normalizeUniversalStructure(item))
+        ? generatedList.map((item) =>
+            normalizeUniversalStructure(item, {
+              age: dto.age,
+              ageGroup: dto.ageGroup,
+              grade: dto.grade,
+              viewportContentH: 1104,
+            }),
+          )
         : generatedList;
     this.logger.log(`content generation completed structuresCount=${normalizedList.length}`);
 

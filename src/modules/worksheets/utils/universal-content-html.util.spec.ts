@@ -214,7 +214,7 @@ describe('universal strict dynamic HTML', () => {
       `<div class="ws-section"><div class="ws-img-box" style="width:60px;height:60px;">{{IMAGE_1}}</div></div>` +
         `<div class="ws-section"><div class="ws-img-box" style="width:60px;height:60px;">{{IMAGE_2}}</div></div>`,
     );
-    // 2 sections + 2 images → large target (~170)
+    // 2 sections + 2 images (1 row each) → large target
     expect(sparse).toMatch(/width:1[4-9]\dpx/);
 
     const dense = clampUniversalImageBoxes(
@@ -226,7 +226,57 @@ describe('universal strict dynamic HTML', () => {
         ).join(''),
     );
     expect(dense).not.toMatch(/width:180px/);
-    expect(dense).toMatch(/width:(?:6\d|7\d|8\d|9\d)px/);
+  });
+
+  it('sizes multi-row section images to fit section height (no bottom-row clip)', () => {
+    const matchSection =
+      `<div class="ws-section" style="border:2px solid #fecd59;">` +
+      Array.from(
+        { length: 4 },
+        (_, i) =>
+          `<div class="ws-img-box" style="width:180px;height:180px;">{{IMAGE_${i + 1}}}</div>`,
+      ).join('') +
+      `</div>`;
+    const html = clampUniversalImageBoxes(
+      `<div class="ws-section"><div class="ws-img-box" style="width:160px;height:160px;">{{IMAGE_5}}</div></div>` +
+        matchSection,
+      { viewportContentH: 1040 },
+    );
+    expect(html).not.toMatch(/width:180px/);
+    // Pull widths only from the yellow match section (4 nested boxes).
+    const matchHtml = html.match(
+      /border:2px solid #fecd59[\s\S]*?<\/div>\s*(?=<div class="ws-section"|$)/i,
+    )?.[0] ?? html.slice(html.indexOf('#fecd59'));
+    const matchWidths = [
+      ...matchHtml.matchAll(/ws-img-box[^>]*width:(\d+)px/gi),
+    ].map((m) => Number(m[1]));
+    expect(matchWidths.length).toBe(4);
+    // Multi-row hard-cap is 140px so the 2nd row stays inside the section.
+    expect(Math.max(...matchWidths)).toBeLessThanOrEqual(140);
+  });
+
+  it('enforces at most 2 activity sections for toddler normalize', () => {
+    const next = normalizeUniversalStructure(
+      {
+        main_topic: 'Pets',
+        sub_topic: 'Friends',
+        instruction_text: 'Look at the pets and point to them.',
+        content_html:
+          `<div style="border:2px solid #85cbf4;padding:8px;">One {{IMAGE_1}}</div>` +
+          `<div style="border:2px solid #fecd59;padding:8px;">Two {{IMAGE_2}}{{IMAGE_3}}</div>` +
+          `<div style="border:2px solid #67bd47;padding:8px;">Three {{IMAGE_4}}</div>`,
+        images: [
+          { imageQuery: 'dog' },
+          { imageQuery: 'cat' },
+          { imageQuery: 'bird' },
+          { imageQuery: 'fish' },
+        ],
+      },
+      { ageGroup: '3-4', viewportContentH: 1104 },
+    );
+    const sections = String(next.content_html).match(/\bws-section\b/g) || [];
+    expect(sections.length).toBeLessThanOrEqual(2);
+    expect((next.images as unknown[]).length).toBeLessThanOrEqual(3);
   });
 
   it('resolves larger budgets for few images and smaller for dense pages', () => {

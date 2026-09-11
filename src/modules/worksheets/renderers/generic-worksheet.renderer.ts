@@ -679,7 +679,10 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     const useUniversal =
       isUniversalStructure(structure) || isUniversalSlug(input.templateSlug);
     if (useUniversal) {
-      structure = normalizeUniversalStructure(structure);
+      structure = normalizeUniversalStructure(
+        structure,
+        input.normalizeOptions,
+      );
     }
     const extras: Record<string, unknown> = {
       backgroundAssetUrl: input.backgroundAssetUrl ?? '',
@@ -696,7 +699,11 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     delete context.CONTENT_HTML;
     let html = restoreNullPlaceholders(input.templateHtml);
     if (useUniversal) {
-      html = injectUniversalContentHtml(html, structure);
+      html = injectUniversalContentHtml(
+        html,
+        structure,
+        input.normalizeOptions,
+      );
     }
     html = injectMatchingPairMarkup(html, structure, input.pencilIconUrl);
     html = injectPairImagesMarkup(html, structure);

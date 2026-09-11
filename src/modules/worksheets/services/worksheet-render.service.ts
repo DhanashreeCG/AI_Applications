@@ -126,6 +126,7 @@ export class WorksheetRenderService {
       input.template.rendererType,
       input.template.slug,
     );
+    const request = input.request ?? null;
     const html = renderer.render({
       templateHtml: input.template.templateHtml,
       structure,
@@ -138,6 +139,13 @@ export class WorksheetRenderService {
       pencilIconUrl: this.pencilIconUrl,
       fontPath: toondemyFontUrl(this.apiBaseUrl),
       templateSlug: input.template.slug,
+      normalizeOptions: {
+        age: typeof request?.age === 'number' ? request.age : null,
+        ageGroup:
+          typeof request?.ageGroup === 'string' ? request.ageGroup : null,
+        grade: typeof request?.grade === 'string' ? request.grade : null,
+        viewportContentH: 1104,
+      },
     });
     return { html, canvas };
   }
