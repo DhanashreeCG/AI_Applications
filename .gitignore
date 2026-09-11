@@ -46,6 +46,10 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Generated universal-template script dumps (not source of truth)
+docs/worksheet/assets/universal_template.created.json
+docs/worksheet/assets/universal_template.smoke.json
+
 # Rendered flashcard output
 /storage
 

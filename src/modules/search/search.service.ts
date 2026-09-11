@@ -126,6 +126,7 @@ export class SearchService {
       assertSearchQueryAllowed(query, countryCode);
     }
 
+    const cacheStartedAt = Date.now();
     const uncached: string[] = [];
     for (const query of unique) {
       const cacheKey = buildSearchCacheKey({ ...options, query });
@@ -142,25 +143,32 @@ export class SearchService {
               model: cached.usage?.model,
               fromCache: true,
             },
+            phaseMs: { embedMs: 0, vectorMs: 0 },
           });
           continue;
         }
       }
       uncached.push(query);
     }
+    const cacheCheckMs = Date.now() - cacheStartedAt;
 
     if (uncached.length === 0) {
+      this.logger.log(
+        `searchMany cacheHitAll queries=${unique.length} cacheCheckMs=${cacheCheckMs}`,
+      );
       return results;
     }
 
+    const embedStartedAt = Date.now();
     const embeddings = await this.embeddingProvider.generateEmbeddings(uncached, {
       billingScope: options.embeddingBilling ?? 'platform',
     });
+    const embedMs = Date.now() - embedStartedAt;
     const embeddingUsage = this.embeddingProvider.getLastUsage();
     const batchUsage: SearchEmbeddingUsage = {
       inputTokens: embeddingUsage?.inputTokens,
       totalTokens: embeddingUsage?.totalTokens,
-      latencyMs: embeddingUsage?.latencyMs,
+      latencyMs: embeddingUsage?.latencyMs ?? embedMs,
       model: this.embeddingProvider.modelName,
       fromCache: false,
     };
@@ -170,9 +178,9 @@ export class SearchService {
         stage: 'search_embedding',
         provider: 'openai',
         model: this.embeddingProvider.modelName,
-        startedAt: new Date(Date.now() - (embeddingUsage.latencyMs || 0)),
+        startedAt: new Date(Date.now() - (embeddingUsage.latencyMs || embedMs)),
         completedAt: new Date(),
-        latencyMs: embeddingUsage.latencyMs || 0,
+        latencyMs: embeddingUsage.latencyMs || embedMs,
         inputTokens: embeddingUsage.inputTokens,
         totalTokens: embeddingUsage.totalTokens,
         status: 'success',
@@ -181,12 +189,16 @@ export class SearchService {
 
     const dto: SearchAssetsDto = { ...options, query: '' };
     const concurrency = Math.max(1, options.concurrency ?? 6);
+    const vectorStartedAt = Date.now();
     await this.mapWithConcurrency(uncached, concurrency, async (query, i) => {
       const embedding = embeddings[i];
+      const oneVectorStartedAt = Date.now();
       const response = await this.executeSearch(query, limit, dto, {
         embedding: embedding.embedding,
         usage: batchUsage,
       });
+      const vectorMs = Date.now() - oneVectorStartedAt;
+      response.phaseMs = { embedMs, vectorMs };
       const cacheKey = buildSearchCacheKey({ ...options, query });
       await this.redisCache.set(
         cacheKey,
@@ -195,6 +207,13 @@ export class SearchService {
       );
       results.set(query, response);
     });
+    const vectorBatchMs = Date.now() - vectorStartedAt;
+
+    this.logger.log(
+      `searchMany done total=${unique.length} uncached=${uncached.length} ` +
+        `cacheCheckMs=${cacheCheckMs} embedMs=${embedMs} vectorBatchMs=${vectorBatchMs} ` +
+        `concurrency=${concurrency}`,
+    );
 
     return results;
   }

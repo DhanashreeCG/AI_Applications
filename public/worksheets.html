@@ -3197,14 +3197,68 @@
       return state.imageBlobCache.get(resolved) || resolved;
     }
 
+    function isBeforeAfterNumbersStructure(structure) {
+      if (!structure || typeof structure !== 'object') return false;
+      const type = String(structure.worksheet_type || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (type.includes('numbersafterandbefore') || type.includes('afterandbefore')) return true;
+      const items = Array.isArray(structure.items) ? structure.items : [];
+      return items.length > 0 && items.every((item) =>
+        item && typeof item === 'object' && 'blank_position' in item &&
+        (typeof item.number === 'number' || typeof item.number === 'string'));
+    }
+
+    function isMatchThePairsStructure(structure) {
+      if (!structure || typeof structure !== 'object') return false;
+      const type = String(structure.worksheet_type || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (type.includes('matchthepairs') || type === 'matchpairs') return true;
+      if (type.includes('tracing')) return false;
+      const pairs = Array.isArray(structure.pairs) ? structure.pairs : [];
+      return pairs.length > 0 && pairs.every((pair) =>
+        pair && typeof pair === 'object' &&
+        ('left_image' in pair || 'right_image' in pair) && !('size' in pair));
+    }
+
+    /** Structure paths that must show the same image when `path` is edited. */
+    function linkedRepeatedImagePaths(structure, path) {
+      const normalized = String(path || '').trim();
+      if (!normalized || !structure) return normalized ? [normalized] : [];
+
+      if (isBeforeAfterNumbersStructure(structure)) {
+        const itemMatch = normalized.match(/^(items\[\d+\])/);
+        if (itemMatch && Array.isArray(structure.items) && structure.items.length) {
+          return structure.items.map((_, index) => `items[${index}]`);
+        }
+      }
+
+      if (isMatchThePairsStructure(structure)) {
+        const pairMatch = normalized.match(/^pairs\[(\d+)\]\.(left_image|right_image)$/);
+        if (pairMatch) {
+          const index = Number(pairMatch[1]);
+          if (Array.isArray(structure.pairs) && structure.pairs[index]) {
+            return [`pairs[${index}].left_image`, `pairs[${index}].right_image`];
+          }
+        }
+      }
+
+      return [normalized];
+    }
+
     function applyImageInFrame(src, path, slotId) {
       const doc = els.worksheetFrame.contentDocument;
       const abs = previewImageSrc(src) || src;
       if (!doc || !abs) return;
-      const slots = [];
-      doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
-      if (!slots.length && path) {
-        doc.querySelectorAll('img' + cssAttr('data-field-path', path)).forEach((n) => slots.push(n));
+      const structure = state.preview?.structure;
+      const paths = linkedRepeatedImagePaths(structure, path);
+      const pathMatched = [];
+      paths.forEach((linkedPath) => {
+        if (!linkedPath) return;
+        doc.querySelectorAll('img' + cssAttr('data-field-path', linkedPath)).forEach((n) => {
+          if (!pathMatched.includes(n)) pathMatched.push(n);
+        });
+      });
+      const slots = pathMatched.length ? pathMatched.slice() : [];
+      if (!slots.length) {
+        doc.querySelectorAll('[data-ws-target="active"]').forEach((n) => slots.push(n));
       }
       if (!slots.length && slotId) {
         doc.querySelectorAll('img' + cssAttr('data-image-slot', slotId)).forEach((n) => slots.push(n));
@@ -3225,10 +3279,7 @@
       slots.forEach((el) => {
         if (!unique.includes(el)) unique.push(el);
       });
-      const targets = unique.length > 1
-        ? unique.filter((n) => n.getAttribute('data-ws-target') === 'active').slice(0, 1)
-        : unique;
-      targets.forEach((el) => {
+      unique.forEach((el) => {
         if (el.tagName === 'IMG') {
           el.removeAttribute('srcset');
           el.setAttribute('src', abs);
@@ -3247,6 +3298,7 @@
           type: 'worksheet-set-image',
           src: abs,
           path: path || undefined,
+          paths: paths.length ? paths : undefined,
           slotId: slotId || undefined,
         }, '*');
       } catch { }
@@ -3318,8 +3370,17 @@
         file: item.file || null,
       };
       state.pendingImageReplacements[path] = replacement;
+      linkedRepeatedImagePaths(state.preview?.structure, path).forEach((linkedPath) => {
+        if (linkedPath !== path) {
+          state.pendingImageReplacements[linkedPath] = {
+            ...replacement,
+            slotId: linkedPath,
+          };
+        }
+      });
       if (state.preview && state.preview.structure) {
         mergeImageSlot(state.preview.structure, path, replacement);
+        syncRepeatedImageSlotsInStructure(state.preview.structure, path);
       }
       applyImageInFrame(storedUrl, path, replacement.slotId);
       persistPreviewToItems();
@@ -3921,6 +3982,38 @@
       setStructureValue(structure, path, next);
     }
 
+    function syncRepeatedImageSlotsInStructure(structure, editedPath) {
+      const linked = linkedRepeatedImagePaths(structure, editedPath);
+      if (linked.length <= 1) return;
+      let sourcePath = String(editedPath || '').trim();
+      const itemRoot = sourcePath.match(/^(items\[\d+\])/);
+      if (itemRoot && linked[0] && linked[0].startsWith('items[')) {
+        sourcePath = itemRoot[1];
+      }
+      const source = structureValueAt(structure, sourcePath);
+      if (!source || typeof source !== 'object' || Array.isArray(source)) return;
+      const syncKeys = [
+        'assetId', 'assetUrl', 'imageUrl', 'signedUrl',
+        'userUploadedKey', 'imageQuery', 'image_name', 'uploadedImage',
+      ];
+      linked.forEach((path) => {
+        if (path === sourcePath) return;
+        const current = structureValueAt(structure, path);
+        if (!current || typeof current !== 'object' || Array.isArray(current)) return;
+        const next = { ...current };
+        syncKeys.forEach((key) => {
+          if (Object.prototype.hasOwnProperty.call(source, key)) {
+            next[key] = source[key];
+          } else {
+            delete next[key];
+          }
+        });
+        if (source.assetId === null) next.assetId = null;
+        if (!source.userUploadedKey) delete next.userUploadedKey;
+        setStructureValue(structure, path, next);
+      });
+    }
+
     async function saveInlineEdits() {
       const doc = els.worksheetFrame.contentDocument;
       if (!state.preview || !state.preview.structure) return;
@@ -3935,6 +4028,7 @@
       for (const [path, item] of Object.entries(state.pendingImageReplacements)) {
         if (item?.imageUrl || item?.assetId) {
           mergeImageSlot(structure, path, item);
+          syncRepeatedImageSlotsInStructure(structure, path);
         }
       }
       state.pendingImageReplacements = {};

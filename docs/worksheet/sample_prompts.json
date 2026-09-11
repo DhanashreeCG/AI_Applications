@@ -58,5 +58,10 @@
       "templateId": "cmtsdzoj50032ngbgewvpccu6",
       "templateSlug": "Numbers_afterandbefore",
       "prompt": "Create a math worksheet using a 0-10 number line for practicing 'before' numbers with penguin illustrations."
+    },
+    {
+      "templateId": "cmtveqj0x002ltobgwe7d4brc",
+      "templateSlug": "universal_template",
+      "prompt": "Create a fun Grade 2 worksheet about animal sounds with learn, match, and circle activities."
     }
   ]

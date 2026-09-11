@@ -42,4 +42,9 @@ export interface SearchAssetsResponse {
   fromCache?: boolean;
   /** Query-embedding usage for the search call (additive; optional for callers). */
   usage?: SearchEmbeddingUsage;
+  /** Wall-clock phases for this query (batch embed shared across uncached queries). */
+  phaseMs?: {
+    embedMs?: number;
+    vectorMs?: number;
+  };
 }

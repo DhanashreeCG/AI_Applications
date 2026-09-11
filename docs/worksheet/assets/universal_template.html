@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Universal Template</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 1016px;
+      height: 1316px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+    body {
+      position: relative;
+      font-family: 'Toondemy', sans-serif;
+      color: #2a1b4a;
+    }
+    img.worksheet-bg {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1016px;
+      height: 1316px;
+      object-fit: fill;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* FIXED chrome — title (purple banner) */
+    .main-topic {
+      position: absolute;
+      left: 36px;
+      top: 22px;
+      width: 440px;
+      z-index: 6;
+      margin: 0;
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      line-height: 1.05;
+      color: #ffffff;
+      text-shadow: 0 2px 0 rgba(44, 20, 70, 0.28);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    /* FIXED chrome — subtitle (blue banner), lowered for vertical centering */
+    .sub-topic {
+      position: absolute;
+      left: 520px;
+      top: 84px;
+      width: 450px;
+      height: 36px;
+      z-index: 6;
+      margin: 0;
+      padding: 0 12px;
+      box-sizing: border-box;
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 36px;
+      color: #ffffff;
+      text-align: center;
+      text-shadow: 0 1px 2px rgba(30, 90, 130, 0.35);
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    /*
+      DYNAMIC viewport — fills from below chrome to just above
+      Teacher signature / stars (~y=1245 on 1316 canvas).
+      All descendants use border-box so section outlines stay inside the budget.
+    */
+    #content-region,
+    #content-region * {
+      box-sizing: border-box;
+    }
+    #content-region {
+      position: absolute;
+      left: 40px;
+      top: 128px;
+      width: 936px;
+      height: 1104px;
+      z-index: 2;
+      overflow: hidden;
+      padding: 4px 8px 10px;
+      color: #2a1b4a;
+      font-size: 18px;
+      line-height: 1.3;
+    }
+    #content-region .ws-dynamic {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      max-height: 100%;
+      overflow: hidden;
+    }
+    /* Instruction stays natural height; everything else shares leftover space */
+    #content-region .ws-dynamic > .ws-instruction {
+      flex: 0 0 auto;
+      max-height: none;
+      height: auto;
+      overflow: visible;
+    }
+    /*
+      Model often emits height:100% on a root stack beside the injected instruction.
+      Override that — but do NOT set height:auto !important (it blocks flex-grow and
+      leaves a dead gap above the footer while squashing middle sections).
+    */
+    #content-region .ws-dynamic > *:not(.ws-instruction) {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+    /* Activity sections fill leftover height and keep a closed outline */
+    #content-region .ws-dynamic .ws-section,
+    #content-region .ws-dynamic > *:not(.ws-instruction) > section,
+    #content-region .ws-dynamic > *:not(.ws-instruction) > article,
+    #content-region .ws-dynamic > section,
+    #content-region .ws-dynamic > article {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow: hidden;
+    }
+    #content-region .ws-dynamic > .ws-section:last-child,
+    #content-region .ws-dynamic > *:not(.ws-instruction) > .ws-section:last-child {
+      flex: 1 1 0 !important;
+    }
+    /* Image boxes: inline width/height from density clamp win; stay inside section */
+    #content-region .ws-img-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 1;
+      min-width: 64px;
+      min-height: 64px;
+      max-width: min(220px, 100%);
+      max-height: min(220px, 100%);
+      aspect-ratio: 1 / 1;
+      box-sizing: border-box;
+    }
+    #content-region .ws-section .ws-img-box {
+      max-width: min(220px, 100%);
+      max-height: min(220px, 42%);
+    }
+    #content-region img.worksheet-image {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: block;
+      aspect-ratio: 1 / 1;
+      vertical-align: middle;
+    }
+    #content-region .ws-img-box img.worksheet-image {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+    }
+  </style>
+</head>
+<body class="{{BODY_CLASS}}">
+  <img class="worksheet-bg" src="{{BACKGROUND_IMAGE}}" alt="" />
+  <div class="main-topic" data-editable="main_topic">{{main_topic}}</div>
+  <div class="sub-topic" data-editable="sub_topic">{{sub_topic}}</div>
+  <div id="content-region">{{CONTENT_HTML}}</div>
+</body>
+</html>

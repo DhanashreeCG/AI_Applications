@@ -1361,10 +1361,23 @@ export function resolveImageSlot(
   if (indexMatch) {
     const index = Number(indexMatch[1]) - 1;
     return (
+      slots.find((slot) => slot.path === `images[${index}]`) ||
       slots.find((slot) => slot.path === `items[${index}]`) ||
       slots.find((slot) => slot.slotId.toLowerCase() === `item_${index + 1}`) ||
       slots.find((slot) => slot.path.endsWith(`[${index}]`)) ||
       null
+    );
+  }
+  const imagesPathMatch = needle.match(/^images\[(\d+)\]$/);
+  if (imagesPathMatch) {
+    const path = `images[${Number(imagesPathMatch[1])}]`;
+    return (
+      slots.find((slot) => slot.path === path) || {
+        slotId: path,
+        path,
+        assetId: null,
+        imageQuery: '',
+      }
     );
   }
   if (Array.isArray(structure.items)) {

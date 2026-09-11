@@ -10,6 +10,7 @@ export const AUTHORITATIVE_TEMPLATE_IDS: Record<string, string> = {
   tracing: 'cmtqs9cbc002nnobgwtdins9u',
   match_the_pairs: 'cmthcnikx003yrobgnng3y2ka',
   storytime_maze: 'cmts6roz3002n4obgkgehn7e1',
+  universal_template: 'cmtveqj0x002ltobgwe7d4brc',
 };
 
 /**

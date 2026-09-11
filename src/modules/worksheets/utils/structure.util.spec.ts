@@ -6,6 +6,7 @@ import {
   resolveAliasFieldPath,
   resolveAliasImagePath,
   stripLineartFromNonImageFields,
+  syncRepeatedImageSlots,
   unifyBeforeAfterSharedMascot,
   withLineartQuery,
 } from './structure.util';
@@ -39,6 +40,117 @@ describe('unifyBeforeAfterSharedMascot', () => {
     expect(items[0].assetId).toBe('penguin-1');
     expect(items[1].assetId).toBe('penguin-1');
     expect(items[1].assetUrl).toBe('/worksheets/assets/penguin-1/image');
+  });
+
+  it('prefers the edited item when canonicalPath is provided', () => {
+    const next = unifyBeforeAfterSharedMascot(
+      {
+        worksheet_type: 'Numbers_afterandbefore',
+        items: [
+          {
+            id: 'item_1',
+            number: 1,
+            blank_position: 'right',
+            imageQuery: 'cute cartoon penguin',
+            assetId: 'penguin-1',
+          },
+          {
+            id: 'item_2',
+            number: 3,
+            blank_position: 'right',
+            imageQuery: 'orange cat',
+            assetId: 'cat-1',
+          },
+        ],
+      },
+      { canonicalPath: 'items[1]' },
+    );
+    const items = next.items as Array<Record<string, unknown>>;
+    expect(items[0].assetId).toBe('cat-1');
+    expect(items[1].assetId).toBe('cat-1');
+    expect(items[0].imageQuery).toBe('orange cat');
+  });
+});
+
+describe('syncRepeatedImageSlots', () => {
+  it('mirrors left_image onto right_image for match_the_pairs', () => {
+    const next = syncRepeatedImageSlots(
+      {
+        worksheet_type: 'match_the_pairs',
+        pairs: [
+          {
+            id: 'pair_1',
+            label: 'mars',
+            left_image: {
+              imageQuery: 'red planet',
+              assetId: 'mars-new',
+              assetUrl: '/assets/mars-new',
+            },
+            right_image: {
+              imageQuery: 'red planet',
+              assetId: 'mars-old',
+              assetUrl: '/assets/mars-old',
+            },
+          },
+        ],
+      },
+      'pairs[0].left_image',
+    );
+    const pair = (next.pairs as Array<Record<string, unknown>>)[0];
+    expect(pair.right_image).toEqual({
+      imageQuery: 'red planet',
+      assetId: 'mars-new',
+      assetUrl: '/assets/mars-new',
+    });
+  });
+
+  it('copies the edited before/after mascot onto every item', () => {
+    const next = syncRepeatedImageSlots(
+      {
+        worksheet_type: 'Numbers_afterandbefore',
+        items: [
+          {
+            id: 'item_1',
+            number: 1,
+            blank_position: 'right',
+            imageQuery: 'penguin',
+            assetId: 'old',
+          },
+          {
+            id: 'item_2',
+            number: 2,
+            blank_position: 'left',
+            imageQuery: 'cat',
+            assetId: 'new-cat',
+            assetUrl: '/cat.png',
+          },
+        ],
+      },
+      'items[1]',
+    );
+    const items = next.items as Array<Record<string, unknown>>;
+    expect(items[0].assetId).toBe('new-cat');
+    expect(items[0].imageQuery).toBe('cat');
+    expect(items[0].assetUrl).toBe('/cat.png');
+    expect(items[0].number).toBe(1);
+    expect(items[1].assetId).toBe('new-cat');
+  });
+
+  it('does not mirror tracing pair images', () => {
+    const structure = {
+      worksheet_type: 'tracing',
+      pairs: [
+        {
+          id: 'pair_1',
+          size: 'big',
+          left_image: { imageQuery: 'big bird', assetId: 'bird' },
+          right_image: { imageQuery: 'big nest', assetId: 'nest' },
+        },
+      ],
+    };
+    const next = syncRepeatedImageSlots(structure, 'pairs[0].left_image');
+    const pair = (next.pairs as Array<Record<string, unknown>>)[0];
+    expect((pair.right_image as { assetId: string }).assetId).toBe('nest');
   });
 });
 

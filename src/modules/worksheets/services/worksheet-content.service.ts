@@ -21,7 +21,7 @@ import {
   buildWorksheetGrammarPrompt,
 } from '../constants/worksheet-prompt.constants';
 import { WorksheetException } from '../errors/worksheet.exception';
-import { GenerateWorksheetRequest } from '../types/worksheet.types';
+import { GenerateWorksheetRequest, WorksheetAiConfig } from '../types/worksheet.types';
 import {
   WorksheetPipelineEmitter,
   hashPayload,
@@ -29,7 +29,21 @@ import {
 } from '../telemetry/worksheet-pipeline.events';
 import { WorksheetTemplateRecord } from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
-import { normalizeLlmWorksheetPayload } from '../utils/structure.util';
+import { normalizeLlmWorksheetPayload, parseJsonObject } from '../utils/structure.util';
+
+function readContentRegion(
+  rendererConfig: unknown,
+): { width?: number; height?: number; left?: number; top?: number } | null {
+  const cfg = parseJsonObject(rendererConfig);
+  const region = parseJsonObject(cfg?.contentRegion);
+  if (!region) return null;
+  return {
+    left: typeof region.left === 'number' ? region.left : undefined,
+    top: typeof region.top === 'number' ? region.top : undefined,
+    width: typeof region.width === 'number' ? region.width : undefined,
+    height: typeof region.height === 'number' ? region.height : undefined,
+  };
+}
 
 @Injectable()
 export class WorksheetContentService {
@@ -100,6 +114,7 @@ export class WorksheetContentService {
             systemPrompt: extras?.systemPrompt,
             currentStructure: extras?.currentStructure,
             adaptationNote: template.selectionProfile?.adaptationNote ?? null,
+            contentRegion: readContentRegion(template.rendererConfig),
           }),
         {
           completeMetadata: {
@@ -110,10 +125,17 @@ export class WorksheetContentService {
         },
       );
 
+      const contentModel = this.resolveContentModel(template);
+      if (contentModel !== this.modelName) {
+        this.logger.log(
+          `using dedicated content model=${contentModel} slug=${template.slug}`,
+        );
+      }
       const parsed = await this.generateJson(
         prompt,
         extras?.stage || WORKSHEET_CONTENT_STAGE,
         telemetry,
+        contentModel,
       );
 
       let rawItems = normalizeLlmWorksheetPayload(parsed, targetCount);
@@ -320,6 +342,7 @@ export class WorksheetContentService {
     prompt: string,
     stage: string,
     telemetry?: PipelineTelemetryContext,
+    modelOverride?: string | null,
   ): Promise<unknown> {
     if (!this.client) {
       throw new WorksheetException(
@@ -329,19 +352,23 @@ export class WorksheetContentService {
       );
     }
 
+    const model =
+      (typeof modelOverride === 'string' && modelOverride.trim()) ||
+      this.modelName;
+
     const invocationId = randomUUID();
     if (telemetry) {
       this.emitter.emitStageStarted({
         ...telemetry,
         stageName: PIPELINE_STAGES.LLM_REQUEST,
-        metadata: { purpose: stage },
+        metadata: { purpose: stage, model },
       });
       this.emitter.emitAiStarted({
         ...telemetry,
         invocationId,
         stageName: PIPELINE_STAGES.LLM_REQUEST,
         provider: 'google-gemini',
-        model: this.modelName,
+        model,
         purpose: stage,
         promptHash: hashPayload(prompt),
         promptPayload: prompt,
@@ -354,7 +381,7 @@ export class WorksheetContentService {
 
     try {
       const response = await this.client.models.generateContent({
-        model: this.modelName,
+        model,
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           responseMimeType: 'application/json',
@@ -372,7 +399,7 @@ export class WorksheetContentService {
       await this.aiUsageService.record({
         stage,
         provider: 'google-gemini',
-        model: this.modelName,
+        model,
         requestId: (response as { responseId?: string }).responseId,
         startedAt,
         completedAt: new Date(),
@@ -419,6 +446,7 @@ export class WorksheetContentService {
           stageName: PIPELINE_STAGES.LLM_REQUEST,
           metadata: {
             purpose: stage,
+            model,
             inputTokens,
             outputTokens,
             totalTokens,
@@ -449,7 +477,7 @@ export class WorksheetContentService {
         await this.aiUsageService.record({
           stage,
           provider: 'google-gemini',
-          model: this.modelName,
+          model,
           startedAt,
           completedAt: new Date(),
           latencyMs: Date.now() - startedAt.getTime(),
@@ -466,5 +494,46 @@ export class WorksheetContentService {
         HttpStatus.BAD_GATEWAY,
       );
     }
+  }
+
+  private resolveContentModel(template: WorksheetTemplateRecord): string {
+    const isUniversal =
+      template.slug === 'universal_template' || template.slug === 'universal';
+    if (!isUniversal) {
+      return this.modelName;
+    }
+
+    // 1) Explicit env always wins (so .env changes take effect after restart)
+    const envDedicated = process.env.WORKSHEET_UNIVERSAL_GEMINI_MODEL?.trim();
+    if (envDedicated) {
+      return envDedicated;
+    }
+
+    // 2) Config default chain: UNIVERSAL env → WORKSHEET_GEMINI_MODEL → flash
+    const configured = this.configService
+      .get<string>('worksheets.universalGeminiModel')
+      ?.trim();
+    if (configured) {
+      return configured;
+    }
+
+    // Never use DB aiConfig.contentModel for universal — it silently overrode
+    // env/config in production. Opt-in only via explicit allow flag.
+    const allowDb =
+      process.env.WORKSHEET_UNIVERSAL_ALLOW_DB_MODEL?.trim().toLowerCase() ===
+      'true';
+    if (allowDb) {
+      const aiConfig = (parseJsonObject(template.aiConfig) ??
+        {}) as WorksheetAiConfig;
+      const fromTemplate =
+        typeof aiConfig.contentModel === 'string'
+          ? aiConfig.contentModel.trim()
+          : '';
+      if (fromTemplate) {
+        return fromTemplate;
+      }
+    }
+
+    return this.modelName;
   }
 }
