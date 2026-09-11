@@ -151,7 +151,7 @@ export function buildWorksheetContentPrompt(input: {
   const viewportW =
     input.contentRegion?.width ?? (isUniversal ? 936 : 920);
   const viewportH =
-    input.contentRegion?.height ?? (isUniversal ? 1040 : 930);
+    input.contentRegion?.height ?? (isUniversal ? 1104 : 930);
 
   return [
     input.systemPrompt?.trim() ||
@@ -333,10 +333,10 @@ export function buildWorksheetContentPrompt(input: {
           '  • Do NOT include Name/Date fields (removed from this template)',
           '',
           `CONTENT VIEWPORT BUDGET: exactly ${viewportW}px wide × ${viewportH}px tall (ONE printable page — nothing below Teacher signature).`,
-          '  • Root of content_html MUST be ONE container: height:100%;width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;overflow:hidden;',
-          '  • HARD RULE: every section, label, and {{IMAGE_N}} you emit MUST be fully visible inside this viewport. If it would clip, use a denser layout (grids) or fewer/smaller cards — NEVER spill below the fold.',
-          '  • FILL ~95–100% of the height. Forbidden: large empty white bands above the footer, sparse pages with only 1–2 oversized cards, overflow/scroll/clipping of the last outline.',
-          '  • LAST ACTIVITY OUTLINE MUST CLOSE: give the final section a complete bottom border that sits near the bottom of the viewport (use flex:1 on activity sections so they stretch). Do not leave a cut-off box floating above the Teacher signature.',
+          '  • Root of content_html MUST be ONE container: width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:10px; (do NOT set height:100%, max-height:100%, or overflow:hidden — the host already constrains height).',
+          '  • HARD RULE: every section outline (all four sides + rounded corners), label, and {{IMAGE_N}} MUST be fully visible inside this viewport. Never clip a section border.',
+          '  • FILL the viewport top-to-bottom (sections share height with flex:1). Forbidden: large empty white bands above Teacher signature, sparse pages, or clipping images inside a section.',
+          '  • LAST ACTIVITY OUTLINE MUST CLOSE near the bottom of the viewport: every activity section uses flex:1 1 0;min-height:0;box-sizing:border-box with a FULL border (all four sides). Never crop images with overflow — size boxes to fit.',
           '  • Prefer 2–4 numbered activity SECTIONS with distinct pastel borders (green / purple / blue / pink / orange).',
           '  • Colour/trace or multi-card sets: if you plan 4 cards, use a 2×2 grid (not 2 huge stacked cards that hide the rest). 6 cards → 2×3 or 3×2. Match image count to what fits on ONE page.',
           '',

@@ -72,18 +72,22 @@
 
     /*
       DYNAMIC viewport — fills from below chrome to just above
-      yellow footer / Teacher signature (ends ~ y=1168).
+      Teacher signature / stars (~y=1245 on 1316 canvas).
+      All descendants use border-box so section outlines stay inside the budget.
     */
+    #content-region,
+    #content-region * {
+      box-sizing: border-box;
+    }
     #content-region {
       position: absolute;
       left: 40px;
       top: 128px;
       width: 936px;
-      height: 1040px;
+      height: 1104px;
       z-index: 2;
       overflow: hidden;
-      box-sizing: border-box;
-      padding: 4px 8px 8px;
+      padding: 4px 8px 10px;
       color: #2a1b4a;
       font-size: 18px;
       line-height: 1.3;
@@ -94,19 +98,41 @@
       gap: 10px;
       width: 100%;
       height: 100%;
-      min-height: 100%;
+      min-height: 0;
       max-height: 100%;
-      box-sizing: border-box;
       overflow: hidden;
     }
-    /* Stretch activity sections so the last outline closes at the bottom */
+    /* Instruction stays natural height; everything else shares leftover space */
     #content-region .ws-dynamic > .ws-instruction {
       flex: 0 0 auto;
+      max-height: none;
+      height: auto;
+      overflow: visible;
     }
+    /*
+      Model often emits height:100% on a root stack beside the injected instruction.
+      Override that — but do NOT set height:auto !important (it blocks flex-grow and
+      leaves a dead gap above the footer while squashing middle sections).
+    */
     #content-region .ws-dynamic > *:not(.ws-instruction) {
-      flex: 1 1 0;
-      min-height: 0;
-      box-sizing: border-box;
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+    /* Activity sections fill leftover height and keep a closed outline */
+    #content-region .ws-dynamic .ws-section,
+    #content-region .ws-dynamic > *:not(.ws-instruction) > section,
+    #content-region .ws-dynamic > *:not(.ws-instruction) > article,
+    #content-region .ws-dynamic > section,
+    #content-region .ws-dynamic > article {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow: hidden;
     }
     /* Source assets are 500×500 1:1 — prefer sized .ws-img-box; fallback 120px square */
     #content-region .ws-img-box {
@@ -114,9 +140,11 @@
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      flex-shrink: 0;
+      flex-shrink: 1;
+      min-width: 0;
+      min-height: 0;
+      max-height: 100%;
       aspect-ratio: 1 / 1;
-      box-sizing: border-box;
     }
     #content-region img.worksheet-image {
       width: 120px;

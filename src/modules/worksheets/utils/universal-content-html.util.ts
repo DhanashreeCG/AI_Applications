@@ -178,20 +178,317 @@ const SAFE_STYLE_PROPS = new Set([
   'aspect-ratio',
 ]);
 
-function sanitizeStyleValue(raw: string): string {
-  const decoded = decodeBasicEntities(raw).trim();
-  const parts: string[] = [];
-  for (const chunk of decoded.split(';')) {
+function parseStyleMap(raw: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const chunk of raw.split(';')) {
     const idx = chunk.indexOf(':');
     if (idx <= 0) continue;
     const prop = chunk.slice(0, idx).trim().toLowerCase();
     const val = chunk.slice(idx + 1).trim();
+    if (prop && val) map.set(prop, val);
+  }
+  return map;
+}
+
+function styleMapToString(map: Map<string, string>): string {
+  return [...map.entries()].map(([prop, val]) => `${prop}:${val}`).join(';');
+}
+
+/**
+ * Drop height:100% / max-height:100% — those fight the host flex budget when an
+ * instruction sibling is injected and clip the last section's bottom border.
+ */
+function scrubViewportFightingStyles(map: Map<string, string>): void {
+  for (const prop of ['height', 'max-height', 'min-height'] as const) {
+    const val = map.get(prop);
+    if (!val) continue;
+    if (/^100%$|^100vh$|^100dvh$/i.test(val.trim())) {
+      map.delete(prop);
+    }
+  }
+  map.set('box-sizing', 'border-box');
+}
+
+function ensureCompleteBorder(map: Map<string, string>): void {
+  if (map.has('border') || map.has('border-bottom')) return;
+  const edge =
+    map.get('border-top') || map.get('border-left') || map.get('border-right');
+  if (edge) map.set('border-bottom', edge);
+}
+
+function sanitizeStyleValue(raw: string): string {
+  const decoded = decodeBasicEntities(raw).trim();
+  const map = parseStyleMap(decoded);
+  const parts: string[] = [];
+  for (const [prop, val] of map) {
     if (!SAFE_STYLE_PROPS.has(prop) || !val) continue;
     if (/expression\s*\(|javascript:|url\s*\(/i.test(val)) continue;
     if (prop === 'position' && !/^(static|relative|absolute)$/i.test(val)) continue;
     parts.push(`${prop}:${val}`);
   }
   return parts.join(';');
+}
+
+function hasBorderStyle(style: string): boolean {
+  return /(?:^|;|\s|=|"|')\s*border(?:-top|-right|-left|-bottom)?\s*:/i.test(
+    style,
+  );
+}
+
+function mergeClassAttr(existing: string | null, extra: string): string {
+  const tokens = new Set(
+    `${existing ?? ''} ${extra}`
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter(Boolean),
+  );
+  return [...tokens].join(' ');
+}
+
+/**
+ * Find the matching closing tag index for an open tag at `openEnd`
+ * (index just after `>` of the opening tag). Returns index of `</tag>`.
+ */
+function findMatchingCloseTag(
+  html: string,
+  tag: string,
+  openEnd: number,
+): number {
+  const openRe = new RegExp(`<${tag}\\b[^>]*>`, 'gi');
+  const closeRe = new RegExp(`</${tag}\\s*>`, 'gi');
+  let depth = 1;
+  let cursor = openEnd;
+  while (cursor < html.length && depth > 0) {
+    openRe.lastIndex = cursor;
+    closeRe.lastIndex = cursor;
+    const openM = openRe.exec(html);
+    const closeM = closeRe.exec(html);
+    const openAt = openM ? openM.index : Number.POSITIVE_INFINITY;
+    const closeAt = closeM ? closeM.index : Number.POSITIVE_INFINITY;
+    if (closeAt === Number.POSITIVE_INFINITY) return -1;
+    if (openAt < closeAt) {
+      depth += 1;
+      cursor = openAt + (openM as RegExpExecArray)[0].length;
+    } else {
+      depth -= 1;
+      if (depth === 0) return closeAt;
+      cursor = closeAt + (closeM as RegExpExecArray)[0].length;
+    }
+  }
+  return -1;
+}
+
+type TopBlock = {
+  full: string;
+  tag: string;
+  openTag: string;
+  inner: string;
+  attrs: string;
+};
+
+function splitTopLevelElementBlocks(html: string): TopBlock[] {
+  const blocks: TopBlock[] = [];
+  const s = html.trim();
+  let i = 0;
+  while (i < s.length) {
+    while (i < s.length && /\s/.test(s[i])) i += 1;
+    if (i >= s.length) break;
+    if (s.startsWith('<!--', i)) {
+      const end = s.indexOf('-->', i);
+      i = end < 0 ? s.length : end + 3;
+      continue;
+    }
+    if (s[i] !== '<') {
+      while (i < s.length && s[i] !== '<') i += 1;
+      continue;
+    }
+    const openMatch = s
+      .slice(i)
+      .match(/^<([a-zA-Z][\w-]*)\b([^>]*)>/);
+    if (!openMatch) {
+      i += 1;
+      continue;
+    }
+    const tag = openMatch[1].toLowerCase();
+    const attrs = openMatch[2] || '';
+    const openTag = openMatch[0];
+    const openEnd = i + openTag.length;
+    if (VOID_TAGS.has(tag) || /\/\s*>$/.test(openTag)) {
+      blocks.push({ full: openTag, tag, openTag, inner: '', attrs });
+      i = openEnd;
+      continue;
+    }
+    const closeAt = findMatchingCloseTag(s, tag, openEnd);
+    if (closeAt < 0) {
+      blocks.push({ full: openTag, tag, openTag, inner: '', attrs });
+      i = openEnd;
+      continue;
+    }
+    const closeMatch = s.slice(closeAt).match(new RegExp(`^</${tag}\\s*>`, 'i'));
+    const closeLen = closeMatch ? closeMatch[0].length : tag.length + 3;
+    const full = s.slice(i, closeAt + closeLen);
+    const inner = s.slice(openEnd, closeAt);
+    blocks.push({ full, tag, openTag, inner, attrs });
+    i = closeAt + closeLen;
+  }
+  return blocks;
+}
+
+function rewriteOpenTag(
+  tag: string,
+  attrs: string,
+  stylePatch: (style: string) => string,
+  classExtra?: string,
+): string {
+  let nextAttrs = attrs;
+  let style = '';
+  const styleMatch = attrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
+  if (styleMatch) {
+    style = styleMatch[2] ?? styleMatch[3] ?? '';
+    nextAttrs = nextAttrs.replace(styleMatch[0], '');
+  }
+  const patched = stylePatch(style);
+  if (patched) nextAttrs += ` style="${escapeAttr(patched)}"`;
+
+  if (classExtra) {
+    const classMatch = nextAttrs.match(/\sclass\s*=\s*("([^"]*)"|'([^']*)')/i);
+    if (classMatch) {
+      const merged = mergeClassAttr(classMatch[2] ?? classMatch[3], classExtra);
+      nextAttrs = nextAttrs.replace(
+        classMatch[0],
+        ` class="${escapeAttr(merged)}"`,
+      );
+    } else {
+      nextAttrs += ` class="${escapeAttr(classExtra)}"`;
+    }
+  }
+  return `<${tag}${nextAttrs}>`;
+}
+
+function isInstructionBlock(block: TopBlock): boolean {
+  return /\bws-instruction\b/i.test(block.attrs) || /\bws-instruction\b/i.test(block.openTag);
+}
+
+function isActivitySectionBlock(block: TopBlock): boolean {
+  if (isInstructionBlock(block)) return false;
+  if (block.tag === 'section' || block.tag === 'article') return true;
+  if (/\bws-section\b/i.test(block.attrs)) return true;
+  if (hasBorderStyle(block.attrs) || hasBorderStyle(block.openTag)) return true;
+  const styleMatch = block.attrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
+  const style = styleMatch?.[2] ?? styleMatch?.[3] ?? '';
+  return hasBorderStyle(`style="${style}"`) || hasBorderStyle(style);
+}
+
+function fitSectionOrStackStyle(rawStyle: string, kind: 'section' | 'stack'): string {
+  const map = parseStyleMap(rawStyle);
+  scrubViewportFightingStyles(map);
+  map.set('flex', '1 1 0');
+  map.set('min-height', '0');
+  map.set('overflow', 'hidden');
+  // Let the host flex algorithm assign height — fixed/percent heights leave a
+  // dead gap above the footer and squash middle sections.
+  map.delete('height');
+  map.delete('max-height');
+  if (kind === 'stack') {
+    if (!map.has('display')) map.set('display', 'flex');
+    if (!map.has('flex-direction')) map.set('flex-direction', 'column');
+    if (!map.has('gap')) map.set('gap', '10px');
+    if (!map.has('width')) map.set('width', '100%');
+  } else {
+    ensureCompleteBorder(map);
+  }
+  return styleMapToString(map);
+}
+
+function retagBlock(block: TopBlock, kind: 'section' | 'stack'): string {
+  const open = rewriteOpenTag(
+    block.tag,
+    block.attrs,
+    (style) => fitSectionOrStackStyle(style, kind),
+    kind === 'section' ? 'ws-section' : 'ws-stack',
+  );
+  return `${open}${block.inner}</${block.tag}>`;
+}
+
+/**
+ * Force activity sections to share the viewport and keep closed outlines.
+ * Fixes clipped last-section borders when model HTML uses height:100% + overflow.
+ */
+export function fitUniversalContentLayout(html: string): string {
+  if (!html || !html.trim()) return html;
+  let blocks = splitTopLevelElementBlocks(html);
+  if (!blocks.length) return html;
+
+  // Unwrap a single non-instruction column root so sections become host flex children.
+  if (blocks.length === 1 && !isInstructionBlock(blocks[0])) {
+    const root = blocks[0];
+    const innerBlocks = splitTopLevelElementBlocks(root.inner);
+    const sectionKids = innerBlocks.filter((b) => isActivitySectionBlock(b));
+    if (sectionKids.length >= 2) {
+      blocks = innerBlocks;
+    } else if (sectionKids.length === 0 && isActivitySectionBlock(root)) {
+      return retagBlock(root, 'section');
+    } else {
+      const fittedInner = (innerBlocks.length ? innerBlocks : [])
+        .map((child) => {
+          if (isInstructionBlock(child)) return child.full;
+          if (isActivitySectionBlock(child)) return retagBlock(child, 'section');
+          return child.full;
+        })
+        .join('');
+      const open = rewriteOpenTag(
+        root.tag,
+        root.attrs,
+        (style) => fitSectionOrStackStyle(style, 'stack'),
+        'ws-stack',
+      );
+      return `${open}${fittedInner || root.inner}</${root.tag}>`;
+    }
+  }
+
+  return blocks
+    .map((block) => {
+      if (isInstructionBlock(block)) {
+        const open = rewriteOpenTag(block.tag, block.attrs, (style) => {
+          const map = parseStyleMap(style);
+          scrubViewportFightingStyles(map);
+          map.set('flex', '0 0 auto');
+          map.delete('overflow');
+          return styleMapToString(map);
+        }, 'ws-instruction');
+        return `${open}${block.inner}</${block.tag}>`;
+      }
+      if (isActivitySectionBlock(block)) {
+        return retagBlock(block, 'section');
+      }
+      // Nested stack (model root kept) — still scrub height:100%.
+      if (block.tag === 'div' || block.tag === 'section') {
+        const innerBlocks = splitTopLevelElementBlocks(block.inner);
+        if (innerBlocks.some((b) => isActivitySectionBlock(b))) {
+          const fittedInner = innerBlocks
+            .map((child) =>
+              isActivitySectionBlock(child)
+                ? retagBlock(child, 'section')
+                : child.full,
+            )
+            .join('');
+          const open = rewriteOpenTag(
+            block.tag,
+            block.attrs,
+            (style) => fitSectionOrStackStyle(style, 'stack'),
+            'ws-stack',
+          );
+          return `${open}${fittedInner}</${block.tag}>`;
+        }
+      }
+      const open = rewriteOpenTag(block.tag, block.attrs, (style) => {
+        const map = parseStyleMap(style);
+        scrubViewportFightingStyles(map);
+        return styleMapToString(map);
+      });
+      return `${open}${block.inner}</${block.tag}>`;
+    })
+    .join('');
 }
 
 function sanitizeClassValue(raw: string): string {
@@ -413,6 +710,7 @@ export function buildUniversalSkeletonHtml(
   let fragment = expandUniversalImagePlaceholders(
     sanitizeUniversalContentHtml(String(normalized.content_html || '')),
   );
+  fragment = fitUniversalContentLayout(fragment);
 
   if (instruction) {
     const already =
@@ -427,9 +725,12 @@ export function buildUniversalSkeletonHtml(
     }
   }
 
+  // Re-fit after instruction injection so top-level sections stay host flex children.
+  fragment = fitUniversalContentLayout(fragment);
+
   // Full-height flex host so activity sections can stretch and close above footer.
   return (
-    `<div class="ws-dynamic" style="display:flex;flex-direction:column;gap:10px;width:100%;height:100%;min-height:100%;max-height:100%;box-sizing:border-box;overflow:hidden;">` +
+    `<div class="ws-dynamic" style="display:flex;flex-direction:column;gap:10px;width:100%;height:100%;min-height:0;max-height:100%;box-sizing:border-box;overflow:hidden;">` +
     fragment +
     `</div>`
   );
