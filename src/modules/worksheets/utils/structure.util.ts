@@ -339,12 +339,160 @@ export function isBeforeAfterNumbersWorksheet(
   );
 }
 
+/** Image fields copied when syncing repeated template slots. */
+const REPEATED_IMAGE_SYNC_KEYS = [
+  'assetId',
+  'assetUrl',
+  'imageUrl',
+  'signedUrl',
+  'userUploadedKey',
+  'imageQuery',
+  'image_name',
+  'uploadedImage',
+] as const;
+
+/**
+ * match_the_pairs uses identical left/right images per pair (shuffled columns).
+ * tracing also has left_image/right_image but those must stay independent.
+ */
+export function isMatchThePairsWorksheet(
+  structure: Record<string, unknown>,
+): boolean {
+  const type = String(structure.worksheet_type ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  if (type.includes('matchthepairs') || type === 'matchpairs') {
+    return true;
+  }
+  if (type.includes('tracing')) {
+    return false;
+  }
+  const pairs = Array.isArray(structure.pairs) ? structure.pairs : [];
+  if (pairs.length === 0) {
+    return false;
+  }
+  return pairs.every(
+    (pair) =>
+      isRecord(pair) &&
+      ('left_image' in pair || 'right_image' in pair) &&
+      !('size' in pair),
+  );
+}
+
+/**
+ * Paths that must show the same image when `path` is edited.
+ * - numbers_after_and_before: all items[] share one mascot
+ * - match_the_pairs: left_image ↔ right_image within the same pair
+ * - picture_graph: one structure slot painted in multiple DOM places (no extra paths)
+ */
+export function linkedRepeatedImagePaths(
+  structure: Record<string, unknown>,
+  path: string,
+): string[] {
+  const normalized = path.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  if (isBeforeAfterNumbersWorksheet(structure)) {
+    const itemMatch = normalized.match(/^(items\[\d+\])/);
+    if (itemMatch) {
+      const items = Array.isArray(structure.items) ? structure.items : [];
+      if (items.length > 0) {
+        return items.map((_, index) => `items[${index}]`);
+      }
+    }
+  }
+
+  if (isMatchThePairsWorksheet(structure)) {
+    const pairMatch = normalized.match(
+      /^pairs\[(\d+)\]\.(left_image|right_image)$/,
+    );
+    if (pairMatch) {
+      const index = Number(pairMatch[1]);
+      const pairs = Array.isArray(structure.pairs) ? structure.pairs : [];
+      if (index >= 0 && index < pairs.length && isRecord(pairs[index])) {
+        return [
+          `pairs[${index}].left_image`,
+          `pairs[${index}].right_image`,
+        ];
+      }
+    }
+  }
+
+  return [normalized];
+}
+
+/**
+ * After a user replaces one repeated image, copy its image fields onto every
+ * linked slot so structure + subsequent renders stay consistent.
+ */
+export function syncRepeatedImageSlots(
+  structure: Record<string, unknown>,
+  editedPath: string,
+): Record<string, unknown> {
+  const linked = linkedRepeatedImagePaths(structure, editedPath);
+  if (linked.length <= 1) {
+    return structure;
+  }
+
+  let sourcePath = editedPath.trim();
+  const itemRoot = sourcePath.match(/^(items\[\d+\])/);
+  if (itemRoot && linked[0]?.startsWith('items[')) {
+    sourcePath = itemRoot[1];
+  }
+
+  let source: Record<string, unknown>;
+  try {
+    const value = getValueAtPath(structure, sourcePath);
+    if (!isRecord(value)) {
+      return structure;
+    }
+    source = value;
+  } catch {
+    return structure;
+  }
+
+  let next = structure;
+  for (const path of linked) {
+    if (path === sourcePath) {
+      continue;
+    }
+    try {
+      const current = getValueAtPath(next, path);
+      if (!isRecord(current)) {
+        continue;
+      }
+      const patched: Record<string, unknown> = { ...current };
+      for (const key of REPEATED_IMAGE_SYNC_KEYS) {
+        if (key in source) {
+          patched[key] = source[key];
+        } else {
+          delete patched[key];
+        }
+      }
+      if (source.assetId === null) {
+        patched.assetId = null;
+      }
+      if (!source.userUploadedKey) {
+        delete patched.userUploadedKey;
+      }
+      next = setValueAtPath(next, path, patched);
+    } catch {
+      // Skip missing sibling slots.
+    }
+  }
+  return next;
+}
+
 /**
  * Before/after grids use one repeated mascot between every circle pair.
- * Collapse divergent item imageQueries / assetIds onto the first usable slot.
+ * Collapse divergent item imageQueries / assetIds onto a canonical slot
+ * (edited path when provided, otherwise the first usable slot).
  */
 export function unifyBeforeAfterSharedMascot(
   structure: Record<string, unknown>,
+  options?: { canonicalPath?: string },
 ): Record<string, unknown> {
   if (!isBeforeAfterNumbersWorksheet(structure)) {
     return structure;
@@ -355,26 +503,36 @@ export function unifyBeforeAfterSharedMascot(
   }
 
   let canonical: Record<string, unknown> | null = null;
-  let fallback: Record<string, unknown> | null = null;
-  for (const item of items) {
-    if (!isRecord(item)) {
-      continue;
-    }
-    const hasAsset =
-      (typeof item.assetId === 'string' && item.assetId.trim() !== '') ||
-      (typeof item.assetUrl === 'string' && item.assetUrl.trim() !== '') ||
-      (typeof item.imageUrl === 'string' && item.imageUrl.trim() !== '') ||
-      (typeof item.signedUrl === 'string' && item.signedUrl.trim() !== '');
-    const query = visualQueryFromImageRecord(item);
-    if (hasAsset) {
+  const canonicalMatch = options?.canonicalPath?.trim().match(/^items\[(\d+)\]/);
+  if (canonicalMatch) {
+    const item = items[Number(canonicalMatch[1])];
+    if (isRecord(item)) {
       canonical = item;
-      break;
-    }
-    if (!fallback && query) {
-      fallback = item;
     }
   }
-  canonical = canonical ?? fallback;
+
+  let fallback: Record<string, unknown> | null = null;
+  if (!canonical) {
+    for (const item of items) {
+      if (!isRecord(item)) {
+        continue;
+      }
+      const hasAsset =
+        (typeof item.assetId === 'string' && item.assetId.trim() !== '') ||
+        (typeof item.assetUrl === 'string' && item.assetUrl.trim() !== '') ||
+        (typeof item.imageUrl === 'string' && item.imageUrl.trim() !== '') ||
+        (typeof item.signedUrl === 'string' && item.signedUrl.trim() !== '');
+      const query = visualQueryFromImageRecord(item);
+      if (hasAsset) {
+        canonical = item;
+        break;
+      }
+      if (!fallback && query) {
+        fallback = item;
+      }
+    }
+    canonical = canonical ?? fallback;
+  }
   if (!canonical) {
     return structure;
   }
@@ -404,10 +562,17 @@ export function unifyBeforeAfterSharedMascot(
         'assetUrl',
         'imageUrl',
         'signedUrl',
+        'userUploadedKey',
       ] as const) {
-        const value = canonical![key];
-        if (typeof value === 'string' && value.trim() !== '') {
-          next[key] = value;
+        if (key in canonical!) {
+          const value = canonical![key];
+          if (value === null || (typeof value === 'string' && value.trim() !== '')) {
+            next[key] = value;
+          } else if (value === undefined || value === '') {
+            delete next[key];
+          }
+        } else {
+          delete next[key];
         }
       }
       return next;

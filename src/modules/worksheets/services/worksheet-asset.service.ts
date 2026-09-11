@@ -27,9 +27,11 @@ import {
 import {
   collectImageQueries,
   isAnswerAndColourSlug,
+  linkedRepeatedImagePaths,
   normalizeImageQueryFields,
   patchImageSlot,
   stripLineartFromNonImageFields,
+  syncRepeatedImageSlots,
   withLineartQuery,
   setUserUploadedImageIndex,
   setValueAtPath,
@@ -613,9 +615,12 @@ export class WorksheetAssetService {
       assetId,
       userUploadedKey: '',
     });
-    return this.persistableStructure(
-      setUserUploadedImageIndex(withSlot, path, null),
-    );
+    const synced = syncRepeatedImageSlots(withSlot, path);
+    let next = synced;
+    for (const linked of linkedRepeatedImagePaths(synced, path)) {
+      next = setUserUploadedImageIndex(next, linked, null);
+    }
+    return this.persistableStructure(next);
   }
 
   public applyUserUploadedImage(
@@ -627,12 +632,15 @@ export class WorksheetAssetService {
       assetId: null,
       userUploadedKey: upload.key,
     });
-    return this.persistableStructure(
-      setUserUploadedImageIndex(withSlot, path, {
+    const synced = syncRepeatedImageSlots(withSlot, path);
+    let next = synced;
+    for (const linked of linkedRepeatedImagePaths(synced, path)) {
+      next = setUserUploadedImageIndex(next, linked, {
         key: upload.key,
         contentType: upload.contentType,
-      }),
-    );
+      });
+    }
+    return this.persistableStructure(next);
   }
 
   public userUploadProxyUrl(worksheetId: string, uploadId: string): string {

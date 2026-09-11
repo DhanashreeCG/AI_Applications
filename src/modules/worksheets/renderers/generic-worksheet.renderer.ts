@@ -113,20 +113,33 @@ const EDITOR_BRIDGE = `
       if (!el) return null;
       return el.tagName === 'IMG' ? el : (el.querySelector && el.querySelector('img'));
     }
-    var node = asImg(document.querySelector('[data-ws-target="active"]'));
-    if (!node && data.path) {
-      var byPath = document.querySelectorAll('img' + cssAttr('data-field-path', data.path));
-      node = byPath.length === 1 ? byPath[0] : asImg(document.querySelector('[data-ws-target="active"]'));
-      if (!node && byPath.length) node = byPath[0];
+    var targets = [];
+    function pushTargets(list) {
+      for (var i = 0; i < list.length; i += 1) {
+        var img = asImg(list[i]);
+        if (img && targets.indexOf(img) < 0) targets.push(img);
+      }
     }
-    if (!node && data.slotId) {
-      var bySlot = document.querySelectorAll('img' + cssAttr('data-image-slot', data.slotId));
-      if (bySlot.length === 1) node = bySlot[0];
+    var paths = Array.isArray(data.paths) && data.paths.length
+      ? data.paths
+      : (data.path ? [data.path] : []);
+    for (var p = 0; p < paths.length; p += 1) {
+      pushTargets(document.querySelectorAll('img' + cssAttr('data-field-path', paths[p])));
     }
-    if (!node && (data.path === 'image' || data.slotId === 'image' || data.slotId === 'main_image' || data.slotId === 'goat')) {
-      node = asImg(document.querySelector('.image-wrap img:not(.worksheet-bg), .img-zone-box img, img[data-field-path="image"]'));
+    if (!targets.length) {
+      var active = asImg(document.querySelector('[data-ws-target="active"]'));
+      if (active) targets.push(active);
     }
-    if (node) applySrc(node, data.src);
+    if (!targets.length && data.slotId) {
+      pushTargets(document.querySelectorAll('img' + cssAttr('data-image-slot', data.slotId)));
+    }
+    if (!targets.length && (data.path === 'image' || data.slotId === 'image' || data.slotId === 'main_image' || data.slotId === 'goat')) {
+      pushTargets(document.querySelectorAll('.image-wrap img:not(.worksheet-bg), .img-zone-box img, img[data-field-path="image"]'));
+      if (targets.length > 1) targets.length = 1;
+    }
+    for (var t = 0; t < targets.length; t += 1) {
+      applySrc(targets[t], data.src);
+    }
   });
   function parseSelectId(el) {
     if (!el || !el.getAttribute) return '';
