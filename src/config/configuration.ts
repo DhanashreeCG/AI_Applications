@@ -157,6 +157,8 @@ export interface AppConfig {
     defaultAgeGroup: string;
     ageGroups: Array<{ id: string; label: string; age: number; grade: string }>;
     geminiModel: string;
+    /** Dedicated model for universal_template HTML generation (optional override). */
+    universalGeminiModel: string;
     promptVersion: string;
     renderer: {
       enabled: boolean;
@@ -578,6 +580,12 @@ export default (): AppConfig => ({
     defaultAgeGroup: envTrim('WORKSHEET_DEFAULT_AGE_GROUP', '3-4'),
     ageGroups: parseWorksheetAgeGroups(process.env.WORKSHEET_AGE_GROUPS),
     geminiModel:
+      process.env.WORKSHEET_GEMINI_MODEL ||
+      process.env.FLASHCARD_GEMINI_MODEL ||
+      'gemini-2.5-flash',
+    /** Dedicated model for universal_template; falls back to worksheet content model. */
+    universalGeminiModel:
+      process.env.WORKSHEET_UNIVERSAL_GEMINI_MODEL ||
       process.env.WORKSHEET_GEMINI_MODEL ||
       process.env.FLASHCARD_GEMINI_MODEL ||
       'gemini-2.5-flash',

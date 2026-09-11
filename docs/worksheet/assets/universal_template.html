@@ -28,7 +28,7 @@
       pointer-events: none;
     }
 
-    /* FIXED chrome — title */
+    /* FIXED chrome — title (purple banner) */
     .main-topic {
       position: absolute;
       left: 36px;
@@ -48,7 +48,7 @@
       -webkit-box-orient: vertical;
     }
 
-    /* FIXED chrome — subtitle / skill label */
+    /* FIXED chrome — subtitle (blue banner) */
     .sub-topic {
       position: absolute;
       left: 520px;
@@ -69,62 +69,23 @@
       text-overflow: ellipsis;
     }
 
-    /* FIXED chrome — Name / Date pills */
-    .meta-row {
-      position: absolute;
-      left: 48px;
-      top: 138px;
-      width: 920px;
-      z-index: 6;
-      display: flex;
-      align-items: stretch;
-      gap: 18px;
-      box-sizing: border-box;
-    }
-    .meta-pill {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      height: 44px;
-      padding: 0 16px;
-      box-sizing: border-box;
-      border: 2px solid #7eb8e8;
-      border-radius: 14px;
-      background: #eef7ff;
-    }
-    .meta-pill.name-pill { flex: 1.65; }
-    .meta-pill.date-pill { flex: 1; }
-    .meta-pill .meta-label {
-      flex: 0 0 auto;
-      font-size: 18px;
-      font-weight: 700;
-      color: #2f6fad;
-      line-height: 1;
-    }
-    .meta-pill .meta-line {
-      flex: 1;
-      height: 0;
-      border-bottom: 2px dashed #8ebce0;
-      min-width: 80px;
-    }
-
     /*
-      DYNAMIC viewport only — LLM invents all markup/styles inside.
-      Host provides size + Toondemy inheritance.
+      DYNAMIC viewport — LLM invents multi-section activity HTML.
+      Sized to fill below chrome and above yellow footer art.
     */
     #content-region {
       position: absolute;
       left: 40px;
-      top: 198px;
+      top: 128px;
       width: 936px;
-      height: 930px;
+      height: 1000px;
       z-index: 2;
       overflow: hidden;
       box-sizing: border-box;
-      padding: 4px 6px 8px;
+      padding: 6px 8px 10px;
       color: #2a1b4a;
-      font-size: 20px;
-      line-height: 1.35;
+      font-size: 18px;
+      line-height: 1.3;
     }
     #content-region .ws-dynamic {
       width: 100%;
@@ -132,11 +93,29 @@
       min-height: 100%;
       box-sizing: border-box;
     }
+    /* Source assets are 500×500 1:1 — prefer sized .ws-img-box; fallback 120px square */
+    #content-region .ws-img-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      aspect-ratio: 1 / 1;
+      box-sizing: border-box;
+    }
     #content-region img.worksheet-image {
-      max-width: 200px;
-      max-height: 200px;
+      width: 120px;
+      height: 120px;
       object-fit: contain;
+      display: block;
+      aspect-ratio: 1 / 1;
       vertical-align: middle;
+    }
+    #content-region .ws-img-box img.worksheet-image {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
     }
   </style>
 </head>
@@ -144,14 +123,6 @@
   <img class="worksheet-bg" src="{{BACKGROUND_IMAGE}}" alt="" />
   <div class="main-topic" data-editable="main_topic">{{main_topic}}</div>
   <div class="sub-topic" data-editable="sub_topic">{{sub_topic}}</div>
-  <div class="meta-row" aria-hidden="true">
-    <div class="meta-pill name-pill">
-      <span class="meta-label">Name:</span><span class="meta-line"></span>
-    </div>
-    <div class="meta-pill date-pill">
-      <span class="meta-label">Date:</span><span class="meta-line"></span>
-    </div>
-  </div>
   <div id="content-region">{{CONTENT_HTML}}</div>
 </body>
 </html>

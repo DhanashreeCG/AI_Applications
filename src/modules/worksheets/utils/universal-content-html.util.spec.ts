@@ -47,6 +47,7 @@ describe('universal strict dynamic HTML', () => {
     expect(html).toContain('class="ws-dynamic"');
     expect(html).toContain('data-image-slot="images[0]"');
     expect(html).toContain('data-image-slot="images[1]"');
+    expect(html).toContain('aspect-ratio:1/1');
     expect(html).not.toContain('src="{{IMAGE');
     expect(html).not.toContain('ws-match');
     expect(html).not.toContain('layout-steps');

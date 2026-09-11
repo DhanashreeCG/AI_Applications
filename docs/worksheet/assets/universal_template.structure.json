@@ -13,11 +13,11 @@
     "main_topic": { "type": "string", "minLength": 1, "maxLength": 80 },
     "sub_topic": { "type": "string", "minLength": 1, "maxLength": 80 },
     "instruction_text": { "type": "string", "minLength": 1, "maxLength": 220 },
-    "content_html": { "type": "string", "minLength": 40, "maxLength": 24000 },
+    "content_html": { "type": "string", "minLength": 80, "maxLength": 32000 },
     "images": {
       "type": "array",
-      "minItems": 1,
-      "maxItems": 12,
+      "minItems": 4,
+      "maxItems": 16,
       "items": {
         "type": "object",
         "required": ["imageQuery"],

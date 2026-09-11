@@ -2,18 +2,18 @@
   "name": "Universal Template",
   "slug": "universal_template",
   "category": "universal",
-  "description": "Fixed title, subtitle, Name/Date chrome. LLM invents a unique age-appropriate educational activity as dynamic HTML for every request — no predefined layout catalog.",
+  "description": "Fixed title + subtitle over decorative background. LLM invents a dense, age-appropriate multi-section educational activity as dynamic HTML (1:1 image slots).",
   "status": "ACTIVE",
-  "version": 1,
+  "version": 2,
   "rendererType": "generic",
   "rendererConfig": {
     "width": 1016,
     "height": 1316,
     "contentRegion": {
       "left": 40,
-      "top": 198,
+      "top": 128,
       "width": 936,
-      "height": 930
+      "height": 1000
     }
   },
   "meta": {
@@ -32,9 +32,9 @@
   "fieldPrompts": {
     "main_topic": "2–4 word purple header title. Never empty. Never a question.",
     "sub_topic": "1–3 word blue-banner skill label. Never a question.",
-    "instruction_text": "One short learner instruction for the activity."
+    "instruction_text": "One short learner instruction for the whole page."
   },
   "aiSystemPrompt": "You edit a single worksheet field. Return JSON {\"value\": ...} only. Plain text only — do not generate HTML or CSS.",
-  "samplePrompt": "Create a fun Grade 2 worksheet about animal habitats with a mix of short questions and one picture-based activity.",
+  "samplePrompt": "Create a fun Grade 2 worksheet about animal sounds with learn, match, and circle activities.",
   "createdTemplateId": "cmtveqj0x002ltobgwe7d4brc"
 }

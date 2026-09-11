@@ -57,6 +57,11 @@ export interface WorksheetAiConfig {
   linkedFields?: Record<string, string[]>;
   /** Prototype-style map; normalized to EditableField before the editor sees it. */
   editable_fields?: Record<string, Record<string, unknown>>;
+  /**
+   * Optional Gemini model override for full-structure generation
+   * (used by universal_template for denser HTML layout quality).
+   */
+  contentModel?: string;
 }
 
 export interface EditableField {

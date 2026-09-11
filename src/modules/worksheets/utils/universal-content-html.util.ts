@@ -305,7 +305,7 @@ export function sanitizeUniversalContentHtml(raw: string): string {
   });
   html = html.replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
 
-  return html.trim().slice(0, 24000);
+  return html.trim().slice(0, 32000);
 }
 
 export function expandUniversalImagePlaceholders(html: string): string {
@@ -313,10 +313,11 @@ export function expandUniversalImagePlaceholders(html: string): string {
     const n = Number(nRaw);
     if (!Number.isFinite(n) || n < 1) return '';
     const path = `images[${n - 1}]`;
+    // Fill the parent .ws-img-box (LLM sets box px). Assets are 1:1 ~500×500.
     return (
       `<img class="worksheet-image" data-image-slot="${path}" ` +
       `data-field-path="${path}" alt="" ` +
-      `style="max-width:200px;max-height:200px;width:auto;height:auto;object-fit:contain;vertical-align:middle;display:inline-block;" />`
+      `style="width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;display:block;aspect-ratio:1/1;" />`
     );
   });
 }
