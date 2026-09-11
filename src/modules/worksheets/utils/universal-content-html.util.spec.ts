@@ -1,10 +1,15 @@
 import {
   buildUniversalSkeletonHtml,
+  ensureEditableLabels,
   fitUniversalContentLayout,
+  isUniversalSlug,
+  isUniversalStructure,
   normalizeImgTagsToImageTokens,
   normalizeUniversalStructure,
   sanitizeUniversalContentHtml,
   scrubShortPhrasePunctuation,
+  softAlignImageQueries,
+  UNIVERSAL_MAX_IMAGES,
 } from './universal-content-html.util';
 
 describe('universal strict dynamic HTML', () => {
@@ -22,6 +27,24 @@ describe('universal strict dynamic HTML', () => {
     expect(next.layout).toBeUndefined();
     expect(next.items).toBeUndefined();
     expect((next.images as unknown[]).length).toBe(2);
+    expect(next.worksheet_type).toBe('universal_template');
+  });
+
+  it('does not treat stray content_html as universal without worksheet_type', () => {
+    expect(
+      isUniversalStructure({
+        content_html: '<div>hello</div>',
+        topic: 'Other',
+      }),
+    ).toBe(false);
+    expect(
+      isUniversalStructure({
+        worksheet_type: 'universal_template',
+        content_html: '<div>hello</div>',
+      }),
+    ).toBe(true);
+    expect(isUniversalSlug('universal_template')).toBe(true);
+    expect(isUniversalSlug('match_the_pairs')).toBe(false);
   });
 
   it('converts img src="{{IMAGE_N}}" to bare tokens before sanitize', () => {
@@ -103,13 +126,9 @@ describe('universal strict dynamic HTML', () => {
     });
     expect(html).toContain('ws-instruction');
     expect(html).toContain('ws-section');
-    // Host .ws-dynamic may use height:100%; activity markup must not.
     expect(html).not.toMatch(/ws-section[^>]*height\s*:\s*100%/i);
     expect(html).not.toMatch(/ws-stack[^>]*height\s*:\s*100%/i);
-    const withoutHost = html.replace(
-      /<div class="ws-dynamic"[^>]*>/,
-      '',
-    );
+    const withoutHost = html.replace(/<div class="ws-dynamic"[^>]*>/, '');
     expect(withoutHost).not.toMatch(/height\s*:\s*100%/i);
   });
 
@@ -132,7 +151,7 @@ describe('universal strict dynamic HTML', () => {
     expect(next.sub_topic).toBe('Matching');
     expect(next.labels).toEqual(['Kite', 'Lamp']);
     expect(String(next.content_html)).not.toMatch(/width:180px/);
-    expect(String(next.content_html)).toMatch(/width:96px/);
+    expect(String(next.content_html)).toMatch(/width:\d{2}px/);
     expect(String(next.content_html)).toContain('data-editable="labels[0]"');
   });
 
@@ -142,5 +161,48 @@ describe('universal strict dynamic HTML', () => {
     );
     expect(html).toContain('>Hi<');
     expect(html).toContain('Look at the fun festivals today!');
+  });
+
+  it('auto-wraps short labels with data-editable when LLM omits spans', () => {
+    const wrapped = ensureEditableLabels(
+      `<div class="ws-section"><p>Kite Festival</p><div class="ws-img-box">{{IMAGE_1}}</div></div>`,
+    );
+    expect(wrapped).toContain('data-editable="labels[0]"');
+    expect(wrapped).toContain('Kite Festival');
+  });
+
+  it('caps images at UNIVERSAL_MAX_IMAGES and drops higher tokens', () => {
+    const tokens = Array.from(
+      { length: UNIVERSAL_MAX_IMAGES + 3 },
+      (_, i) => `{{IMAGE_${i + 1}}}`,
+    ).join('');
+    const next = normalizeUniversalStructure({
+      main_topic: 'Many Pictures',
+      sub_topic: 'Practice',
+      instruction_text: 'Look at each picture carefully today.',
+      content_html: `<div>${tokens}</div>`,
+      images: Array.from({ length: UNIVERSAL_MAX_IMAGES + 3 }, (_, i) => ({
+        imageQuery: `item ${i + 1}`,
+      })),
+    });
+    expect((next.images as unknown[]).length).toBe(UNIVERSAL_MAX_IMAGES);
+    expect(String(next.content_html)).not.toContain(
+      `{{IMAGE_${UNIVERSAL_MAX_IMAGES + 1}}}`,
+    );
+    expect(String(next.content_html)).toContain(
+      `{{IMAGE_${UNIVERSAL_MAX_IMAGES}}}`,
+    );
+  });
+
+  it('soft-aligns imageQuery with a nearby single-token label', () => {
+    const html =
+      `<div><span data-editable="labels[0]" data-field-path="labels[0]">Kite</span>` +
+      `<div class="ws-img-box">{{IMAGE_1}}</div></div>`;
+    const aligned = softAlignImageQueries(
+      html,
+      [{ imageQuery: 'cute cartoon festival object' }],
+      ['Kite'],
+    );
+    expect(String(aligned[0].imageQuery).toLowerCase()).toContain('kite');
   });
 });

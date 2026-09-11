@@ -143,6 +143,8 @@ export interface WorksheetRenderInput {
   baseHref?: string;
   pencilIconUrl?: string;
   fontPath?: string;
+  /** When set, used with worksheet_type to detect universal_template safely. */
+  templateSlug?: string;
 }
 
 export interface ResolvedAssetSlot {

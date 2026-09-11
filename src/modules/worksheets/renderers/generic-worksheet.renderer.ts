@@ -20,6 +20,7 @@ import {
 import { unifyBeforeAfterSharedMascot, visualQueryFromImageRecord } from '../utils/structure.util';
 import {
   injectUniversalContentHtml,
+  isUniversalSlug,
   isUniversalStructure,
   normalizeUniversalStructure,
 } from '../utils/universal-content-html.util';
@@ -662,7 +663,9 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     const mode: WorksheetRenderMode = input.mode ?? 'export';
     const fontPath = input.fontPath?.trim() || toondemyFontUrl();
     let structure = unifyBeforeAfterSharedMascot(input.structure);
-    if (isUniversalStructure(structure)) {
+    const useUniversal =
+      isUniversalStructure(structure) || isUniversalSlug(input.templateSlug);
+    if (useUniversal) {
       structure = normalizeUniversalStructure(structure);
     }
     const extras: Record<string, unknown> = {
@@ -679,7 +682,7 @@ export class GenericWorksheetRenderer implements WorksheetRenderer {
     delete context.contentHtml;
     delete context.CONTENT_HTML;
     let html = restoreNullPlaceholders(input.templateHtml);
-    if (isUniversalStructure(structure)) {
+    if (useUniversal) {
       html = injectUniversalContentHtml(html, structure);
     }
     html = injectMatchingPairMarkup(html, structure, input.pencilIconUrl);

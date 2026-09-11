@@ -572,7 +572,8 @@ export function clampUniversalImageBoxes(html: string): string {
   );
   // ~300px content per section after headers; keep frames small enough for 3 rows
   let maxPx = 96;
-  if (imageCount >= 10 || sectionCount >= 4) maxPx = 72;
+  if (sectionCount >= 3 && imageCount >= 6) maxPx = 72;
+  else if (imageCount >= 10 || sectionCount >= 4) maxPx = 72;
   else if (imageCount >= 7) maxPx = 80;
   else if (imageCount >= 5) maxPx = 88;
 
@@ -655,6 +656,153 @@ export function syncEditableLabels(
 
   return { html: nextHtml, labels };
 }
+
+function looksLikeEditableLabelText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 40) return false;
+  if (/^\{\{/.test(trimmed)) return false;
+  if (!/[a-zA-Z]/.test(trimmed)) return false;
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.length <= 6;
+}
+
+/**
+ * Wrap short leaf labels so the editor can edit them even when the LLM
+ * omitted data-editable spans.
+ */
+export function ensureEditableLabels(html: string): string {
+  if (!html) return html;
+  const existingIdx = [...html.matchAll(/labels\[(\d+)\]/gi)].map((m) =>
+    Number(m[1]),
+  );
+  let nextIndex = existingIdx.length ? Math.max(...existingIdx) + 1 : 0;
+
+  const wrapLeaf = (
+    tag: string,
+    attrs: string,
+    text: string,
+  ): string | null => {
+    if (/\bdata-editable\b/i.test(attrs)) return null;
+    if (/\bws-instruction\b/i.test(attrs)) return null;
+    if (!looksLikeEditableLabelText(text)) return null;
+    const cleaned = scrubTitlePunctuation(text.trim()) || text.trim();
+    const idx = nextIndex;
+    nextIndex += 1;
+    return (
+      `<${tag}${attrs}>` +
+      `<span data-editable="labels[${idx}]" data-field-path="labels[${idx}]">${escapeText(cleaned)}</span>` +
+      `</${tag}>`
+    );
+  };
+
+  let out = html.replace(
+    /<(p|h[1-4]|span|label|strong|em|b|i)\b([^>]*)>([^<]{1,40})<\/\1>/gi,
+    (full, tag: string, attrs: string, text: string) => {
+      const wrapped = wrapLeaf(tag, attrs || '', text);
+      return wrapped ?? full;
+    },
+  );
+
+  out = out.replace(
+    /<(div|td|li)\b([^>]*)>([^<]{1,40})<\/\1>/gi,
+    (full, tag: string, attrs: string, text: string) => {
+      if (
+        /\bws-img-box\b|\bws-instruction\b|\bws-dynamic\b|\bws-stack\b|\bws-section\b/i.test(
+          attrs,
+        )
+      ) {
+        return full;
+      }
+      const wrapped = wrapLeaf(tag, attrs || '', text);
+      return wrapped ?? full;
+    },
+  );
+
+  return out;
+}
+
+/**
+ * Soft-align imageQuery with a nearby single-token label so retrieval matches
+ * the printed word (no second LLM call).
+ */
+export function softAlignImageQueries(
+  html: string,
+  images: Array<Record<string, unknown>>,
+  labels: string[],
+): Array<Record<string, unknown>> {
+  if (!images.length) return images;
+  const next = images.map((img) => ({ ...img }));
+
+  for (let n = 1; n <= next.length; n += 1) {
+    const tokenRe = new RegExp(`\\{\\{\\s*IMAGE[_:]?${n}\\s*\\}\\}`, 'i');
+    const tokenAt = html.search(tokenRe);
+    if (tokenAt < 0) continue;
+
+    const windowStart = Math.max(0, tokenAt - 220);
+    const windowEnd = Math.min(html.length, tokenAt + 220);
+    const slice = html.slice(windowStart, windowEnd);
+
+    let labelText = '';
+    const spanHit = [
+      ...slice.matchAll(
+        /data-(?:editable|field-path)=["']labels\[(\d+)\]["'][^>]*>([^<]+)</gi,
+      ),
+    ];
+    if (spanHit.length) {
+      let best = spanHit[0];
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const hit of spanHit) {
+        const abs = windowStart + (hit.index ?? 0);
+        const dist = Math.abs(abs - tokenAt);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = hit;
+        }
+      }
+      const idx = Number(best[1]);
+      labelText =
+        scrubTitlePunctuation(best[2] || '') ||
+        scrubTitlePunctuation(labels[idx] || '');
+    }
+
+    if (!labelText) continue;
+    const words = labelText.split(/\s+/).filter(Boolean);
+    if (words.length !== 1) continue;
+    const token = words[0].toLowerCase();
+    if (token.length < 2) continue;
+
+    const prior = readString(next[n - 1].imageQuery, 120).toLowerCase();
+    if (prior.includes(token)) continue;
+    const base =
+      readString(next[n - 1].imageQuery, 100) ||
+      'age appropriate educational illustration';
+    next[n - 1] = {
+      ...next[n - 1],
+      imageQuery: `${base} ${words[0]}`.trim().slice(0, 120),
+    };
+  }
+
+  return next;
+}
+
+/** Drop {{IMAGE_N}} tokens above max and return cleaned HTML. */
+export function trimUniversalImageTokens(
+  html: string,
+  maxImages: number,
+): string {
+  return html.replace(
+    /\{\{\s*IMAGE[_:]?(\d+)\s*\}\}/gi,
+    (full, nRaw: string) => {
+      const n = Number(nRaw);
+      if (!Number.isFinite(n) || n < 1 || n > maxImages) return '';
+      return `{{IMAGE_${n}}}`;
+    },
+  );
+}
+
+export const UNIVERSAL_MAX_IMAGES = 10;
+export const UNIVERSAL_CONTENT_HTML_SOFT_MAX = 16000;
+export const UNIVERSAL_CONTENT_HTML_HARD_MAX = 32000;
 
 function sanitizeClassValue(raw: string): string {
   return decodeBasicEntities(raw)
@@ -775,7 +923,21 @@ export function sanitizeUniversalContentHtml(raw: string): string {
   });
   html = html.replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
 
-  return html.trim().slice(0, 32000);
+  const trimmed = html.trim();
+  if (trimmed.length > UNIVERSAL_CONTENT_HTML_SOFT_MAX) {
+    // Soft budget for generation quality; hard truncate only at HARD_MAX.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[universal_template] content_html length=${trimmed.length} exceeds soft max=${UNIVERSAL_CONTENT_HTML_SOFT_MAX}`,
+    );
+  }
+  if (trimmed.length > UNIVERSAL_CONTENT_HTML_HARD_MAX) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[universal_template] content_html truncated from ${trimmed.length} to ${UNIVERSAL_CONTENT_HTML_HARD_MAX}`,
+    );
+  }
+  return trimmed.slice(0, UNIVERSAL_CONTENT_HTML_HARD_MAX);
 }
 
 export function expandUniversalImagePlaceholders(html: string): string {
@@ -845,8 +1007,12 @@ export function normalizeUniversalStructure(
   let sanitized = scrubShortPhrasePunctuation(
     sanitizeUniversalContentHtml(contentHtml),
   );
-  const synced = syncEditableLabels(sanitized, next.labels);
+  sanitized = ensureEditableLabels(sanitized);
+  let synced = syncEditableLabels(sanitized, next.labels);
   sanitized = clampUniversalImageBoxes(synced.html);
+  sanitized = trimUniversalImageTokens(sanitized, UNIVERSAL_MAX_IMAGES);
+  synced = syncEditableLabels(sanitized, synced.labels.length ? synced.labels : next.labels);
+  sanitized = synced.html;
   next.content_html = sanitized;
   if (synced.labels.length) next.labels = synced.labels;
 
@@ -859,17 +1025,17 @@ export function normalizeUniversalStructure(
       tokenNums.add(Number(m[1]));
     }
   };
-  collectTokens(contentHtml);
   collectTokens(sanitized);
   const rawImgCount = (contentHtml.match(/<img\b/gi) || []).length;
-  const maxToken = tokenNums.size
+  const maxTokenRaw = tokenNums.size
     ? Math.max(...tokenNums)
     : rawImgCount > 0
       ? rawImgCount
       : existing.length;
+  const maxToken = Math.min(Math.max(maxTokenRaw, 0), UNIVERSAL_MAX_IMAGES);
 
   const images: Array<Record<string, unknown>> = [];
-  for (let i = 0; i < Math.max(maxToken, existing.length, 0); i += 1) {
+  for (let i = 0; i < maxToken; i += 1) {
     const prior = isRecord(existing[i]) ? existing[i] : {};
     const imageQuery =
       readString(prior.imageQuery, 120) ||
@@ -881,7 +1047,10 @@ export function normalizeUniversalStructure(
       ...(typeof prior.assetUrl === 'string' ? { assetUrl: prior.assetUrl } : {}),
     });
   }
-  next.images = images;
+  const labelsArr = Array.isArray(next.labels)
+    ? (next.labels as unknown[]).map((v) => readString(v, 80))
+    : [];
+  next.images = softAlignImageQueries(sanitized, images, labelsArr);
   return next;
 }
 
@@ -939,12 +1108,20 @@ export function injectUniversalContentHtml(
   return templateHtml;
 }
 
+export function isUniversalSlug(slug: string | null | undefined): boolean {
+  const s = String(slug ?? '')
+    .trim()
+    .toLowerCase();
+  return s === 'universal_template' || s === 'universal';
+}
+
+/**
+ * Universal detection must NOT key off a bare content_html field — that would
+ * bleed into unrelated templates. Prefer worksheet_type; callers may also pass
+ * template slug via isUniversalSlug.
+ */
 export function isUniversalStructure(structure: unknown): boolean {
   if (!isRecord(structure)) return false;
   const type = String(structure.worksheet_type ?? '').toLowerCase();
-  if (type === 'universal_template' || type === 'universal') return true;
-  return (
-    typeof structure.content_html === 'string' ||
-    typeof structure.contentHtml === 'string'
-  );
+  return type === 'universal_template' || type === 'universal';
 }

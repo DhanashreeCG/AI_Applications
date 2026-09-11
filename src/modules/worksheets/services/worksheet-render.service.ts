@@ -137,6 +137,7 @@ export class WorksheetRenderService {
       canvas,
       pencilIconUrl: this.pencilIconUrl,
       fontPath: toondemyFontUrl(this.apiBaseUrl),
+      templateSlug: input.template.slug,
     });
     return { html, canvas };
   }

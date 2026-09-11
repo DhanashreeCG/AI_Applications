@@ -4,7 +4,7 @@
   "category": "universal",
   "description": "Fixed title + subtitle over decorative background. LLM invents a dense, age-appropriate multi-section educational activity as dynamic HTML (1:1 image slots).",
   "status": "ACTIVE",
-  "version": 3,
+  "version": 4,
   "rendererType": "generic",
   "rendererConfig": {
     "width": 1016,

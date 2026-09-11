@@ -517,15 +517,21 @@ export class WorksheetContentService {
       return configured;
     }
 
-    // 3) Optional legacy DB override only if nothing else is configured
-    const aiConfig = (parseJsonObject(template.aiConfig) ??
-      {}) as WorksheetAiConfig;
-    const fromTemplate =
-      typeof aiConfig.contentModel === 'string'
-        ? aiConfig.contentModel.trim()
-        : '';
-    if (fromTemplate) {
-      return fromTemplate;
+    // Never use DB aiConfig.contentModel for universal — it silently overrode
+    // env/config in production. Opt-in only via explicit allow flag.
+    const allowDb =
+      process.env.WORKSHEET_UNIVERSAL_ALLOW_DB_MODEL?.trim().toLowerCase() ===
+      'true';
+    if (allowDb) {
+      const aiConfig = (parseJsonObject(template.aiConfig) ??
+        {}) as WorksheetAiConfig;
+      const fromTemplate =
+        typeof aiConfig.contentModel === 'string'
+          ? aiConfig.contentModel.trim()
+          : '';
+      if (fromTemplate) {
+        return fromTemplate;
+      }
     }
 
     return this.modelName;
