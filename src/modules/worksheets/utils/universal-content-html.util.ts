@@ -538,8 +538,15 @@ export function scrubTitlePunctuation(text: string): string {
   return readString(text, 80).replace(/[!?]+/g, '').trim();
 }
 
-function clampPxInStyle(style: string, maxPx: number): string {
+function clampPxInStyle(
+  style: string,
+  maxPx: number,
+  minPx?: number,
+  targetPx?: number,
+): string {
   const map = parseStyleMap(style);
+  const floor = minPx ?? 0;
+  const target = targetPx ?? maxPx;
   for (const prop of [
     'width',
     'height',
@@ -554,13 +561,64 @@ function clampPxInStyle(style: string, maxPx: number): string {
     if (!m) continue;
     const n = Number(m[1]);
     if (n > maxPx) map.set(prop, `${maxPx}px`);
+    else if (floor > 0 && n < floor) map.set(prop, `${target}px`);
   }
+  if (!map.has('width')) map.set('width', `${target}px`);
+  if (!map.has('height')) map.set('height', `${target}px`);
   map.set('box-sizing', 'border-box');
   return styleMapToString(map);
 }
 
 /**
- * Cap picture frames so stacked match/teach rows cannot overflow a flex section.
+ * Density-aware image box budget: sparse pages (few pictures / few sections)
+ * get large recognizable art; dense pages stay compact to avoid crop.
+ * ≤2-section pages stay large even with ~6–8 images (toddler / simple pages).
+ */
+export function resolveUniversalImageBoxBudget(
+  imageCount: number,
+  sectionCount: number,
+): { minPx: number; maxPx: number; targetPx: number } {
+  const sections = Math.max(1, sectionCount);
+  const images = Math.max(0, imageCount);
+
+  // Single activity page → biggest art
+  if (sections <= 1 && images <= 6) {
+    return { minPx: 160, maxPx: 220, targetPx: 190 };
+  }
+  // 1–2 sections, few pictures
+  if (sections <= 2 && images <= 4) {
+    return { minPx: 150, maxPx: 200, targetPx: 170 };
+  }
+  // 2 sections with a teach row + small match (≈5–7 images) — still readable
+  if (sections <= 2 && images <= 7) {
+    return { minPx: 130, maxPx: 180, targetPx: 150 };
+  }
+  if (sections <= 2 && images <= 10) {
+    return { minPx: 110, maxPx: 160, targetPx: 130 };
+  }
+  // Few pictures across ≤3 sections
+  if (images <= 4 && sections <= 3) {
+    return { minPx: 120, maxPx: 180, targetPx: 150 };
+  }
+  // Dense multi-section pages
+  if (sections >= 3 && images >= 6) {
+    return { minPx: 64, maxPx: 96, targetPx: 80 };
+  }
+  if (images >= 10 || sections >= 4) {
+    return { minPx: 64, maxPx: 88, targetPx: 72 };
+  }
+  if (images >= 7) {
+    return { minPx: 72, maxPx: 110, targetPx: 92 };
+  }
+  if (images >= 5) {
+    return { minPx: 90, maxPx: 140, targetPx: 120 };
+  }
+  return { minPx: 110, maxPx: 170, targetPx: 140 };
+}
+
+/**
+ * Cap or boost picture frames from page density so images stay readable
+ * without overflowing the viewport on dense layouts.
  */
 export function clampUniversalImageBoxes(html: string): string {
   if (!html) return html;
@@ -570,19 +628,20 @@ export function clampUniversalImageBoxes(html: string): string {
     (html.match(/\bws-section\b/gi) || []).length ||
       (html.match(/<section\b/gi) || []).length,
   );
-  // ~300px content per section after headers; keep frames small enough for 3 rows
-  let maxPx = 96;
-  if (sectionCount >= 3 && imageCount >= 6) maxPx = 72;
-  else if (imageCount >= 10 || sectionCount >= 4) maxPx = 72;
-  else if (imageCount >= 7) maxPx = 80;
-  else if (imageCount >= 5) maxPx = 88;
+  const { minPx, maxPx, targetPx } = resolveUniversalImageBoxBudget(
+    imageCount,
+    sectionCount,
+  );
 
   let out = html.replace(
     /<div\b([^>]*\bws-img-box\b[^>]*)>/gi,
-    (full, rawAttrs: string) => {
+    (_full, rawAttrs: string) => {
       const styleMatch = rawAttrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
-      const style = styleMatch?.[2] ?? styleMatch?.[3] ?? `width:${maxPx}px;height:${maxPx}px`;
-      const nextStyle = clampPxInStyle(style, maxPx);
+      const style =
+        styleMatch?.[2] ??
+        styleMatch?.[3] ??
+        `width:${targetPx}px;height:${targetPx}px`;
+      const nextStyle = clampPxInStyle(style, maxPx, minPx, targetPx);
       let attrs = rawAttrs;
       if (styleMatch) attrs = attrs.replace(styleMatch[0], '');
       attrs += ` style="${escapeAttr(nextStyle)}"`;
@@ -590,16 +649,19 @@ export function clampUniversalImageBoxes(html: string): string {
     },
   );
 
-  // Also clamp square frames that wrap an image token without ws-img-box
   out = out.replace(
     /<(div|span)\b([^>]*)>(\s*\{\{\s*IMAGE[_:]?\d+\s*\}\}[\s\S]*?)<\/\1>/gi,
     (full, tag: string, rawAttrs: string, inner: string) => {
       if (/\bws-img-box\b/i.test(rawAttrs)) return full;
       const styleMatch = rawAttrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
-      if (!styleMatch) return full;
+      if (!styleMatch) {
+        return `<${tag}${rawAttrs} style="${escapeAttr(
+          `width:${targetPx}px;height:${targetPx}px;box-sizing:border-box`,
+        )}">${inner}</${tag}>`;
+      }
       const style = styleMatch[2] ?? styleMatch[3] ?? '';
       if (!/(?:^|;)\s*(?:width|height)\s*:/i.test(style)) return full;
-      const nextStyle = clampPxInStyle(style, maxPx);
+      const nextStyle = clampPxInStyle(style, maxPx, minPx, targetPx);
       let attrs = rawAttrs.replace(styleMatch[0], '');
       attrs += ` style="${escapeAttr(nextStyle)}"`;
       return `<${tag}${attrs}>${inner}</${tag}>`;
@@ -1079,6 +1141,8 @@ export function buildUniversalSkeletonHtml(
 
   // Re-fit after instruction injection so top-level sections stay host flex children.
   fragment = fitUniversalContentLayout(fragment);
+  // Re-clamp after .ws-section tags exist so sparse pages get large recognizable art.
+  fragment = clampUniversalImageBoxes(fragment);
 
   // Full-height flex host so activity sections can stretch and close above footer.
   return (

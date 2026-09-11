@@ -126,8 +126,9 @@ describe('worksheet regen prompt', () => {
       contentRegion: { width: 936, height: 1104 },
     });
     expect(prompt).toContain('TODDLER / AGE ≤ 4 HARD RULES');
-    expect(prompt).toContain('MAXIMUM 2 activity sections');
+    expect(prompt).toContain('choose **1 or 2** activity sections');
     expect(prompt).toContain('Picture + simple text only');
+    expect(prompt).not.toContain('MAXIMUM 2 activity sections');
   });
 
   it('does not inject toddler hard rules for universal when age band is above 4', () => {

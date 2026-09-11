@@ -1,11 +1,13 @@
 import {
   buildUniversalSkeletonHtml,
+  clampUniversalImageBoxes,
   ensureEditableLabels,
   fitUniversalContentLayout,
   isUniversalSlug,
   isUniversalStructure,
   normalizeImgTagsToImageTokens,
   normalizeUniversalStructure,
+  resolveUniversalImageBoxBudget,
   sanitizeUniversalContentHtml,
   scrubShortPhrasePunctuation,
   softAlignImageQueries,
@@ -132,7 +134,7 @@ describe('universal strict dynamic HTML', () => {
     expect(withoutHost).not.toMatch(/height\s*:\s*100%/i);
   });
 
-  it('strips ! from short titles and clamps oversized image boxes', () => {
+  it('strips ! from short titles and keeps readable image boxes on sparse pages', () => {
     const next = normalizeUniversalStructure({
       main_topic: 'Fun Festivals!',
       sub_topic: 'Matching!',
@@ -141,17 +143,18 @@ describe('universal strict dynamic HTML', () => {
       content_html:
         `<div style="display:flex;flex-direction:column;">` +
         `<div style="border:2px solid #85cbf4;"><span data-editable="labels[0]" data-field-path="labels[0]">Kite!</span>` +
-        `<div class="ws-img-box" style="width:180px;height:180px;">{{IMAGE_1}}</div></div>` +
+        `<div class="ws-img-box" style="width:60px;height:60px;">{{IMAGE_1}}</div></div>` +
         `<div style="border:2px solid #67bd47;"><span data-editable="labels[1]" data-field-path="labels[1]">Lamp</span>` +
-        `<div class="ws-img-box" style="width:160px;height:160px;">{{IMAGE_2}}</div></div>` +
+        `<div class="ws-img-box" style="width:60px;height:60px;">{{IMAGE_2}}</div></div>` +
         `</div>`,
       images: [{ imageQuery: 'kite' }, { imageQuery: 'lamp' }],
     });
     expect(next.main_topic).toBe('Fun Festivals');
     expect(next.sub_topic).toBe('Matching');
     expect(next.labels).toEqual(['Kite', 'Lamp']);
-    expect(String(next.content_html)).not.toMatch(/width:180px/);
-    expect(String(next.content_html)).toMatch(/width:\d{2}px/);
+    // Sparse (2 images) → boost tiny boxes to a readable size
+    expect(String(next.content_html)).not.toMatch(/width:60px/);
+    expect(String(next.content_html)).toMatch(/width:1[1-9]\dpx/);
     expect(String(next.content_html)).toContain('data-editable="labels[0]"');
   });
 
@@ -204,5 +207,35 @@ describe('universal strict dynamic HTML', () => {
       ['Kite'],
     );
     expect(String(aligned[0].imageQuery).toLowerCase()).toContain('kite');
+  });
+
+  it('boosts tiny image boxes on sparse pages and keeps dense pages compact', () => {
+    const sparse = clampUniversalImageBoxes(
+      `<div class="ws-section"><div class="ws-img-box" style="width:60px;height:60px;">{{IMAGE_1}}</div></div>` +
+        `<div class="ws-section"><div class="ws-img-box" style="width:60px;height:60px;">{{IMAGE_2}}</div></div>`,
+    );
+    // 2 sections + 2 images → large target (~170)
+    expect(sparse).toMatch(/width:1[4-9]\dpx/);
+
+    const dense = clampUniversalImageBoxes(
+      `<div class="ws-section">a</div><div class="ws-section">b</div><div class="ws-section">c</div>` +
+        Array.from(
+          { length: 8 },
+          (_, i) =>
+            `<div class="ws-img-box" style="width:180px;height:180px;">{{IMAGE_${i + 1}}}</div>`,
+        ).join(''),
+    );
+    expect(dense).not.toMatch(/width:180px/);
+    expect(dense).toMatch(/width:(?:6\d|7\d|8\d|9\d)px/);
+  });
+
+  it('resolves larger budgets for few images and smaller for dense pages', () => {
+    expect(resolveUniversalImageBoxBudget(4, 2).targetPx).toBeGreaterThanOrEqual(
+      150,
+    );
+    expect(resolveUniversalImageBoxBudget(7, 2).targetPx).toBeGreaterThanOrEqual(
+      140,
+    );
+    expect(resolveUniversalImageBoxBudget(8, 3).maxPx).toBeLessThanOrEqual(96);
   });
 });
