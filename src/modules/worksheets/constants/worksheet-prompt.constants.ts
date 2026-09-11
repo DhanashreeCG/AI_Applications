@@ -151,7 +151,7 @@ export function buildWorksheetContentPrompt(input: {
   const viewportW =
     input.contentRegion?.width ?? (isUniversal ? 936 : 920);
   const viewportH =
-    input.contentRegion?.height ?? (isUniversal ? 1000 : 930);
+    input.contentRegion?.height ?? (isUniversal ? 1040 : 930);
 
   return [
     input.systemPrompt?.trim() ||
@@ -332,10 +332,13 @@ export function buildWorksheetContentPrompt(input: {
           '  • yellow footer stars + Teacher signature',
           '  • Do NOT include Name/Date fields (removed from this template)',
           '',
-          `CONTENT VIEWPORT BUDGET: exactly ${viewportW}px wide × ${viewportH}px tall.`,
-          '  • Root of content_html MUST be a single container with style height:100%; width:100%; box-sizing:border-box; display:flex; flex-direction:column; gap:10px;',
-          '  • FILL the viewport: aim for ~90–100% vertical use. Forbidden: large empty white bands, sparse single-row pages, overflow/scroll/clipping.',
+          `CONTENT VIEWPORT BUDGET: exactly ${viewportW}px wide × ${viewportH}px tall (ONE printable page — nothing below Teacher signature).`,
+          '  • Root of content_html MUST be ONE container: height:100%;width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;overflow:hidden;',
+          '  • HARD RULE: every section, label, and {{IMAGE_N}} you emit MUST be fully visible inside this viewport. If it would clip, use a denser layout (grids) or fewer/smaller cards — NEVER spill below the fold.',
+          '  • FILL ~95–100% of the height. Forbidden: large empty white bands above the footer, sparse pages with only 1–2 oversized cards, overflow/scroll/clipping of the last outline.',
+          '  • LAST ACTIVITY OUTLINE MUST CLOSE: give the final section a complete bottom border that sits near the bottom of the viewport (use flex:1 on activity sections so they stretch). Do not leave a cut-off box floating above the Teacher signature.',
           '  • Prefer 2–4 numbered activity SECTIONS with distinct pastel borders (green / purple / blue / pink / orange).',
+          '  • Colour/trace or multi-card sets: if you plan 4 cards, use a 2×2 grid (not 2 huge stacked cards that hide the rest). 6 cards → 2×3 or 3×2. Match image count to what fits on ONE page.',
           '',
           'ASSET REALITY (critical for sizing):',
           '  • Every picture asset is a SQUARE 1:1 image (source ~500×500). Never assume landscape/portrait.',
@@ -349,7 +352,7 @@ export function buildWorksheetContentPrompt(input: {
           '      2 across large teach cards → ~160–200px',
           '      circle/tick grids (3×3) → ~72–96px',
           '  • images[] length = highest IMAGE_N; images[i].imageQuery describes {{IMAGE_(i+1)}}',
-          '  • Use 6–12 distinct concrete child-friendly imageQuery phrases when the topic supports it',
+          '  • Only include images that will render on this single page (typically 6–12). Never declare extra images that have no on-page slot.',
           '',
           'COMPOSITION RECIPES (inspiration — invent fresh markup; do NOT copy fixed IDs; pick what fits the educational objective):',
           '  A) Teach strip + split practice: full-width learn row (4–6 square cards) → then 2-column row (match lines | circle choice) → optional full-width trace/write strip',

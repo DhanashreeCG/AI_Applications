@@ -48,19 +48,20 @@
       -webkit-box-orient: vertical;
     }
 
-    /* FIXED chrome — subtitle (blue banner) */
+    /* FIXED chrome — subtitle (blue banner), lowered for vertical centering */
     .sub-topic {
       position: absolute;
       left: 520px;
-      top: 44px;
+      top: 84px;
       width: 450px;
+      height: 36px;
       z-index: 6;
       margin: 0;
       padding: 0 12px;
       box-sizing: border-box;
       font-size: 26px;
       font-weight: 700;
-      line-height: 1.15;
+      line-height: 36px;
       color: #ffffff;
       text-align: center;
       text-shadow: 0 1px 2px rgba(30, 90, 130, 0.35);
@@ -70,27 +71,41 @@
     }
 
     /*
-      DYNAMIC viewport — LLM invents multi-section activity HTML.
-      Sized to fill below chrome and above yellow footer art.
+      DYNAMIC viewport — fills from below chrome to just above
+      yellow footer / Teacher signature (ends ~ y=1168).
     */
     #content-region {
       position: absolute;
       left: 40px;
       top: 128px;
       width: 936px;
-      height: 1000px;
+      height: 1040px;
       z-index: 2;
       overflow: hidden;
       box-sizing: border-box;
-      padding: 6px 8px 10px;
+      padding: 4px 8px 8px;
       color: #2a1b4a;
       font-size: 18px;
       line-height: 1.3;
     }
     #content-region .ws-dynamic {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
       width: 100%;
       height: 100%;
       min-height: 100%;
+      max-height: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    /* Stretch activity sections so the last outline closes at the bottom */
+    #content-region .ws-dynamic > .ws-instruction {
+      flex: 0 0 auto;
+    }
+    #content-region .ws-dynamic > *:not(.ws-instruction) {
+      flex: 1 1 0;
+      min-height: 0;
       box-sizing: border-box;
     }
     /* Source assets are 500×500 1:1 — prefer sized .ws-img-box; fallback 120px square */

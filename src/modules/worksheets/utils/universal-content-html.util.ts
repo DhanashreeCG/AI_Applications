@@ -421,15 +421,15 @@ export function buildUniversalSkeletonHtml(
         fragment.toLowerCase().includes(instruction.toLowerCase().slice(0, 40)));
     if (!already) {
       fragment =
-        `<div class="ws-instruction" style="margin:0 0 14px;padding:12px 16px;border:2px solid #f0b429;border-radius:14px;background:#fff8e1;font-size:20px;font-weight:600;color:#2a1b4a;line-height:1.35;">` +
+        `<div class="ws-instruction" style="flex:0 0 auto;margin:0;padding:10px 14px;border:2px solid #f0b429;border-radius:14px;background:#fff8e1;font-size:18px;font-weight:600;color:#2a1b4a;line-height:1.3;">` +
         `${escapeText(instruction)}</div>` +
         fragment;
     }
   }
 
-  // Neutral full-size host — model owns layout inside content_html.
+  // Full-height flex host so activity sections can stretch and close above footer.
   return (
-    `<div class="ws-dynamic" style="width:100%;height:100%;min-height:100%;box-sizing:border-box;">` +
+    `<div class="ws-dynamic" style="display:flex;flex-direction:column;gap:10px;width:100%;height:100%;min-height:100%;max-height:100%;box-sizing:border-box;overflow:hidden;">` +
     fragment +
     `</div>`
   );
