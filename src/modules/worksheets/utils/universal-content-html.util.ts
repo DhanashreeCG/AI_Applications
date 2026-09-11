@@ -563,10 +563,22 @@ function clampPxInStyle(
   maxPx: number,
   minPx?: number,
   targetPx?: number,
+  options?: { uniform?: boolean },
 ): string {
   const map = parseStyleMap(style);
   const floor = minPx ?? 0;
   const target = targetPx ?? maxPx;
+  // Same section → identical frames (avoids dog/rabbit/bone looking uneven).
+  if (options?.uniform) {
+    map.set('width', `${target}px`);
+    map.set('height', `${target}px`);
+    map.delete('min-width');
+    map.delete('min-height');
+    map.delete('max-width');
+    map.delete('max-height');
+    map.set('box-sizing', 'border-box');
+    return styleMapToString(map);
+  }
   for (const prop of [
     'width',
     'height',
@@ -700,7 +712,9 @@ function applyBoxBudgetToFragment(
         styleMatch?.[2] ??
         styleMatch?.[3] ??
         `width:${targetPx}px;height:${targetPx}px`;
-      const nextStyle = clampPxInStyle(style, maxPx, minPx, targetPx);
+      const nextStyle = clampPxInStyle(style, maxPx, minPx, targetPx, {
+        uniform: true,
+      });
       let attrs = rawAttrs;
       if (styleMatch) attrs = attrs.replace(styleMatch[0], '');
       attrs += ` style="${escapeAttr(nextStyle)}"`;
@@ -721,7 +735,9 @@ function applyBoxBudgetToFragment(
       }
       const style = styleMatch[2] ?? styleMatch[3] ?? '';
       if (!/(?:^|;)\s*(?:width|height)\s*:/i.test(style)) return full;
-      const nextStyle = clampPxInStyle(style, maxPx, minPx, targetPx);
+      const nextStyle = clampPxInStyle(style, maxPx, minPx, targetPx, {
+        uniform: true,
+      });
       let attrs = rawAttrs.replace(styleMatch[0], '');
       attrs += ` style="${escapeAttr(nextStyle)}"`;
       return `<${tag}${attrs}>${inner}</${tag}>`;

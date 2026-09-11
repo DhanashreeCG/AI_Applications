@@ -253,6 +253,8 @@ describe('universal strict dynamic HTML', () => {
     expect(matchWidths.length).toBe(4);
     // Multi-row hard-cap is 140px so the 2nd row stays inside the section.
     expect(Math.max(...matchWidths)).toBeLessThanOrEqual(140);
+    // All boxes in the section share one exact size.
+    expect(new Set(matchWidths).size).toBe(1);
   });
 
   it('enforces at most 2 activity sections for toddler normalize', () => {

@@ -42,6 +42,23 @@ export function isAgeFourOrUnder(request: {
   return typeof request.age === 'number' && request.age <= 4;
 }
 
+/** True when resolved learner age band is entirely ≤ 3 years (e.g. 2-3). */
+export function isAgeThreeOrUnder(request: {
+  age?: number | null;
+  ageGroup?: string | null;
+  grade?: string | null;
+}): boolean {
+  const band = resolveAgeBand(request as GenerateWorksheetRequest);
+  if (band) {
+    return band.max <= 3;
+  }
+  const raw = (request.ageGroup || '').trim();
+  if (/^2-3$|toddler|nursery|FS1/i.test(raw)) {
+    return true;
+  }
+  return typeof request.age === 'number' && request.age <= 3;
+}
+
 const REGEN_CONTEXT_OMIT = new Set([
   'badge_label',
   'skill_label',
@@ -104,6 +121,7 @@ export function buildWorksheetContentPrompt(input: {
     input.templateSlug === 'universal_template' ||
     input.templateSlug === 'universal';
   const toddlerOrUnder4 = isUniversal && isAgeFourOrUnder(request);
+  const ageTwoToThree = isUniversal && isAgeThreeOrUnder(request);
   const userRequest =
     request.query?.trim() ||
     [
@@ -364,10 +382,22 @@ export function buildWorksheetContentPrompt(input: {
                 '  • Picture + simple text only: large clear pictures, 1–2 word labels (or very short phrases a teacher reads aloud).',
                 '  • NO writing/tracing letters, NO multi-step matching grids, NO reading sentences, NO counting above 5, NO dense facts, NO third “trace the words” block.',
                 '  • Allowed activities only: look-and-name pictures, circle/tick one picture, simple 2-pair picture match, colour/point.',
-                '  • IMAGE SIZE: decide per section. A section with TWO image rows must use SMALLER boxes so BOTH rows stay fully inside that section border (never clip the bottom row). A single-row section may use larger boxes.',
+                '  • COHERENCE: if there are 2 sections, section 2 must reuse the SAME animals/objects from section 1 (e.g. look-and-point Dog/Cat → match Dog/Cat). NEVER introduce a new creature only in the match section.',
+                '  • MATCH LAYOUT: exactly 2 pairs; every side uses the SAME square .ws-img-box px; left column = pets, right column = matches; scramble so correct answers are not same-row. Prefer picture↔picture (short label OK for teacher to read).',
+                '  • IMAGE SIZE: decide per section. A section with TWO image rows must use SMALLER equal boxes so BOTH rows stay fully inside that section border (never clip the bottom row). A single-row section may use larger boxes.',
                 '  • Every {{IMAGE_N}} must sit fully inside its own activity section and inside the page canvas — no overflow, no clipping, no spilling into the next section or footer.',
                 '  • Keep tasks playful and easy for ages 2–4 — one clear action per section.',
-                '  • instruction_text: one short teacher-spoken line (e.g. "Look at the animals. Point to the cat.").',
+                '  • instruction_text: one short teacher-spoken line that covers the page (if 2 activities, mention both briefly).',
+                '  • imageQuery: “cute cartoon [name], centered in square frame, simple white background” so retrieved art fills the box evenly.',
+              ]
+            : []),
+          ...(ageTwoToThree
+            ? [
+                '',
+                'AGE 2–3 EXTRA HARD RULES (stricter than age ≤ 4):',
+                '  • Prefer ONE activity when that keeps pictures biggest. If using 2: look-and-name (≤4 pictures) + one simple 2-pair match of those same pets only.',
+                '  • No food/object names that need reading unless a clear picture sits beside the word. Prefer matching pet picture → food picture.',
+                '  • Keep labels to 1 familiar word (Dog, Cat). Avoid long words toddlers do not know unless the picture is obvious.',
               ]
             : []),
           '  • FILL the viewport (sections use flex:1) without leaving a huge empty band above Teacher signature, and without overflowing into the next section.',
