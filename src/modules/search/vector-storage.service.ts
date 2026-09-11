@@ -104,8 +104,8 @@ export class VectorStorageService {
     }
 
     const vectorLiteral = this.formatVectorLiteral(queryVector);
-    // Query the base table so the HNSW index can be used. One row per asset
-    // is enforced by AssetEmbedding.assetId uniqueness.
+    // HNSW index asset_embedding_vector_hnsw_idx uses vector_cosine_ops (<=>).
+    // One row per asset via AssetEmbedding.assetId uniqueness.
     const rows = await this.prisma.$queryRawUnsafe<VectorSearchRow[]>(
       `
         SELECT
