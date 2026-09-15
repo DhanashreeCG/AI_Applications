@@ -1,6 +1,10 @@
 import { buildCountryForbiddenPromptClause } from '../../flashcards/utils/content-restriction.registry';
 import { GenerateWorksheetRequest } from '../types/worksheet.types';
 import { resolveAgeBand } from '../utils/age-band.util';
+import {
+  buildUniversalActivityPolicyPromptLines,
+  resolveUniversalActivityPolicy,
+} from '../utils/universal-activity-policy.util';
 
 export function buildAgeGroupSafetyClause(
   ageGroup?: string | null,
@@ -120,8 +124,9 @@ export function buildWorksheetContentPrompt(input: {
   const isUniversal =
     input.templateSlug === 'universal_template' ||
     input.templateSlug === 'universal';
-  const toddlerOrUnder4 = isUniversal && isAgeFourOrUnder(request);
-  const ageTwoToThree = isUniversal && isAgeThreeOrUnder(request);
+  const universalActivityPolicy = isUniversal
+    ? resolveUniversalActivityPolicy(request)
+    : null;
   const userRequest =
     request.query?.trim() ||
     [
@@ -373,32 +378,9 @@ export function buildWorksheetContentPrompt(input: {
           '  • Root of content_html MUST be ONE container: width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:10px; (do NOT set height:100%, max-height:100%, or overflow:hidden — the host already constrains height).',
           '  • HARD FIT RULE: every section outline, label, and {{IMAGE_N}} MUST be fully visible. NEVER crop, clip, overlap, or stack sections on top of each other. No position:absolute, no negative margins.',
           `  • PIXEL MATH: after the instruction (~70px) you have ~${Math.max(240, viewportH - 100)}px for ALL activity sections. With 3 sections each gets ~${Math.floor((viewportH - 100) / 3)}px TOTAL (title + padding + images). Size content to fit that budget.`,
-          '  • Prefer 2–3 activity sections (rarely 4). Prefer **2 match pairs** unless image boxes are compact; with 3 pairs boxes MUST be ≤88px. Never emit more rows than the per-section pixel budget.',
-          ...(toddlerOrUnder4
-            ? [
-                '',
-                'TODDLER / AGE ≤ 4 HARD RULES (override other density guidance when they conflict):',
-                '  • Activity count: choose **1 or 2** activity sections (plus the instruction box). NEVER 3+. Prefer 1 big clear activity when that keeps pictures large; use 2 only when both stay easy and readable. Extra sections will be removed.',
-                '  • Picture + simple text only: large clear pictures, 1–2 word labels (or very short phrases a teacher reads aloud).',
-                '  • NO writing/tracing letters, NO multi-step matching grids, NO reading sentences, NO counting above 5, NO dense facts, NO third “trace the words” block.',
-                '  • Allowed activities only: look-and-name pictures, circle/tick one picture, simple 2-pair picture match, colour/point.',
-                '  • COHERENCE: if there are 2 sections, section 2 must reuse the SAME animals/objects from section 1 (e.g. look-and-point Dog/Cat → match Dog/Cat). NEVER introduce a new creature only in the match section.',
-                '  • MATCH LAYOUT: exactly 2 pairs; every side uses the SAME square .ws-img-box px; left column = pets, right column = matches; scramble so correct answers are not same-row. Prefer picture↔picture (short label OK for teacher to read).',
-                '  • IMAGE SIZE: decide per section. A section with TWO image rows must use SMALLER equal boxes so BOTH rows stay fully inside that section border (never clip the bottom row). A single-row section may use larger boxes.',
-                '  • Every {{IMAGE_N}} must sit fully inside its own activity section and inside the page canvas — no overflow, no clipping, no spilling into the next section or footer.',
-                '  • Keep tasks playful and easy for ages 2–4 — one clear action per section.',
-                '  • instruction_text: one short teacher-spoken line that covers the page (if 2 activities, mention both briefly).',
-                '  • imageQuery: “cute cartoon [name], centered in square frame, simple white background” so retrieved art fills the box evenly.',
-              ]
-            : []),
-          ...(ageTwoToThree
-            ? [
-                '',
-                'AGE 2–3 EXTRA HARD RULES (stricter than age ≤ 4):',
-                '  • Prefer ONE activity when that keeps pictures biggest. If using 2: look-and-name (≤4 pictures) + one simple 2-pair match of those same pets only.',
-                '  • No food/object names that need reading unless a clear picture sits beside the word. Prefer matching pet picture → food picture.',
-                '  • Keep labels to 1 familiar word (Dog, Cat). Avoid long words toddlers do not know unless the picture is obvious.',
-              ]
+          '  • Section count is governed by AGE BAND HARD RULES below (not free preference). Prefer **2 match pairs** unless image boxes are compact; with 3 pairs boxes MUST be ≤88px. Never emit more rows than the per-section pixel budget.',
+          ...(universalActivityPolicy
+            ? buildUniversalActivityPolicyPromptLines(universalActivityPolicy)
             : []),
           '  • FILL the viewport (sections use flex:1) without leaving a huge empty band above Teacher signature, and without overflowing into the next section.',
           '  • LAST ACTIVITY OUTLINE MUST CLOSE near the bottom of the viewport with a FULL 4-sided border. Never leave a cut-off box.',
@@ -448,9 +430,11 @@ export function buildWorksheetContentPrompt(input: {
           '  • Soft speech-bubble labels for sounds/words',
           '',
           'AGE & EDUCATION QUALITY:',
-          '  • Age ≤ 4 / toddler: 1 or 2 simple picture+label activities (LLM chooses; see TODDLER rules)',
-          '  • Younger (5–6): fewer words, larger boxes, 2–3 sections, mostly pictures',
-          '  • Mid (7–8): short sentences, 3 sections, mix picture + simple writing',
+          '  • Age 2–3: EXACTLY 1 easy picture activity (see AGE BAND HARD RULES)',
+          '  • Age 3–4: EXACTLY 2 easy activities (see AGE BAND HARD RULES)',
+          '  • Age 4–5+: target 3 medium activities that fit the page (cap 4)',
+          '  • Younger (5–6): fewer words, larger boxes, mostly pictures',
+          '  • Mid (7–8): short sentences, mix picture + simple writing',
           '  • Older (9–10): denser facts + practice, still child-friendly and playful',
           '  • Every section must teach the query objective — not decoration-only',
           '  • No scary / violent / adult themes',

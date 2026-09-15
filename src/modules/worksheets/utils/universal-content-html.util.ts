@@ -1,4 +1,4 @@
-import { resolveAgeBand } from './age-band.util';
+import { resolveUniversalActivityPolicy } from './universal-activity-policy.util';
 
 /**
  * Universal template: fixed chrome (title / subtopic / Name / Date) +
@@ -15,15 +15,12 @@ export type UniversalNormalizeOptions = {
   viewportContentH?: number;
 };
 
-function isToddlerAgeOptions(options?: UniversalNormalizeOptions): boolean {
-  if (!options) return false;
-  const band = resolveAgeBand({
-    age: options.age ?? undefined,
-    ageGroup: options.ageGroup ?? undefined,
-    grade: options.grade ?? undefined,
+function policyFromNormalizeOptions(options?: UniversalNormalizeOptions) {
+  return resolveUniversalActivityPolicy({
+    age: options?.age ?? undefined,
+    ageGroup: options?.ageGroup ?? undefined,
+    grade: options?.grade ?? undefined,
   });
-  if (band) return band.max <= 4;
-  return typeof options.age === 'number' && options.age <= 4;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -817,13 +814,61 @@ export function clampUniversalImageBoxes(
   return walk(html);
 }
 
-/** Keep at most `maxSections` activity blocks (toddler / age ≤ 4). */
-export function enforceUniversalActivitySectionLimit(
-  html: string,
-  maxSections: number,
-): string {
-  if (!html || maxSections < 1) return html;
-  let kept = 0;
+/**
+ * Score an activity section so empty title-only shells rank below picture cards.
+ * Used when age-band limits force us to drop extras.
+ */
+export function scoreUniversalActivitySection(innerHtml: string): number {
+  const imgs = countImageSlots(innerHtml);
+  if (imgs > 0) return 100 + imgs;
+  const hasImgBox = /\bws-img-box\b/i.test(innerHtml);
+  if (hasImgBox) return 50;
+  const text = innerHtml
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Short title + one-line instruction only → treat as empty shell
+  if (text.length <= 60) return 0;
+  if (text.length <= 120) return 5;
+  return 15;
+}
+
+function isEmptyActivitySection(block: TopBlock): boolean {
+  return (
+    isActivitySectionBlock(block) &&
+    scoreUniversalActivitySection(block.inner) === 0
+  );
+}
+
+/**
+ * Drop title-only / empty bordered activity shells so age-band limits keep
+ * sections that actually have pictures (or substantial content).
+ * Only prunes when at least one richer section exists (never wipe the page).
+ */
+export function pruneEmptyUniversalActivitySections(html: string): string {
+  if (!html) return html;
+
+  const sections: TopBlock[] = [];
+  const collect = (fragment: string): void => {
+    for (const block of splitTopLevelElementBlocks(fragment)) {
+      if (isInstructionBlock(block)) continue;
+      const kids = splitTopLevelElementBlocks(block.inner);
+      if (
+        kids.some((k) => isActivitySectionBlock(k)) &&
+        !isActivitySectionBlock(block)
+      ) {
+        collect(block.inner);
+        continue;
+      }
+      if (isActivitySectionBlock(block)) sections.push(block);
+    }
+  };
+  collect(html);
+  const hasRich = sections.some(
+    (s) => scoreUniversalActivitySection(s.inner) > 0,
+  );
+  if (!hasRich) return html;
 
   const walk = (fragment: string): string => {
     const blocks = splitTopLevelElementBlocks(fragment);
@@ -838,16 +883,86 @@ export function enforceUniversalActivitySectionLimit(
         ) {
           return rewriteBlockInner(block, walk(block.inner));
         }
-        if (isActivitySectionBlock(block)) {
-          kept += 1;
-          return kept <= maxSections ? block.full : '';
-        }
+        if (isEmptyActivitySection(block)) return '';
         return block.full;
       })
       .join('');
   };
 
   return walk(html);
+}
+
+/**
+ * Keep at most `maxSections` activity blocks (age-band hard max).
+ * Prefers content-rich sections (images first), preserves relative order.
+ */
+export function enforceUniversalActivitySectionLimit(
+  html: string,
+  maxSections: number,
+): string {
+  if (!html || maxSections < 1) return html;
+  const pruned = pruneEmptyUniversalActivitySections(html);
+
+  type Ranked = { index: number; score: number; block: TopBlock };
+  const ranked: Ranked[] = [];
+
+  const collect = (fragment: string, path: number[] = []): void => {
+    const blocks = splitTopLevelElementBlocks(fragment);
+    blocks.forEach((block, i) => {
+      if (isInstructionBlock(block)) return;
+      const kids = splitTopLevelElementBlocks(block.inner);
+      if (
+        kids.some((k) => isActivitySectionBlock(k)) &&
+        !isActivitySectionBlock(block)
+      ) {
+        collect(block.inner, [...path, i]);
+        return;
+      }
+      if (isActivitySectionBlock(block)) {
+        ranked.push({
+          index: ranked.length,
+          score: scoreUniversalActivitySection(block.inner),
+          block,
+        });
+      }
+    });
+  };
+  collect(pruned);
+
+  if (ranked.length <= maxSections) return pruned;
+
+  const keepIndexes = new Set(
+    [...ranked]
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .slice(0, maxSections)
+      .map((r) => r.index),
+  );
+
+  let seen = 0;
+  const walk = (fragment: string): string => {
+    const blocks = splitTopLevelElementBlocks(fragment);
+    if (!blocks.length) return fragment;
+    return blocks
+      .map((block) => {
+        if (isInstructionBlock(block)) return block.full;
+        const kids = splitTopLevelElementBlocks(block.inner);
+        if (
+          kids.some((k) => isActivitySectionBlock(k)) &&
+          !isActivitySectionBlock(block)
+        ) {
+          return rewriteBlockInner(block, walk(block.inner));
+        }
+        if (isActivitySectionBlock(block)) {
+          const idx = seen;
+          seen += 1;
+          return keepIndexes.has(idx) ? block.full : '';
+        }
+        return block.full;
+      })
+      .join('');
+  };
+
+  return walk(pruned);
 }
 
 /** Sync labels[] from data-editable spans so chrome editor can change copy. */
@@ -902,6 +1017,8 @@ function looksLikeEditableLabelText(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed || trimmed.length > 40) return false;
   if (/^\{\{/.test(trimmed)) return false;
+  // Never treat image placeholders as editable label copy
+  if (/\{\{\s*IMAGE[_:]?\d+\s*\}\}/i.test(trimmed)) return false;
   if (!/[a-zA-Z]/.test(trimmed)) return false;
   const words = trimmed.split(/\s+/).filter(Boolean);
   return words.length > 0 && words.length <= 6;
@@ -1206,7 +1323,7 @@ export function normalizeUniversalStructure(
   const next: Record<string, unknown> = { ...structure };
   next.worksheet_type = 'universal_template';
   const viewportH = options?.viewportContentH ?? 1104;
-  const toddler = isToddlerAgeOptions(options);
+  const activityPolicy = policyFromNormalizeOptions(options);
 
   const mainTopic =
     readString(next.main_topic, 80) ||
@@ -1252,11 +1369,13 @@ export function normalizeUniversalStructure(
     sanitizeUniversalContentHtml(contentHtml),
   );
   sanitized = ensureEditableLabels(sanitized);
-  // Tag sections early so we can limit toddler activities + size per section.
+  // Tag sections early so we can limit age-banded activities + size per section.
   sanitized = fitUniversalContentLayout(sanitized);
-  if (toddler) {
-    sanitized = enforceUniversalActivitySectionLimit(sanitized, 2);
-  }
+  // Provider-agnostic hard max (2-3→1, 3-4→2, 4-5+→4).
+  sanitized = enforceUniversalActivitySectionLimit(
+    sanitized,
+    activityPolicy.maxSections,
+  );
   let synced = syncEditableLabels(sanitized, next.labels);
   sanitized = clampUniversalImageBoxes(synced.html, {
     viewportContentH: viewportH,
@@ -1280,15 +1399,7 @@ export function normalizeUniversalStructure(
     }
   };
   collectTokens(sanitized);
-  const rawImgCount = (contentHtml.match(/<img\b/gi) || []).length;
-  const maxTokenRaw = tokenNums.size
-    ? Math.max(...tokenNums)
-    : rawImgCount > 0
-      ? rawImgCount
-      : existing.length;
-  const maxToken = Math.min(Math.max(maxTokenRaw, 0), UNIVERSAL_MAX_IMAGES);
-
-  // Rebuild images[] only for tokens that remain (after toddler section trim).
+  // Rebuild images[] only for tokens that remain (after age-band section trim).
   const orderedTokens = [...tokenNums].filter((n) => n >= 1).sort((a, b) => a - b);
   const images: Array<Record<string, unknown>> = [];
   if (orderedTokens.length) {
@@ -1321,20 +1432,9 @@ export function normalizeUniversalStructure(
     );
     sanitized = remapHtml;
     next.content_html = sanitized;
-  } else {
-    for (let i = 0; i < maxToken; i += 1) {
-      const prior = isRecord(existing[i]) ? existing[i] : {};
-      const imageQuery =
-        readString(prior.imageQuery, 120) ||
-        readString(prior.image_query, 120) ||
-        `age appropriate educational illustration ${i + 1}`;
-      images.push({
-        imageQuery,
-        ...(typeof prior.assetId === 'string' ? { assetId: prior.assetId } : {}),
-        ...(typeof prior.assetUrl === 'string' ? { assetUrl: prior.assetUrl } : {}),
-      });
-    }
   }
+  // If HTML has no {{IMAGE_N}} left, do NOT keep orphan images[] from the LLM —
+  // that fetched assets in the pipeline that never appear on the page.
   const labelsArr = Array.isArray(next.labels)
     ? (next.labels as unknown[]).map((v) => readString(v, 80))
     : [];
@@ -1349,7 +1449,7 @@ export function buildUniversalSkeletonHtml(
   const normalized = normalizeUniversalStructure(structure, options);
   const instruction = readString(normalized.instruction_text, 220);
   const viewportH = options?.viewportContentH ?? 1104;
-  const toddler = isToddlerAgeOptions(options);
+  const activityPolicy = policyFromNormalizeOptions(options);
   let fragment = expandUniversalImagePlaceholders(
     sanitizeUniversalContentHtml(String(normalized.content_html || '')),
   );
@@ -1370,9 +1470,10 @@ export function buildUniversalSkeletonHtml(
 
   // Re-fit after instruction injection so top-level sections stay host flex children.
   fragment = fitUniversalContentLayout(fragment);
-  if (toddler) {
-    fragment = enforceUniversalActivitySectionLimit(fragment, 2);
-  }
+  fragment = enforceUniversalActivitySectionLimit(
+    fragment,
+    activityPolicy.maxSections,
+  );
   // Per-section clamp so multi-row match blocks never clip the bottom row.
   fragment = clampUniversalImageBoxes(fragment, { viewportContentH: viewportH });
 

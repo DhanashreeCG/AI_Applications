@@ -2,11 +2,13 @@ import {
   buildUniversalSkeletonHtml,
   clampUniversalImageBoxes,
   ensureEditableLabels,
+  enforceUniversalActivitySectionLimit,
   fitUniversalContentLayout,
   isUniversalSlug,
   isUniversalStructure,
   normalizeImgTagsToImageTokens,
   normalizeUniversalStructure,
+  pruneEmptyUniversalActivitySections,
   resolveUniversalImageBoxBudget,
   sanitizeUniversalContentHtml,
   scrubShortPhrasePunctuation,
@@ -121,8 +123,8 @@ describe('universal strict dynamic HTML', () => {
       instruction_text: 'Match the animals to their sounds.',
       content_html:
         `<div style="height:100%;overflow:hidden;display:flex;flex-direction:column;">` +
-        `<div style="border:2px solid #85cbf4;">A</div>` +
-        `<div style="border:2px solid #f03a3e;">B</div>` +
+        `<div style="border:2px solid #85cbf4;">{{IMAGE_1}} A</div>` +
+        `<div style="border:2px solid #f03a3e;">{{IMAGE_2}} B</div>` +
         `</div>`,
       images: [{ imageQuery: 'cat' }, { imageQuery: 'dog' }],
     });
@@ -130,8 +132,11 @@ describe('universal strict dynamic HTML', () => {
     expect(html).toContain('ws-section');
     expect(html).not.toMatch(/ws-section[^>]*height\s*:\s*100%/i);
     expect(html).not.toMatch(/ws-stack[^>]*height\s*:\s*100%/i);
-    const withoutHost = html.replace(/<div class="ws-dynamic"[^>]*>/, '');
-    expect(withoutHost).not.toMatch(/height\s*:\s*100%/i);
+    // Section open tags must not fight the host with height:100% (img fill 100% is OK).
+    const sectionOpens = html.match(/<(?:div|section)[^>]*\bws-section\b[^>]*>/gi) || [];
+    for (const open of sectionOpens) {
+      expect(open).not.toMatch(/height\s*:\s*100%/i);
+    }
   });
 
   it('strips ! from short titles and keeps readable image boxes on sparse pages', () => {
@@ -257,7 +262,35 @@ describe('universal strict dynamic HTML', () => {
     expect(new Set(matchWidths).size).toBe(1);
   });
 
-  it('enforces at most 2 activity sections for toddler normalize', () => {
+  it('enforces exactly 1 activity section for age 2-3', () => {
+    const next = normalizeUniversalStructure(
+      {
+        main_topic: 'Pets',
+        sub_topic: 'Friends',
+        instruction_text: 'Look at the pets.',
+        content_html:
+          `<div style="border:2px solid #85cbf4;padding:8px;">One {{IMAGE_1}}</div>` +
+          `<div style="border:2px solid #fecd59;padding:8px;">Two {{IMAGE_2}}{{IMAGE_3}}</div>` +
+          `<div style="border:2px solid #67bd47;padding:8px;">Three {{IMAGE_4}}</div>`,
+        images: [
+          { imageQuery: 'dog' },
+          { imageQuery: 'cat' },
+          { imageQuery: 'bird' },
+          { imageQuery: 'fish' },
+        ],
+      },
+      { ageGroup: '2-3', viewportContentH: 1104 },
+    );
+    const html = String(next.content_html);
+    const sections = html.match(/\bws-section\b/g) || [];
+    expect(sections.length).toBe(1);
+    // Keeps the richest section (2 images), remapped to IMAGE_1..2
+    expect((next.images as unknown[]).length).toBe(2);
+    expect(html).toMatch(/\{\{\s*IMAGE_1\s*\}\}/);
+    expect(html).toMatch(/\{\{\s*IMAGE_2\s*\}\}/);
+  });
+
+  it('enforces at most 2 activity sections for age 3-4', () => {
     const next = normalizeUniversalStructure(
       {
         main_topic: 'Pets',
@@ -277,8 +310,131 @@ describe('universal strict dynamic HTML', () => {
       { ageGroup: '3-4', viewportContentH: 1104 },
     );
     const sections = String(next.content_html).match(/\bws-section\b/g) || [];
-    expect(sections.length).toBeLessThanOrEqual(2);
+    expect(sections.length).toBe(2);
     expect((next.images as unknown[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it('caps activity sections at 4 for age 4-5+', () => {
+    const content_html = Array.from({ length: 5 }, (_, i) => {
+      const colors = ['#85cbf4', '#fecd59', '#67bd47', '#f03a3e', '#6d28d9'];
+      return `<div style="border:2px solid ${colors[i]};padding:8px;">S${i + 1} {{IMAGE_${i + 1}}}</div>`;
+    }).join('');
+    const next = normalizeUniversalStructure(
+      {
+        main_topic: 'Pets',
+        sub_topic: 'Practice',
+        instruction_text: 'Complete the activities.',
+        content_html,
+        images: Array.from({ length: 5 }, (_, i) => ({
+          imageQuery: `pet ${i + 1}`,
+        })),
+      },
+      { ageGroup: '4-5', viewportContentH: 1104 },
+    );
+    const sections = String(next.content_html).match(/\bws-section\b/g) || [];
+    expect(sections.length).toBeLessThanOrEqual(4);
+    expect((next.images as unknown[]).length).toBeLessThanOrEqual(4);
+  });
+
+  it('drops empty first shells and keeps the picture section (age 2-3)', () => {
+    const next = normalizeUniversalStructure(
+      {
+        main_topic: 'Sea Animals',
+        sub_topic: 'Look and Point',
+        instruction_text: 'Point to each sea animal.',
+        content_html:
+          `<div style="border:2px solid #fecd59;padding:12px;">` +
+          `<div>1. Look and point</div>` +
+          `<div>Point to each sea animal and say its name.</div>` +
+          `</div>` +
+          `<div style="border:2px solid #85cbf4;padding:12px;">` +
+          `<div class="ws-img-box" style="width:140px;height:140px;">{{IMAGE_1}}</div>` +
+          `<div class="ws-img-box" style="width:140px;height:140px;">{{IMAGE_2}}</div>` +
+          `<div class="ws-img-box" style="width:140px;height:140px;">{{IMAGE_3}}</div>` +
+          `<div class="ws-img-box" style="width:140px;height:140px;">{{IMAGE_4}}</div>` +
+          `</div>`,
+        images: [
+          { imageQuery: 'fish' },
+          { imageQuery: 'whale' },
+          { imageQuery: 'dolphin' },
+          { imageQuery: 'octopus' },
+        ],
+      },
+      { ageGroup: '2-3', viewportContentH: 1104 },
+    );
+    const html = String(next.content_html);
+    expect(html).toContain('{{IMAGE_1}}');
+    expect(html).toContain('{{IMAGE_4}}');
+    expect((next.images as unknown[]).length).toBe(4);
+    const sections = html.match(/\bws-section\b/g) || [];
+    expect(sections.length).toBe(1);
+  });
+
+  it('prefers image-rich sections when trimming age 3-4 to 2', () => {
+    const next = normalizeUniversalStructure(
+      {
+        main_topic: 'Jungle',
+        sub_topic: 'Match',
+        instruction_text: 'Look and match.',
+        content_html:
+          `<div style="border:2px solid #85cbf4;padding:8px;"><span>1. Look and say</span><p>Point to each animal.</p></div>` +
+          `<div style="border:2px solid #fecd59;padding:8px;">` +
+          `{{IMAGE_1}}{{IMAGE_2}}{{IMAGE_3}}{{IMAGE_4}}</div>` +
+          `<div style="border:2px solid #67bd47;padding:8px;">` +
+          `{{IMAGE_5}}{{IMAGE_6}}</div>`,
+        images: Array.from({ length: 6 }, (_, i) => ({
+          imageQuery: `animal ${i + 1}`,
+        })),
+      },
+      { ageGroup: '3-4', viewportContentH: 1104 },
+    );
+    const html = String(next.content_html);
+    expect(html).not.toMatch(/Point to each animal/);
+    expect(html).toContain('{{IMAGE_1}}');
+    const sections = html.match(/\bws-section\b/g) || [];
+    expect(sections.length).toBe(2);
+    expect((next.images as unknown[]).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('does not keep orphan images[] when HTML has no IMAGE tokens', () => {
+    const next = normalizeUniversalStructure(
+      {
+        main_topic: 'Sea',
+        sub_topic: 'Look',
+        instruction_text: 'Point.',
+        content_html:
+          `<div style="border:2px solid #fecd59;padding:8px;">` +
+          `<div>1. Look and point</div><p>Point to each sea animal and say its name.</p></div>`,
+        images: [
+          { imageQuery: 'fish' },
+          { imageQuery: 'whale' },
+        ],
+      },
+      { ageGroup: '2-3', viewportContentH: 1104 },
+    );
+    expect((next.images as unknown[]).length).toBe(0);
+  });
+
+  it('pruneEmptyUniversalActivitySections removes title-only shells', () => {
+    const html =
+      `<div class="ws-section" style="border:2px solid #ccc;">` +
+      `<span>1. Look and say</span></div>` +
+      `<div class="ws-section" style="border:2px solid #abc;">` +
+      `<div class="ws-img-box">{{IMAGE_1}}</div></div>`;
+    const pruned = pruneEmptyUniversalActivitySections(html);
+    expect(pruned).not.toContain('Look and say');
+    expect(pruned).toContain('{{IMAGE_1}}');
+  });
+
+  it('enforceUniversalActivitySectionLimit keeps richest sections', () => {
+    const html =
+      `<div class="ws-section" style="border:1px solid #000;">Empty title only here</div>` +
+      `<div class="ws-section" style="border:1px solid #000;">{{IMAGE_1}}{{IMAGE_2}}</div>` +
+      `<div class="ws-section" style="border:1px solid #000;">{{IMAGE_3}}</div>`;
+    const next = enforceUniversalActivitySectionLimit(html, 1);
+    expect(next).toContain('{{IMAGE_1}}');
+    expect(next).not.toContain('{{IMAGE_3}}');
+    expect(next).not.toContain('Empty title');
   });
 
   it('resolves larger budgets for few images and smaller for dense pages', () => {
