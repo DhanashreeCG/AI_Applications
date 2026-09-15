@@ -58,10 +58,12 @@ export interface WorksheetAiConfig {
   /** Prototype-style map; normalized to EditableField before the editor sees it. */
   editable_fields?: Record<string, Record<string, unknown>>;
   /**
-   * Optional Gemini model override for full-structure generation
-   * (used by universal_template for denser HTML layout quality).
+   * Optional model override for full-structure generation
+   * (used by universal_template when WORKSHEET_UNIVERSAL_ALLOW_DB_MODEL=true).
    */
   contentModel?: string;
+  /** Optional provider override ("gemini" | "openai") when DB model override is allowed. */
+  contentProvider?: string;
 }
 
 export interface EditableField {

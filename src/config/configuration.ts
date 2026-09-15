@@ -157,8 +157,12 @@ export interface AppConfig {
     defaultAgeGroup: string;
     ageGroups: Array<{ id: string; label: string; age: number; grade: string }>;
     geminiModel: string;
-    /** Dedicated model for universal_template HTML generation (optional override). */
+    /** Dedicated Gemini model for universal_template HTML generation. */
     universalGeminiModel: string;
+    /** Dedicated OpenAI model for universal_template when provider=openai. */
+    universalOpenaiModel: string;
+    /** Universal content provider: "gemini" | "openai". */
+    universalContentProvider: string;
     promptVersion: string;
     renderer: {
       enabled: boolean;
@@ -583,12 +587,24 @@ export default (): AppConfig => ({
       process.env.WORKSHEET_GEMINI_MODEL ||
       process.env.FLASHCARD_GEMINI_MODEL ||
       'gemini-2.5-flash',
-    /** Dedicated model for universal_template; falls back to worksheet content model. */
+    /** Dedicated Gemini model for universal_template; falls back to worksheet content model. */
     universalGeminiModel:
       process.env.WORKSHEET_UNIVERSAL_GEMINI_MODEL ||
       process.env.WORKSHEET_GEMINI_MODEL ||
       process.env.FLASHCARD_GEMINI_MODEL ||
       'gemini-2.5-flash',
+    /** Dedicated OpenAI model for universal_template when provider=openai. */
+    universalOpenaiModel:
+      process.env.WORKSHEET_UNIVERSAL_OPENAI_MODEL ||
+      process.env.WORKSHEET_TEMPLATE_SELECTION_OPENAI_MODEL ||
+      process.env.OPENAI_FLASHCARD_MODEL ||
+      'gpt-4.1-mini',
+    /** Universal content LLM: "gemini" | "openai" (default gemini). */
+    universalContentProvider: (
+      process.env.WORKSHEET_UNIVERSAL_CONTENT_PROVIDER || 'gemini'
+    )
+      .trim()
+      .toLowerCase(),
     promptVersion: process.env.WORKSHEET_PROMPT_VERSION || 'v1',
     renderer: {
       enabled: process.env.WORKSHEET_RENDERER_ENABLED !== 'false',
