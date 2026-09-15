@@ -126,8 +126,12 @@ export function buildUniversalActivityPolicyPromptLines(
     ...(policy.bandKey === '2-3'
       ? [
           '  • Picture + simple text only: large clear pictures, 1-word labels (teacher may read aloud).',
+          '  • ONE activity does NOT mean one tiny picture. Make that single activity RICH:',
+          '    large primary image + 2–3 large visual choices / find-or-point interactions in the SAME activity.',
+          '  • Never leave most of the page blank. Prefer spacious large-picture or choice-grid layoutIntent.',
+          '  • COLORING: only if images[] use outline/line-art queries. Otherwise use find/point/circle — never “color” a fully colored cartoon.',
           '  • instruction_text: one short teacher-spoken line for the single activity.',
-          '  • imageQuery: “cute cartoon [name], centered in square frame, simple white background”.',
+          '  • imageQuery: “cute cartoon [name], centered in square frame, simple white background” (or outline for coloring).',
         ]
       : []),
     ...(policy.bandKey === '3-4'
@@ -135,7 +139,7 @@ export function buildUniversalActivityPolicyPromptLines(
           '  • Picture + simple text: 1–2 word labels (or short phrases a teacher reads aloud).',
           '  • COHERENCE: section 2 must reuse the SAME animals/objects from section 1. NEVER introduce a new creature only in the match section.',
           '  • MATCH LAYOUT (if used): exactly 2 pairs; equal square .ws-img-box px; scramble so correct answers are not same-row; prefer picture↔picture.',
-          '  • IMAGE SIZE: a section with TWO image rows must use SMALLER equal boxes so BOTH rows stay inside the section border.',
+          '  • IMAGE SIZE: prefer fewer larger pictures; the renderer sizes boxes from available space.',
           '  • instruction_text: one short teacher-spoken line that covers both activities briefly.',
           '  • imageQuery: “cute cartoon [name], centered in square frame, simple white background”.',
         ]
@@ -144,10 +148,12 @@ export function buildUniversalActivityPolicyPromptLines(
       ? [
           '  • Mix teach + practice (e.g. learn row → match/circle → optional short trace) when they fit.',
           '  • Every section outline, label, and {{IMAGE_N}} must stay fully visible — never crop or overflow.',
-          '  • Prefer **2 match pairs** unless boxes are compact; with 3 pairs boxes MUST be ≤88px.',
+          '  • Prefer **2–3 match pairs** with readable pictures; never force a 4th filler activity.',
         ]
       : []),
+    '  • Prefer **3 excellent distinct activities** over 4 weak/repetitive ones when age allows.',
     '  • Every {{IMAGE_N}} must sit fully inside its own activity section and inside the page canvas.',
-    '  • Never emit an empty bordered activity shell (title/instruction only with no pictures). Every activity section MUST include its {{IMAGE_N}} boxes.',
+    '  • Never emit an empty bordered activity shell (question only with no pictures/choices/trace). Every activity section MUST include learner content.',
+    '  • ONE visible learner question per activity — no separate section title like “Look and Name” or “Match Two Pairs”.',
   ];
 }

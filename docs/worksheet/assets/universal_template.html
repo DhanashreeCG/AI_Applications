@@ -73,7 +73,7 @@
     /*
       DYNAMIC viewport — fills from below chrome to just above
       Teacher signature / stars (~y=1245 on 1316 canvas).
-      All descendants use border-box so section outlines stay inside the budget.
+      Activity heights are calculated by the layout engine (--activity-height).
     */
     #content-region,
     #content-region * {
@@ -95,82 +95,154 @@
     #content-region .ws-dynamic {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: var(--activity-gap, 12px);
       width: 100%;
       height: 100%;
       min-height: 0;
       max-height: 100%;
       overflow: hidden;
+      justify-content: flex-start;
     }
-    /* Instruction stays natural height; everything else shares leftover space */
     #content-region .ws-dynamic > .ws-instruction {
       flex: 0 0 auto;
       max-height: none;
       height: auto;
       overflow: visible;
     }
-    /*
-      Model often emits height:100% on a root stack beside the injected instruction.
-      Override that — but do NOT set height:auto !important (it blocks flex-grow and
-      leaves a dead gap above the footer while squashing middle sections).
-    */
-    #content-region .ws-dynamic > *:not(.ws-instruction) {
-      flex: 1 1 0 !important;
-      min-height: 0 !important;
-      max-height: none !important;
+    /* Activities use calculated heights — NEVER equal flex:1 sharing */
+    #content-region .ws-dynamic > .ws-activity,
+    #content-region .ws-dynamic > .ws-section {
+      flex: 0 0 auto !important;
+      flex-grow: 0 !important;
+      height: var(--activity-height, auto);
+      max-height: var(--activity-height, none);
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+      z-index: 0;
+      margin: 0 !important;
+      width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      overflow: hidden;
+      gap: 8px;
     }
-    /* Activity sections fill leftover height and keep a closed outline */
-    #content-region .ws-dynamic .ws-section,
-    #content-region .ws-dynamic > *:not(.ws-instruction) > section,
-    #content-region .ws-dynamic > *:not(.ws-instruction) > article,
-    #content-region .ws-dynamic > section,
-    #content-region .ws-dynamic > article {
-      flex: 1 1 0 !important;
-      min-height: 0 !important;
+    /* Nested stack roots must not steal leftover height */
+    #content-region .ws-dynamic > .ws-stack {
+      flex: 0 0 auto !important;
+      height: auto !important;
       max-height: none !important;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
       overflow: hidden;
     }
-    #content-region .ws-dynamic > .ws-section:last-child,
-    #content-region .ws-dynamic > *:not(.ws-instruction) > .ws-section:last-child {
-      flex: 1 1 0 !important;
+    #content-region .ws-activity-title,
+    #content-region .ws-activity-instruction {
+      flex: 0 0 auto;
+      margin: 0;
+      line-height: 1.25;
     }
-    /* Image boxes: inline width/height from density clamp win; stay inside section */
-    #content-region .ws-img-box {
+    #content-region .ws-row,
+    #content-region .ws-grid {
       display: flex;
+      flex-wrap: wrap;
+      gap: var(--image-gap, 8px);
+      align-items: flex-start;
+      justify-content: flex-start;
+      width: 100%;
+    }
+    #content-region .ws-match-area {
+      display: flex;
+      flex-direction: column;
+      gap: var(--image-gap, 10px);
+      width: 100%;
+    }
+    #content-region .ws-match-row {
+      display: grid;
+      grid-template-columns: 1fr 48px 1fr;
+      gap: var(--image-gap, 10px);
+      align-items: center;
+      width: 100%;
+    }
+    #content-region .ws-match-connector {
+      height: 2px;
+      background: #85cbf4;
+      opacity: 0.55;
+    }
+    #content-region .ws-image-grid,
+    #content-region .ws-choice-group {
+      display: grid;
+      gap: var(--image-gap, 8px);
+      width: 100%;
+      align-items: start;
+      justify-items: center;
+    }
+    #content-region .ws-trace-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: center;
+    }
+    #content-region .ws-column {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 0 0 auto;
+      height: auto;
+    }
+    /* Nested cards must hug content — never flex-grow into empty tall shells */
+    #content-region .ws-item,
+    #content-region .ws-picture-card,
+    #content-region .ws-answer-option,
+    #content-region .ws-activity > div,
+    #content-region .ws-section > div,
+    #content-region .ws-activity > section,
+    #content-region .ws-section > section,
+    #content-region .ws-activity > article,
+    #content-region .ws-section > article {
+      flex: 0 0 auto !important;
+      flex-grow: 0 !important;
+      flex-shrink: 1 !important;
+      flex-basis: auto !important;
+      height: auto !important;
+      max-height: 100%;
+      align-self: flex-start;
+      box-sizing: border-box;
+    }
+    #content-region .ws-img-box {
+      display: flex !important;
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      flex-shrink: 1;
-      min-width: 64px;
-      min-height: 64px;
-      max-width: min(220px, 100%);
-      max-height: min(220px, 100%);
+      flex: 0 0 auto !important;
+      flex-shrink: 0 !important;
+      width: var(--image-size, 160px);
+      height: var(--image-size, 160px);
+      min-width: 0;
+      min-height: 0;
+      max-width: min(300px, 100%);
+      max-height: min(300px, 100%);
       aspect-ratio: 1 / 1;
       box-sizing: border-box;
     }
-    #content-region .ws-section .ws-img-box {
-      max-width: min(220px, 100%);
-      max-height: min(220px, 42%);
-    }
-    #content-region img.worksheet-image {
-      width: 100%;
-      height: 100%;
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-      display: block;
+    #content-region img.worksheet-image,
+    #content-region .ws-img-box img.worksheet-image,
+    #content-region .ws-img-box > img {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      object-fit: contain !important;
+      display: block !important;
       aspect-ratio: 1 / 1;
-      vertical-align: middle;
     }
-    #content-region .ws-img-box img.worksheet-image {
-      width: 100%;
-      height: 100%;
-      max-width: 100%;
-      max-height: 100%;
+    #content-region .ws-label,
+    #content-region .ws-word,
+    #content-region .ws-trace-word {
+      flex: 0 0 auto;
+      text-align: center;
     }
   </style>
 </head>

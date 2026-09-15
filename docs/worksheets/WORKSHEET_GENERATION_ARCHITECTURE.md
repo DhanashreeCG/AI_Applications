@@ -50,6 +50,8 @@ S3 (WorksheetOutput.storageKey)
 
 ## Universal template (`universal_template`)
 
+Full walkthrough: [UNIVERSAL_TEMPLATE_GENERATION.md](./UNIVERSAL_TEMPLATE_GENERATION.md).
+
 Dedicated freeform HTML path. Meta uses `selectionMode: "explicit_only"` — only selected via explicit `templateId` (id or slug), never auto-picked by catalog AI.
 
 ### Content contract

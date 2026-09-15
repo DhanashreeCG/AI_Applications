@@ -171,4 +171,21 @@ describe('worksheet regen prompt', () => {
     expect(prompt).not.toContain('TODDLER / AGE ≤ 4 HARD RULES');
     expect(prompt).not.toContain('AGE BAND 2-3 HARD RULES');
   });
+
+  it('asks universal worksheets for semantic primitives and unique activities', () => {
+    const prompt = buildWorksheetContentPrompt({
+      request: { topic: 'foxes', ageGroup: '4-5' },
+      templateName: 'Universal Template',
+      templateSlug: 'universal_template',
+      structureDefinition: { type: 'object' },
+      meta: {},
+      contentRegion: { width: 936, height: 1104 },
+    });
+    expect(prompt).toContain('WORKSHEET COMPOSITION');
+    expect(prompt).toContain('activities[]');
+    expect(prompt).toContain('layoutIntent');
+    expect(prompt).toContain('ACTIVITY UNIQUENESS');
+    expect(prompt).not.toContain('sections use flex:1');
+    expect(prompt).not.toContain('FILL the viewport (sections use flex:1)');
+  });
 });

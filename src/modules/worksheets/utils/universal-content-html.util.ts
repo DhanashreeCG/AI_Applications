@@ -1,11 +1,20 @@
 import { resolveUniversalActivityPolicy } from './universal-activity-policy.util';
+import {
+  allocateUniversalPageSpace,
+  estimateActivityLayoutRequirement,
+  resolveActivityImageBoxBudget,
+  UNIVERSAL_VIEWPORT_CONTENT_H,
+  type UniversalActivityLayoutAllocation,
+  type UniversalImageRole,
+} from './universal-dynamic-layout.util';
+import { composeUniversalWorksheet } from './universal-worksheet-compose.util';
 
 /**
- * Universal template: fixed chrome (title / subtopic / Name / Date) +
- * STRICTLY dynamic LLM HTML for the content viewport.
+ * Universal template: fixed chrome (title / subtopic) +
+ * LLM semantic design for the content viewport.
  *
- * No layout catalog. The model invents structure + content each request.
- * We only sanitize, fix image slots, and inject into #content-region.
+ * Composition path: activities[] or content_html → UniversalWorksheetModel
+ * → dynamic layout allocation → deterministic HTML emit.
  */
 
 export type UniversalNormalizeOptions = {
@@ -193,6 +202,12 @@ const SAFE_STYLE_PROPS = new Set([
   'white-space',
   'opacity',
   'aspect-ratio',
+  // Layout engine CSS variables (compositor-owned)
+  '--activity-height',
+  '--image-size',
+  '--image-gap',
+  '--activity-gap',
+  '--grid-columns',
 ]);
 
 function parseStyleMap(raw: string): Map<string, string> {
@@ -394,6 +409,9 @@ function isInstructionBlock(block: TopBlock): boolean {
 
 function isActivitySectionBlock(block: TopBlock): boolean {
   if (isInstructionBlock(block)) return false;
+  if (/\bws-activity\b/i.test(block.attrs) || /\bws-activity\b/i.test(block.openTag)) {
+    return true;
+  }
   if (block.tag === 'section' || block.tag === 'article') return true;
   if (/\bws-section\b/i.test(block.attrs)) return true;
   if (hasBorderStyle(block.attrs) || hasBorderStyle(block.openTag)) return true;
@@ -402,14 +420,111 @@ function isActivitySectionBlock(block: TopBlock): boolean {
   return hasBorderStyle(`style="${style}"`) || hasBorderStyle(style);
 }
 
+function readDataAttr(attrs: string, name: string): string {
+  const re = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i');
+  const m = attrs.match(re);
+  return (m?.[1] ?? m?.[2] ?? '').trim();
+}
+
+function setOrReplaceDataAttr(attrs: string, name: string, value: string): string {
+  const re = new RegExp(`\\s${name}\\s*=\\s*("[^"]*"|'[^']*')`, 'i');
+  if (re.test(attrs)) {
+    return attrs.replace(re, ` ${name}="${escapeAttr(value)}"`);
+  }
+  return `${attrs} ${name}="${escapeAttr(value)}"`;
+}
+
+/** Infer learning interaction type from markup (not visual appearance). */
+export function inferUniversalActivityType(innerHtml: string, attrs = ''): string {
+  const fromAttr = readDataAttr(attrs, 'data-activity-type').toLowerCase();
+  if (fromAttr) return fromAttr.replace(/[^a-z0-9-]/g, '').slice(0, 40) || 'identify';
+  const text = `${innerHtml}`.toLowerCase();
+  if (/\bws-trace-word\b|trace|dotted|letter-spacing/i.test(text)) return 'trace';
+  if (/\bws-match-area\b|match|pair|connect|draw a line/i.test(text)) return 'match';
+  if (/\bws-choice-group\b|circle|tick|odd.?one/i.test(text)) return 'circle';
+  if (/count|how many/i.test(text)) return 'count';
+  if (/sort|classify|group/i.test(text)) return 'classify';
+  if (/sequence|order|first.*next/i.test(text)) return 'sequence';
+  if (/compare|bigger|smaller/i.test(text)) return 'compare';
+  if (/colour|color.?in|color the/i.test(text)) return 'color';
+  if (/label|name the/i.test(text)) return 'label';
+  if (/complete|fill.?in|missing/i.test(text)) return 'complete';
+  const imgs = countImageSlots(innerHtml);
+  if (imgs === 1) return 'recognize';
+  if (imgs >= 4) return 'identify';
+  return 'identify';
+}
+
+export function buildUniversalActivitySignature(
+  activityType: string,
+  innerHtml: string,
+): string {
+  const type = (activityType || 'identify').toLowerCase();
+  const imgs = countImageSlots(innerHtml);
+  const flags = [
+    /\bws-match-area\b|match|pair/i.test(innerHtml) ? 'm' : '',
+    /\bws-trace-word\b|trace|dotted/i.test(innerHtml) ? 't' : '',
+    /\bws-choice-group\b|\bws-answer-option\b|circle|tick/i.test(innerHtml)
+      ? 'c'
+      : '',
+    // Bucket image counts so "circle fox" with 1 vs 1 image still collide;
+    // exact count alone should not make near-duplicates look different.
+    imgs === 0 ? '0i' : imgs <= 2 ? 'few-i' : imgs <= 4 ? 'mid-i' : 'many-i',
+  ]
+    .filter(Boolean)
+    .join('-');
+  const instruction = innerHtml
+    .replace(/\{\{\s*IMAGE[_:]?\d+\s*\}\}/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .slice(0, 64);
+  return `${type}|${flags}|${instruction}`;
+}
+
+function signaturesNearDuplicate(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [typeA, flagsA, textA = ''] = a.split('|');
+  const [typeB, flagsB, textB = ''] = b.split('|');
+  if (typeA !== typeB) return false;
+  // Same interaction + identical / nested instruction → duplicate
+  if (textA && textB) {
+    if (textA === textB) return true;
+    const shorter = textA.length <= textB.length ? textA : textB;
+    const longer = textA.length <= textB.length ? textB : textA;
+    if (longer.includes(shorter) && shorter.length >= 10) return true;
+    // Same type + same structural flags + high token overlap
+    if (flagsA === flagsB) {
+      const wa = new Set(textA.split(/\s+/).filter((w) => w.length > 2));
+      const wb = new Set(textB.split(/\s+/).filter((w) => w.length > 2));
+      if (wa.size && wb.size) {
+        let overlap = 0;
+        for (const w of wa) if (wb.has(w)) overlap += 1;
+        const ratio = overlap / Math.min(wa.size, wb.size);
+        if (ratio >= 0.8) return true;
+      }
+    }
+  }
+  // No usable instruction text: fall back to identical structural flags only
+  if (!textA && !textB && flagsA === flagsB) return true;
+  return false;
+}
+
 function fitSectionOrStackStyle(rawStyle: string, kind: 'section' | 'stack'): string {
   const map = parseStyleMap(rawStyle);
   scrubViewportFightingStyles(map);
-  map.set('flex', '1 1 0');
+  // Dynamic layout engine owns height — never equal-flex all activities.
+  map.set('flex', '0 0 auto');
   map.set('min-height', '0');
-  map.set('overflow', 'hidden');
-  // Let the host flex algorithm assign height — fixed/percent heights leave a
-  // dead gap above the footer and squash middle sections.
+  map.set('overflow', 'visible');
+  map.set('margin', '0');
+  map.delete('margin-top');
+  map.delete('margin-bottom');
+  map.delete('margin-left');
+  map.delete('margin-right');
   map.delete('height');
   map.delete('max-height');
   if (kind === 'stack') {
@@ -419,23 +534,117 @@ function fitSectionOrStackStyle(rawStyle: string, kind: 'section' | 'stack'): st
     if (!map.has('width')) map.set('width', '100%');
   } else {
     ensureCompleteBorder(map);
+    if (!map.has('display')) map.set('display', 'flex');
+    if (!map.has('flex-direction')) map.set('flex-direction', 'column');
+    if (!map.has('gap')) map.set('gap', '8px');
+    if (!map.has('width')) map.set('width', '100%');
+    if (!map.has('padding')) map.set('padding', '8px 10px');
+    if (!map.has('border-radius')) map.set('border-radius', '14px');
+    if (!map.has('background') && !map.has('background-color')) {
+      map.set('background', '#ffffff');
+    }
   }
   return styleMapToString(map);
 }
+
+/**
+ * LLM often wraps pictures in tall flex:1 / height:100% cards — the card grows
+ * empty while the .ws-img-box (and image) stay tiny. Force those wrappers to
+ * hug content so the picture is the visual focus.
+ */
+export function scrubNestedCardGrowth(html: string): string {
+  if (!html) return html;
+  return html.replace(
+    /<(div|section|article)\b([^>]*)>/gi,
+    (full, tag: string, attrs: string) => {
+      if (
+        /\bws-section\b|\bws-activity\b|\bws-instruction\b|\bws-dynamic\b|\bws-stack\b|\bws-img-box\b|\bws-picture-card\b|\bws-item\b/i.test(
+          attrs,
+        )
+      ) {
+        return full;
+      }
+      const styleMatch = attrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
+      if (!styleMatch) return full;
+      const style = styleMatch[2] ?? styleMatch[3] ?? '';
+      const map = parseStyleMap(style);
+      let changed = false;
+      const flex = map.get('flex');
+      if (flex && /^1(\s|$)/i.test(flex.trim())) {
+        map.set('flex', '0 0 auto');
+        changed = true;
+      }
+      if (map.get('flex-grow') === '1') {
+        map.set('flex-grow', '0');
+        changed = true;
+      }
+      if (/stretch/i.test(map.get('align-self') ?? '')) {
+        map.set('align-self', 'flex-start');
+        changed = true;
+      }
+      for (const prop of ['height', 'min-height', 'max-height'] as const) {
+        const val = map.get(prop);
+        if (!val) continue;
+        const t = val.trim();
+        if (/^100%$|^100vh$|^100dvh$|flex/i.test(t)) {
+          map.delete(prop);
+          changed = true;
+          continue;
+        }
+        // Tall fixed shells around tiny art (e.g. height:320px with an 80px icon)
+        const px = t.match(/^(\d+)px$/i);
+        if (px && Number(px[1]) >= 220) {
+          map.delete(prop);
+          changed = true;
+        }
+      }
+      if (!changed) return full;
+      map.set('height', 'auto');
+      map.set('align-self', map.get('align-self') || 'flex-start');
+      let nextAttrs = attrs.replace(styleMatch[0], '');
+      const nextStyle = styleMapToString(map);
+      if (nextStyle) nextAttrs += ` style="${escapeAttr(nextStyle)}"`;
+      return `<${tag}${nextAttrs}>`;
+    },
+  );
+}
+
+/** Injected so stale DB template CSS cannot force equal-height flex or clip text. */
+export const UNIVERSAL_IMAGE_LAYOUT_CSS = `
+#content-region .ws-dynamic{gap:var(--activity-gap,14px)!important;justify-content:flex-start!important;align-content:flex-start!important}
+#content-region .ws-dynamic>.ws-instruction{flex:0 0 auto!important;height:auto!important;max-height:none!important;overflow:visible!important}
+#content-region .ws-dynamic>.ws-activity,#content-region .ws-dynamic>.ws-section{flex:0 0 auto!important;flex-grow:0!important;height:auto!important;min-height:var(--activity-height,auto)!important;max-height:none!important;overflow:visible!important;position:relative;z-index:0;box-sizing:border-box!important;margin:0!important;width:100%;padding:12px 14px 16px!important}
+#content-region .ws-activity-title{display:none!important}
+#content-region .ws-activity-instruction{flex:0 0 auto;margin:0 0 4px 0;line-height:1.3;font-size:18px;font-weight:700;color:#2a1b4a;overflow:visible}
+#content-region .ws-row,#content-region .ws-grid{display:flex;flex-wrap:wrap;gap:var(--image-gap,10px);align-items:flex-start;justify-content:flex-start;width:100%}
+#content-region .ws-match-area{display:flex;flex-direction:column;gap:var(--image-gap,12px);width:100%;flex:0 0 auto;overflow:visible}
+#content-region .ws-match-row{display:grid;grid-template-columns:1fr 48px 1fr;gap:var(--image-gap,10px);align-items:center;width:100%;flex:0 0 auto;overflow:visible}
+#content-region .ws-match-connector{flex:0 0 auto;height:2px;background:#85cbf4;opacity:0.55}
+#content-region .ws-image-grid,#content-region .ws-choice-group{display:grid;gap:var(--image-gap,10px);width:100%;align-items:start;justify-items:center;overflow:visible}
+#content-region .ws-trace-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+#content-region .ws-column{display:flex;flex-direction:column;gap:8px;flex:0 0 auto;height:auto}
+#content-region .ws-item,#content-region .ws-picture-card,#content-region .ws-answer-option{flex:0 0 auto!important;flex-grow:0!important;height:auto!important;max-height:none;align-self:flex-start;box-sizing:border-box;padding:6px 8px;overflow:visible}
+#content-region .ws-card-label{flex:0 0 auto;width:100%;text-align:center;margin-top:4px;min-height:26px;line-height:1.25;overflow:visible}
+#content-region .ws-section>div,#content-region .ws-activity>div,#content-region .ws-section>section,#content-region .ws-activity>section,#content-region .ws-section>article,#content-region .ws-activity>article,#content-region .ws-activity div[style*="flex:1"],#content-region .ws-section div[style*="flex:1"],#content-region .ws-activity div[style*="flex: 1"],#content-region .ws-section div[style*="flex: 1"]{flex:0 0 auto!important;flex-grow:0!important;flex-basis:auto!important;height:auto!important;max-height:none;align-self:flex-start;box-sizing:border-box;overflow:visible}
+#content-region .ws-img-box{display:flex!important;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto!important;flex-shrink:0!important;width:var(--image-size,160px)!important;height:var(--image-size,160px)!important;min-width:0;min-height:0;max-width:min(300px,100%)!important;max-height:min(300px,100%)!important;aspect-ratio:1/1;box-sizing:border-box}
+#content-region .ws-img-box img.worksheet-image,#content-region .ws-img-box>img,#content-region img.worksheet-image{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;object-fit:contain!important;display:block!important;aspect-ratio:1/1}
+#content-region .ws-label,#content-region .ws-word,#content-region .ws-trace-word{flex:0 0 auto;text-align:center;overflow:visible;line-height:1.25}
+`.replace(/\s+/g, ' ').trim();
+
 
 function retagBlock(block: TopBlock, kind: 'section' | 'stack'): string {
   const open = rewriteOpenTag(
     block.tag,
     block.attrs,
     (style) => fitSectionOrStackStyle(style, kind),
-    kind === 'section' ? 'ws-section' : 'ws-stack',
+    kind === 'section' ? 'ws-activity ws-section' : 'ws-stack',
   );
   return `${open}${block.inner}</${block.tag}>`;
 }
 
 /**
- * Force activity sections to share the viewport and keep closed outlines.
- * Fixes clipped last-section borders when model HTML uses height:100% + overflow.
+ * Tag activity sections and scrub viewport-fighting styles.
+ * Does NOT equal-height flex activities — dynamic layout owns sizing.
  */
 export function fitUniversalContentLayout(html: string): string {
   if (!html || !html.trim()) return html;
@@ -450,7 +659,7 @@ export function fitUniversalContentLayout(html: string): string {
     if (sectionKids.length >= 2) {
       blocks = innerBlocks;
     } else if (sectionKids.length === 0 && isActivitySectionBlock(root)) {
-      return clampUniversalImageBoxes(retagBlock(root, 'section'));
+      return retagBlock(root, 'section');
     } else {
       const fittedInner = (innerBlocks.length ? innerBlocks : [])
         .map((child) => {
@@ -465,9 +674,7 @@ export function fitUniversalContentLayout(html: string): string {
         (style) => fitSectionOrStackStyle(style, 'stack'),
         'ws-stack',
       );
-      return clampUniversalImageBoxes(
-        `${open}${fittedInner || root.inner}</${root.tag}>`,
-      );
+      return `${open}${fittedInner || root.inner}</${root.tag}>`;
     }
   }
 
@@ -524,7 +731,7 @@ export function fitUniversalContentLayout(html: string): string {
     })
     .join('');
 
-  return clampUniversalImageBoxes(fitted);
+  return fitted;
 }
 
 /**
@@ -599,77 +806,108 @@ function clampPxInStyle(
 }
 
 /**
- * Density-aware image box budget: sparse pages (few pictures / few sections)
- * get large recognizable art; dense pages stay compact to avoid crop.
- * ≤2-section pages stay large even with ~6–8 images (toddler / simple pages).
+ * Activity-aware image box budget.
+ * Uses this section's height + image count (not a global equal share).
+ */
+export function resolveSectionImageBoxBudget(
+  sectionHeightPx: number,
+  imagesInSection: number,
+  options?: {
+    activityType?: string;
+    hasMatch?: boolean;
+    pairCount?: number;
+  },
+): { minPx: number; maxPx: number; targetPx: number } {
+  return resolveActivityImageBoxBudget({
+    activityHeightPx: Math.max(120, sectionHeightPx),
+    imagesInActivity: Math.max(1, imagesInSection),
+    activityType: options?.activityType,
+    hasMatch: options?.hasMatch,
+    pairCount: options?.pairCount,
+  });
+}
+
+/**
+ * Fallback when HTML has no section structure — still content-aware defaults.
  */
 export function resolveUniversalImageBoxBudget(
   imageCount: number,
   sectionCount: number,
 ): { minPx: number; maxPx: number; targetPx: number } {
   const sections = Math.max(1, sectionCount);
-  const images = Math.max(0, imageCount);
-
-  // Single activity page → biggest art
-  if (sections <= 1 && images <= 6) {
-    return { minPx: 160, maxPx: 220, targetPx: 190 };
-  }
-  // 1–2 sections, few pictures
-  if (sections <= 2 && images <= 4) {
-    return { minPx: 150, maxPx: 200, targetPx: 170 };
-  }
-  // 2 sections with a teach row + small match (≈5–7 images) — still readable
-  if (sections <= 2 && images <= 7) {
-    return { minPx: 130, maxPx: 180, targetPx: 150 };
-  }
-  if (sections <= 2 && images <= 10) {
-    return { minPx: 110, maxPx: 160, targetPx: 130 };
-  }
-  // Few pictures across ≤3 sections
-  if (images <= 4 && sections <= 3) {
-    return { minPx: 120, maxPx: 180, targetPx: 150 };
-  }
-  // Dense multi-section pages
-  if (sections >= 3 && images >= 6) {
-    return { minPx: 64, maxPx: 96, targetPx: 80 };
-  }
-  if (images >= 10 || sections >= 4) {
-    return { minPx: 64, maxPx: 88, targetPx: 72 };
-  }
-  if (images >= 7) {
-    return { minPx: 72, maxPx: 110, targetPx: 92 };
-  }
-  if (images >= 5) {
-    return { minPx: 90, maxPx: 140, targetPx: 120 };
-  }
-  return { minPx: 110, maxPx: 170, targetPx: 140 };
+  const approxSectionH = Math.floor(960 / sections);
+  return resolveSectionImageBoxBudget(approxSectionH, Math.max(1, imageCount));
 }
 
-function estimateImageRows(imageCount: number): number {
-  if (imageCount <= 3) return 1;
-  if (imageCount <= 6) return 2;
-  return 3;
+function readSectionHeightHint(attrs: string, fallbackPx: number): number {
+  const styleMatch = attrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
+  const style = styleMatch?.[2] ?? styleMatch?.[3] ?? '';
+  const map = parseStyleMap(style);
+  const cssVar = map.get('--activity-height');
+  if (cssVar) {
+    const n = Number(String(cssVar).replace(/px/i, ''));
+    if (Number.isFinite(n) && n > 40) return Math.round(n);
+  }
+  for (const key of ['height', 'max-height', 'min-height'] as const) {
+    const val = map.get(key);
+    if (!val) continue;
+    const m = val.trim().match(/^(\d+(?:\.\d+)?)px$/i);
+    if (m) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n > 40) return Math.round(n);
+    }
+  }
+  return fallbackPx;
+}
+
+function countMatchPairsInFragment(fragment: string): number {
+  const rows = (fragment.match(/\bws-match-row\b/gi) || []).length;
+  if (rows > 0) return rows;
+  const imgs = countImageSlots(fragment);
+  return Math.max(1, Math.ceil(imgs / 2));
+}
+
+function readImgBoxWidths(fragment: string): number[] {
+  const widths: number[] = [];
+  const re = /<div\b([^>]*\bws-img-box\b[^>]*)>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fragment)) != null) {
+    const attrs = m[1] || '';
+    const styleMatch = attrs.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
+    const style = styleMatch?.[2] ?? styleMatch?.[3] ?? '';
+    const w = style.match(/(?:^|;)\s*width\s*:\s*(\d+)px/i);
+    if (w) {
+      const n = Number(w[1]);
+      if (Number.isFinite(n) && n > 0) widths.push(n);
+    }
+  }
+  return widths;
+}
+
+function medianPx(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[mid]
+    : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
 }
 
 /**
- * Size boxes so N image rows fit inside one flex section without clipping.
+ * Prefer large visible art: keep LLM size only when it is already near the
+ * space-filling target; otherwise boost toward the section max.
  */
-export function resolveSectionImageBoxBudget(
-  sectionHeightPx: number,
-  imagesInSection: number,
-): { minPx: number; maxPx: number; targetPx: number } {
-  const rows = estimateImageRows(Math.max(1, imagesInSection));
-  // Title + padding + match anchors / labels under pictures
-  const usable = Math.max(120, sectionHeightPx - 88);
-  const gaps = 12 * Math.max(0, rows - 1);
-  const perRow = Math.floor((usable - gaps) / rows);
-  // Multi-row sections must stay conservative or the bottom row clips
-  // (overflow:hidden on .ws-section). Single-row may fill more.
-  const hardCap = rows >= 2 ? 140 : 200;
-  const maxPx = Math.min(hardCap, Math.max(64, perRow - 36));
-  const targetPx = Math.min(maxPx, Math.max(64, maxPx - 8));
-  const minPx = Math.min(targetPx, Math.max(56, Math.floor(targetPx * 0.88)));
-  return { minPx, maxPx, targetPx };
+export function resolveRespectedBoxTarget(
+  llmWidths: number[],
+  budget: { minPx: number; maxPx: number; targetPx: number },
+): number {
+  const preferred = Math.max(
+    budget.minPx,
+    Math.round(budget.targetPx * 0.92),
+  );
+  const llm = medianPx(llmWidths);
+  if (llm == null) return preferred;
+  return Math.min(budget.maxPx, Math.max(llm, preferred));
 }
 
 function countImageSlots(html: string): number {
@@ -700,7 +938,9 @@ function applyBoxBudgetToFragment(
   fragment: string,
   budget: { minPx: number; maxPx: number; targetPx: number },
 ): string {
-  const { minPx, maxPx, targetPx } = budget;
+  // Respect LLM-chosen size when it fits; only boost tiny / cap overflow.
+  const targetPx = resolveRespectedBoxTarget(readImgBoxWidths(fragment), budget);
+  const { maxPx, minPx } = budget;
   let out = fragment.replace(
     /<div\b([^>]*\bws-img-box\b[^>]*)>/gi,
     (_full, rawAttrs: string) => {
@@ -745,11 +985,9 @@ function applyBoxBudgetToFragment(
 }
 
 /**
- * Cap or boost picture frames so each section's rows fit inside that section
- * (avoids 2nd-row clipping when global "large" sizing is too tall).
- *
- * Uses balanced tag parsing — never a naive `[\s\S]*?</div>` regex, which
- * truncates at the first nested `.ws-img-box` and leaves later rows unclamped.
+ * Fit picture frames per activity using that activity's height + content.
+ * Matching activities may use smaller images than recognition activities.
+ * Never forces all worksheet images to one global size.
  */
 export function clampUniversalImageBoxes(
   html: string,
@@ -757,10 +995,48 @@ export function clampUniversalImageBoxes(
 ): string {
   if (!html) return html;
   const viewportH = options?.viewportContentH ?? 1040;
-  const totalImages = countImageSlots(html);
   const sectionCount = Math.max(1, countActivitySectionsDeep(html));
-  const sectionH = Math.floor((viewportH - 80) / sectionCount);
-  const pageBudget = resolveUniversalImageBoxBudget(totalImages, sectionCount);
+  // Soft fallback only — real budgets are per activity
+  const fallbackShare = Math.floor((viewportH - 80) / sectionCount);
+  const pageBudget = resolveSectionImageBoxBudget(fallbackShare, 4);
+
+  // First pass: gather content weights so unequal activities get unequal height hints
+  const sectionMetas: Array<{
+    imgs: number;
+    hasMatch: boolean;
+    pairCount: number;
+    type: string;
+    weight: number;
+  }> = [];
+  const collectMeta = (fragment: string): void => {
+    for (const block of splitTopLevelElementBlocks(fragment)) {
+      if (isInstructionBlock(block)) continue;
+      const kids = splitTopLevelElementBlocks(block.inner);
+      if (
+        kids.some((k) => isActivitySectionBlock(k)) &&
+        !isActivitySectionBlock(block)
+      ) {
+        collectMeta(block.inner);
+        continue;
+      }
+      if (!isActivitySectionBlock(block)) continue;
+      const imgs = countImageSlots(block.inner);
+      const hasMatch =
+        /\bws-match-area\b|\bws-match-row\b|match|pair|connect/i.test(
+          `${block.attrs} ${block.inner}`,
+        );
+      const pairCount = hasMatch ? countMatchPairsInFragment(block.inner) : 0;
+      const type = inferUniversalActivityType(block.inner, block.attrs);
+      const weight = hasMatch
+        ? Math.max(2, pairCount) * 1.4
+        : Math.max(1, imgs) + (imgs <= 1 ? 0.5 : 0);
+      sectionMetas.push({ imgs, hasMatch, pairCount, type, weight });
+    }
+  };
+  collectMeta(html);
+  const weightSum = sectionMetas.reduce((s, m) => s + m.weight, 0) || 1;
+  const availableForSections = Math.max(200, viewportH - 80);
+  let metaIndex = 0;
 
   const walk = (fragment: string): string => {
     const blocks = splitTopLevelElementBlocks(fragment);
@@ -776,30 +1052,38 @@ export function clampUniversalImageBoxes(
 
         const kids = splitTopLevelElementBlocks(block.inner);
         const hasNestedSections = kids.some((k) => isActivitySectionBlock(k));
-        // Wrapper / stack: clamp each child section, don't treat wrapper as one section.
         if (hasNestedSections && !isActivitySectionBlock(block)) {
           return rewriteBlockInner(block, walk(block.inner));
         }
 
         if (isActivitySectionBlock(block)) {
-          const imgs = countImageSlots(block.inner);
+          const meta = sectionMetas[metaIndex] || {
+            imgs: countImageSlots(block.inner),
+            hasMatch: false,
+            pairCount: 0,
+            type: 'identify',
+            weight: 1,
+          };
+          metaIndex += 1;
+          const weightedShare = Math.floor(
+            (availableForSections * meta.weight) / weightSum,
+          );
+          const sectionH = readSectionHeightHint(
+            block.attrs,
+            Math.max(160, weightedShare),
+          );
           const sectionBudget = resolveSectionImageBoxBudget(
             sectionH,
-            Math.max(1, imgs),
+            Math.max(1, meta.imgs),
+            {
+              activityType: meta.type,
+              hasMatch: meta.hasMatch,
+              pairCount: meta.pairCount || undefined,
+            },
           );
-          const rows = estimateImageRows(Math.max(1, imgs));
-          // Multi-row sections must respect height or the bottom row clips.
-          const budget =
-            rows >= 2
-              ? sectionBudget
-              : {
-                  minPx: Math.min(sectionBudget.maxPx, pageBudget.minPx),
-                  maxPx: Math.min(sectionBudget.maxPx, pageBudget.maxPx),
-                  targetPx: Math.min(sectionBudget.maxPx, pageBudget.targetPx),
-                };
           return rewriteBlockInner(
             block,
-            applyBoxBudgetToFragment(block.inner, budget),
+            applyBoxBudgetToFragment(block.inner, sectionBudget),
           );
         }
 
@@ -823,6 +1107,13 @@ export function scoreUniversalActivitySection(innerHtml: string): number {
   if (imgs > 0) return 100 + imgs;
   const hasImgBox = /\bws-img-box\b/i.test(innerHtml);
   if (hasImgBox) return 50;
+  if (
+    /\bws-answer-option\b|\bws-trace-word\b|\bws-match-area\b|\bws-choice-group\b|\bws-picture-card\b|\bws-item\b|\bws-word\b/i.test(
+      innerHtml,
+    )
+  ) {
+    return 40;
+  }
   const text = innerHtml
     .replace(/<[^>]+>/g, ' ')
     .replace(/&[a-z]+;/gi, ' ')
@@ -965,6 +1256,465 @@ export function enforceUniversalActivitySectionLimit(
   return walk(pruned);
 }
 
+/**
+ * Ensure every activity is a first-class .ws-activity with type + id metadata,
+ * and promote common semantic class aliases. Does not invent educational content.
+ */
+export function normalizeSemanticActivities(html: string): string {
+  if (!html) return html;
+  let activityIndex = 0;
+
+  const retagActivity = (block: TopBlock): string => {
+    activityIndex += 1;
+    const type = inferUniversalActivityType(block.inner, block.attrs);
+    const existingId = readDataAttr(block.attrs, 'data-activity-id');
+    const id = existingId || `activity-${activityIndex}`;
+    let attrs = block.attrs;
+    attrs = setOrReplaceDataAttr(attrs, 'data-activity-type', type);
+    attrs = setOrReplaceDataAttr(attrs, 'data-activity-id', id);
+    // Prefer <section> for activities when the model used a plain div
+    const tag = block.tag === 'div' ? 'section' : block.tag;
+    const open = rewriteOpenTag(
+      tag,
+      attrs,
+      (style) => fitSectionOrStackStyle(style, 'section'),
+      'ws-activity ws-section',
+    );
+    let inner = scrubShortPhrasePunctuation(block.inner);
+    // Promote the first short heading/paragraph as the activity QUESTION (instruction),
+    // never as a separate catalog-style title.
+    let sawQuestion = /\bws-activity-instruction\b/i.test(inner);
+    inner = inner.replace(
+      /<(p|h[1-4])\b([^>]*)>([\s\S]*?)<\/\1>/gi,
+      (full, t: string, a: string, body: string) => {
+        if (/\bws-activity-instruction\b/i.test(a)) {
+          sawQuestion = true;
+          return full;
+        }
+        if (/\bws-activity-title\b/i.test(a)) {
+          // Convert leftover titles into the question when none exists yet
+          if (!sawQuestion) {
+            sawQuestion = true;
+            const open = rewriteOpenTag(
+              'p',
+              a.replace(/\bws-activity-title\b/gi, ''),
+              (s) => s,
+              'ws-activity-instruction',
+            );
+            return `${open}${body}</p>`;
+          }
+          return '';
+        }
+        const text = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (
+          !sawQuestion &&
+          text &&
+          text.length <= 100 &&
+          (/^h[1-4]$/i.test(t) ||
+            /\b(title|heading|instruction)\b/i.test(a) ||
+            /^(?:\d+[.)]\s*)?(point|match|circle|count|trace|find|draw|look)\b/i.test(
+              text,
+            ))
+        ) {
+          sawQuestion = true;
+          const open = rewriteOpenTag(
+            'p',
+            a,
+            (s) => s,
+            'ws-activity-instruction',
+          );
+          return `${open}${body}</p>`;
+        }
+        return full;
+      },
+    );
+    inner = collapseDuplicateActivityHeadings(inner);
+    return `${open}${inner}</${tag}>`;
+  };
+
+  const walk = (fragment: string): string => {
+    const blocks = splitTopLevelElementBlocks(fragment);
+    if (!blocks.length) return fragment;
+    return blocks
+      .map((block) => {
+        if (isInstructionBlock(block)) return block.full;
+        const kids = splitTopLevelElementBlocks(block.inner);
+        if (
+          kids.some((k) => isActivitySectionBlock(k)) &&
+          !isActivitySectionBlock(block)
+        ) {
+          const open = rewriteOpenTag(
+            block.tag,
+            block.attrs,
+            (style) => fitSectionOrStackStyle(style, 'stack'),
+            'ws-stack',
+          );
+          return `${open}${walk(block.inner)}</${block.tag}>`;
+        }
+        if (isActivitySectionBlock(block)) return retagActivity(block);
+        return block.full;
+      })
+      .join('');
+  };
+
+  return walk(html);
+}
+
+/**
+ * Remove near-duplicate activities (same interaction signature).
+ * Keeps the richer / earlier activity; never wipes the page.
+ */
+export function dedupeUniversalActivities(html: string): string {
+  if (!html) return html;
+  type Ranked = { index: number; score: number; signature: string; block: TopBlock };
+  const ranked: Ranked[] = [];
+
+  const collect = (fragment: string): void => {
+    for (const block of splitTopLevelElementBlocks(fragment)) {
+      if (isInstructionBlock(block)) continue;
+      const kids = splitTopLevelElementBlocks(block.inner);
+      if (
+        kids.some((k) => isActivitySectionBlock(k)) &&
+        !isActivitySectionBlock(block)
+      ) {
+        collect(block.inner);
+        continue;
+      }
+      if (isActivitySectionBlock(block)) {
+        const type = inferUniversalActivityType(block.inner, block.attrs);
+        ranked.push({
+          index: ranked.length,
+          score: scoreUniversalActivitySection(block.inner),
+          signature: buildUniversalActivitySignature(type, block.inner),
+          block,
+        });
+      }
+    }
+  };
+  collect(html);
+  if (ranked.length <= 1) return html;
+
+  const drop = new Set<number>();
+  for (let i = 0; i < ranked.length; i += 1) {
+    if (drop.has(i)) continue;
+    for (let j = i + 1; j < ranked.length; j += 1) {
+      if (drop.has(j)) continue;
+      if (!signaturesNearDuplicate(ranked[i].signature, ranked[j].signature)) {
+        continue;
+      }
+      // Drop the weaker / later duplicate
+      if (ranked[j].score > ranked[i].score) {
+        drop.add(i);
+        break;
+      }
+      drop.add(j);
+    }
+  }
+  if (!drop.size) return html;
+
+  let seen = 0;
+  const walk = (fragment: string): string => {
+    const blocks = splitTopLevelElementBlocks(fragment);
+    if (!blocks.length) return fragment;
+    return blocks
+      .map((block) => {
+        if (isInstructionBlock(block)) return block.full;
+        const kids = splitTopLevelElementBlocks(block.inner);
+        if (
+          kids.some((k) => isActivitySectionBlock(k)) &&
+          !isActivitySectionBlock(block)
+        ) {
+          return rewriteBlockInner(block, walk(block.inner));
+        }
+        if (isActivitySectionBlock(block)) {
+          const idx = seen;
+          seen += 1;
+          return drop.has(idx) ? '' : block.full;
+        }
+        return block.full;
+      })
+      .join('');
+  };
+  return walk(html);
+}
+
+function inferImageRoleForActivity(
+  activityType: string,
+  imageCount: number,
+): UniversalImageRole {
+  if (imageCount <= 1) return 'primary';
+  if (/match|pair|connect/i.test(activityType)) return 'matching';
+  if (/circle|choose|classify|odd/i.test(activityType)) return 'option';
+  return 'unknown';
+}
+
+function applyAllocationToActivity(
+  block: TopBlock,
+  allocation: UniversalActivityLayoutAllocation,
+): string {
+  const hugH = Math.max(
+    allocation.contentHeight || 0,
+    allocation.allocatedHeight || 0,
+  );
+  const open = rewriteOpenTag(
+    block.tag,
+    setOrReplaceDataAttr(
+      setOrReplaceDataAttr(
+        setOrReplaceDataAttr(
+          block.attrs,
+          'data-activity-id',
+          allocation.activityId,
+        ),
+        'data-activity-type',
+        allocation.activityType,
+      ),
+      'data-pair-count',
+      String(allocation.pairCount || 0),
+    ),
+    (style) => {
+      const map = parseStyleMap(style);
+      scrubViewportFightingStyles(map);
+      map.set('flex', '0 0 auto');
+      map.set('overflow', 'visible');
+      map.set('margin', '0');
+      map.set('width', '100%');
+      map.set('--activity-height', `${hugH}px`);
+      map.set('--image-size', `${allocation.imageSize}px`);
+      map.set('--image-gap', `${allocation.imageGap}px`);
+      map.set('--grid-columns', String(allocation.gridColumns));
+      map.set('height', 'auto');
+      map.set('min-height', `${hugH}px`);
+      map.delete('max-height');
+      map.set('justify-content', 'flex-start');
+      map.set('padding', map.get('padding') || '12px 14px 16px');
+      ensureCompleteBorder(map);
+      return styleMapToString(map);
+    },
+    'ws-activity ws-section',
+  );
+
+  const collapsedInner = collapseDuplicateActivityHeadings(block.inner);
+  const sizedInner = applyBoxBudgetToFragment(collapsedInner, {
+    minPx: Math.min(allocation.minImageSize, allocation.imageSize),
+    maxPx: allocation.imageSize,
+    targetPx: allocation.imageSize,
+  });
+  return `${open}${sizedInner}</${block.tag}>`;
+}
+
+/**
+ * Keep exactly one learner-facing question per activity.
+ * Drops redundant section titles (ws-activity-title / numbered catalog names).
+ */
+export function collapseDuplicateActivityHeadings(html: string): string {
+  if (!html) return html;
+  // Remove dedicated title nodes; instruction/question remains.
+  let out = html.replace(
+    /<(h[1-4]|p|div|span)\b([^>]*\bws-activity-title\b[^>]*)>[\s\S]*?<\/\1>/gi,
+    '',
+  );
+  // If both a title-like heading and an instruction exist without class title,
+  // keep the longer actionable line as instruction and drop short catalog names.
+  const instr =
+    out.match(
+      /<(p|div|h[1-4])\b([^>]*\bws-activity-instruction\b[^>]*)>([\s\S]*?)<\/\1>/i,
+    )?.[3] || '';
+  const instrText = instr.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (instrText) {
+    out = out.replace(
+      /<(h[1-4]|p|div)\b(?![^>]*ws-activity-instruction)([^>]*)>([\s\S]*?)<\/\1>/gi,
+      (full, _tag: string, attrs: string, inner: string) => {
+        if (/\bws-img-box\b|\bws-match|\bws-image-grid\b|\bws-label\b|\bws-picture/i.test(attrs + inner)) {
+          return full;
+        }
+        const text = inner.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!text || text.length > 80) return full;
+        const isCatalog =
+          /^(?:\d+[.)]\s*)?(look and|meet\b|find the|match |count the|trace\b)/i.test(
+            text,
+          ) && text.split(/\s+/).length <= 6;
+        if (isCatalog && text.toLowerCase() !== instrText.toLowerCase()) {
+          return '';
+        }
+        return full;
+      },
+    );
+  }
+  return out;
+}
+
+/**
+ * Dynamic page-space allocation + content-aware image sizing.
+ * Replaces equal-height flex:1 section sharing.
+ */
+export function applyUniversalDynamicLayout(
+  html: string,
+  options?: { viewportContentH?: number; hasInstruction?: boolean },
+): string {
+  if (!html) return html;
+  const viewportH = options?.viewportContentH ?? UNIVERSAL_VIEWPORT_CONTENT_H;
+  const activities: TopBlock[] = [];
+
+  const collect = (fragment: string): void => {
+    for (const block of splitTopLevelElementBlocks(fragment)) {
+      if (isInstructionBlock(block)) continue;
+      const kids = splitTopLevelElementBlocks(block.inner);
+      if (
+        kids.some((k) => isActivitySectionBlock(k)) &&
+        !isActivitySectionBlock(block)
+      ) {
+        collect(block.inner);
+        continue;
+      }
+      if (isActivitySectionBlock(block)) activities.push(block);
+    }
+  };
+  collect(html);
+  if (!activities.length) {
+    return clampUniversalImageBoxes(html, { viewportContentH: viewportH });
+  }
+
+  const requirements = activities.map((block, index) => {
+    const type = inferUniversalActivityType(block.inner, block.attrs);
+    const id =
+      readDataAttr(block.attrs, 'data-activity-id') || `activity-${index + 1}`;
+    const imageCount = countImageSlots(block.inner);
+    const hasMatch =
+      /\bws-match-area\b|\bws-match-row\b|match|pair|connect/i.test(
+        `${block.attrs} ${block.inner}`,
+      );
+    const pairCount = hasMatch ? countMatchPairsInFragment(block.inner) : undefined;
+    const text = block.inner.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return estimateActivityLayoutRequirement({
+      activityId: id,
+      activityType: type,
+      imageCount: hasMatch
+        ? Math.max(imageCount, (pairCount || 1) * 2)
+        : imageCount,
+      pairCount,
+      hasLabel: /\bws-label\b|\bdata-editable\b|labels\[/i.test(block.inner),
+      hasTrace: /\bws-trace-word\b|trace|dotted/i.test(block.inner),
+      hasMatch,
+      hasChoices:
+        /\bws-choice-group\b|\bws-answer-option\b|circle|tick/i.test(block.inner),
+      textLength: text.length,
+      imageRole: inferImageRoleForActivity(type, imageCount),
+    });
+  });
+
+  const plan = allocateUniversalPageSpace({
+    requirements,
+    viewportContentH: viewportH,
+    instructionHeight: options?.hasInstruction === false ? 0 : 72,
+  });
+
+  const byId = new Map(
+    plan.allocations.map((a) => [a.activityId, a] as const),
+  );
+  let fallbackIndex = 0;
+
+  const walk = (fragment: string): string => {
+    const blocks = splitTopLevelElementBlocks(fragment);
+    if (!blocks.length) return fragment;
+    return blocks
+      .map((block) => {
+        if (isInstructionBlock(block)) {
+          const open = rewriteOpenTag(
+            block.tag,
+            block.attrs,
+            (style) => {
+              const map = parseStyleMap(style);
+              scrubViewportFightingStyles(map);
+              map.set('flex', '0 0 auto');
+              map.delete('overflow');
+              return styleMapToString(map);
+            },
+            'ws-instruction',
+          );
+          return `${open}${block.inner}</${block.tag}>`;
+        }
+        const kids = splitTopLevelElementBlocks(block.inner);
+        if (
+          kids.some((k) => isActivitySectionBlock(k)) &&
+          !isActivitySectionBlock(block)
+        ) {
+          const open = rewriteOpenTag(
+            block.tag,
+            block.attrs,
+            (style) => fitSectionOrStackStyle(style, 'stack'),
+            'ws-stack',
+          );
+          return `${open}${walk(block.inner)}</${block.tag}>`;
+        }
+        if (isActivitySectionBlock(block)) {
+          const id =
+            readDataAttr(block.attrs, 'data-activity-id') ||
+            plan.allocations[fallbackIndex]?.activityId;
+          const allocation =
+            (id && byId.get(id)) || plan.allocations[fallbackIndex];
+          fallbackIndex += 1;
+          if (!allocation) return block.full;
+          return applyAllocationToActivity(block, allocation);
+        }
+        return block.full;
+      })
+      .join('');
+  };
+
+  return walk(html);
+}
+
+/**
+ * Prefer targetSections for 4–5+ when extras are weak fillers
+ * (low score / near-empty), without inventing content.
+ */
+export function preferTargetActivityCount(
+  html: string,
+  targetSections: number,
+  maxSections: number,
+): string {
+  if (!html || targetSections >= maxSections) {
+    return enforceUniversalActivitySectionLimit(html, maxSections);
+  }
+  const pruned = pruneEmptyUniversalActivitySections(html);
+  type Ranked = { index: number; score: number };
+  const ranked: Ranked[] = [];
+  const collect = (fragment: string): void => {
+    for (const block of splitTopLevelElementBlocks(fragment)) {
+      if (isInstructionBlock(block)) continue;
+      const kids = splitTopLevelElementBlocks(block.inner);
+      if (
+        kids.some((k) => isActivitySectionBlock(k)) &&
+        !isActivitySectionBlock(block)
+      ) {
+        collect(block.inner);
+        continue;
+      }
+      if (isActivitySectionBlock(block)) {
+        ranked.push({
+          index: ranked.length,
+          score: scoreUniversalActivitySection(block.inner),
+        });
+      }
+    }
+  };
+  collect(pruned);
+  if (ranked.length <= targetSections) {
+    return enforceUniversalActivitySectionLimit(pruned, maxSections);
+  }
+  if (ranked.length <= maxSections) {
+    const weakExtras = ranked
+      .slice()
+      .sort((a, b) => a.score - b.score)
+      .filter((r) => r.score < 40);
+    // If we have more than target and weak fillers exist, trim to target
+    if (ranked.length > targetSections && weakExtras.length > 0) {
+      return enforceUniversalActivitySectionLimit(pruned, targetSections);
+    }
+  }
+  return enforceUniversalActivitySectionLimit(pruned, maxSections);
+}
+
 /** Sync labels[] from data-editable spans so chrome editor can change copy. */
 export function syncEditableLabels(
   html: string,
@@ -1065,7 +1815,7 @@ export function ensureEditableLabels(html: string): string {
     /<(div|td|li)\b([^>]*)>([^<]{1,40})<\/\1>/gi,
     (full, tag: string, attrs: string, text: string) => {
       if (
-        /\bws-img-box\b|\bws-instruction\b|\bws-dynamic\b|\bws-stack\b|\bws-section\b/i.test(
+        /\bws-img-box\b|\bws-instruction\b|\bws-dynamic\b|\bws-stack\b|\bws-section\b|\bws-activity\b/i.test(
           attrs,
         )
       ) {
@@ -1206,6 +1956,22 @@ function rebuildAllowedAttributes(tag: string, rawAttrs: string): string {
       continue;
     }
     if (
+      (name === 'data-activity-type' ||
+        name === 'data-activity-id' ||
+        name === 'data-image-role' ||
+        name === 'data-importance' ||
+        name === 'data-layout') &&
+      value != null
+    ) {
+      const safe = value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '')
+        .slice(0, 48);
+      if (safe) kept.push(`${name}="${escapeAttr(safe)}"`);
+      continue;
+    }
+    if (
       (name === 'colspan' || name === 'rowspan') &&
       value != null &&
       /^\d{1,2}$/.test(value.trim())
@@ -1313,8 +2079,9 @@ export function expandUniversalImagePlaceholders(html: string): string {
 }
 
 /**
- * Header aliases + ensure images[] aligns with {{IMAGE_N}} usage.
- * Does NOT impose any layout catalog.
+ * Header aliases + semantic composition pipeline.
+ * Prefer activities[] JSON → UniversalWorksheetModel → compose HTML.
+ * Falls back to parsing content_html into the same model.
  */
 export function normalizeUniversalStructure(
   structure: Record<string, unknown>,
@@ -1322,39 +2089,7 @@ export function normalizeUniversalStructure(
 ): Record<string, unknown> {
   const next: Record<string, unknown> = { ...structure };
   next.worksheet_type = 'universal_template';
-  const viewportH = options?.viewportContentH ?? 1104;
-  const activityPolicy = policyFromNormalizeOptions(options);
-
-  const mainTopic =
-    readString(next.main_topic, 80) ||
-    readString(next.topic, 80) ||
-    readString(next.title, 80);
-  let subTopic =
-    readString(next.sub_topic, 80) ||
-    readString(next.badge_label, 80) ||
-    readString(next.skill_label, 80) ||
-    'Practice';
-  if (subTopic.includes('?')) subTopic = 'Practice';
-
-  next.main_topic = scrubTitlePunctuation(mainTopic || 'Worksheet') || 'Worksheet';
-  next.sub_topic = scrubTitlePunctuation(subTopic) || 'Practice';
-  const instructionRaw =
-    readString(next.instruction_text, 220) ||
-    readString(next.instruction, 220) ||
-    '';
-  // Instruction may be a sentence — only strip marks from short phrases
-  next.instruction_text =
-    instructionRaw.split(/\s+/).filter(Boolean).length <= 3
-      ? scrubTitlePunctuation(instructionRaw)
-      : instructionRaw;
-
-  const contentHtml =
-    typeof next.content_html === 'string'
-      ? next.content_html
-      : typeof next.contentHtml === 'string'
-        ? next.contentHtml
-        : '';
-  next.content_html = contentHtml;
+  const viewportH = options?.viewportContentH ?? UNIVERSAL_VIEWPORT_CONTENT_H;
 
   // Drop catalog leftovers if an older prompt still emitted them
   delete next.layout;
@@ -1364,81 +2099,64 @@ export function normalizeUniversalStructure(
   delete next.sections;
   delete next.blocks;
 
-  // Sanitize early so stored structure matches what will render
-  let sanitized = scrubShortPhrasePunctuation(
-    sanitizeUniversalContentHtml(contentHtml),
-  );
-  sanitized = ensureEditableLabels(sanitized);
-  // Tag sections early so we can limit age-banded activities + size per section.
-  sanitized = fitUniversalContentLayout(sanitized);
-  // Provider-agnostic hard max (2-3→1, 3-4→2, 4-5+→4).
-  sanitized = enforceUniversalActivitySectionLimit(
-    sanitized,
-    activityPolicy.maxSections,
-  );
-  let synced = syncEditableLabels(sanitized, next.labels);
-  sanitized = clampUniversalImageBoxes(synced.html, {
+  const composed = composeUniversalWorksheet(next, {
+    age: options?.age,
+    ageGroup: options?.ageGroup,
+    grade: options?.grade,
     viewportContentH: viewportH,
   });
+
+  next.main_topic = composed.model.main_topic;
+  next.sub_topic = composed.model.sub_topic;
+  next.instruction_text = composed.model.instruction_text;
+
+  // Sanitize composed HTML (no scripts; keep semantic classes/data attrs)
+  let sanitized = scrubShortPhrasePunctuation(
+    sanitizeUniversalContentHtml(composed.content_html),
+  );
+  sanitized = scrubNestedCardGrowth(sanitized);
   sanitized = trimUniversalImageTokens(sanitized, UNIVERSAL_MAX_IMAGES);
-  synced = syncEditableLabels(
+
+  let synced = syncEditableLabels(
     sanitized,
-    synced.labels.length ? synced.labels : next.labels,
+    composed.labels.length ? composed.labels : next.labels,
   );
   sanitized = synced.html;
   next.content_html = sanitized;
   if (synced.labels.length) next.labels = synced.labels;
+  else if (composed.labels.length) next.labels = composed.labels;
 
-  const existing = Array.isArray(next.images) ? next.images : [];
-  const tokenNums = new Set<number>();
-  const collectTokens = (html: string) => {
-    const re = /\{\{\s*IMAGE[_:]?(\d+)\s*\}\}/gi;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(html)) != null) {
-      tokenNums.add(Number(m[1]));
-    }
-  };
-  collectTokens(sanitized);
-  // Rebuild images[] only for tokens that remain (after age-band section trim).
-  const orderedTokens = [...tokenNums].filter((n) => n >= 1).sort((a, b) => a - b);
-  const images: Array<Record<string, unknown>> = [];
-  if (orderedTokens.length) {
-    for (const n of orderedTokens) {
-      if (images.length >= UNIVERSAL_MAX_IMAGES) break;
-      const prior = isRecord(existing[n - 1]) ? existing[n - 1] : {};
-      const imageQuery =
-        readString(prior.imageQuery, 120) ||
-        readString(prior.image_query, 120) ||
-        `age appropriate educational illustration ${n}`;
-      images.push({
-        imageQuery,
-        ...(typeof prior.assetId === 'string' ? { assetId: prior.assetId } : {}),
-        ...(typeof prior.assetUrl === 'string' ? { assetUrl: prior.assetUrl } : {}),
-      });
-    }
-    // Remap IMAGE_N to dense 1..k after dropping sections
-    let remapHtml = sanitized;
-    const remap = new Map<number, number>();
-    orderedTokens.forEach((n, idx) => {
-      if (idx < UNIVERSAL_MAX_IMAGES) remap.set(n, idx + 1);
-    });
-    remapHtml = remapHtml.replace(
-      /\{\{\s*IMAGE[_:]?(\d+)\s*\}\}/gi,
-      (full, nRaw: string) => {
-        const n = Number(nRaw);
-        const nextN = remap.get(n);
-        return nextN ? `{{IMAGE_${nextN}}}` : '';
-      },
-    );
-    sanitized = remapHtml;
-    next.content_html = sanitized;
-  }
-  // If HTML has no {{IMAGE_N}} left, do NOT keep orphan images[] from the LLM —
-  // that fetched assets in the pipeline that never appear on the page.
+  // Persist activities[] for consumers / retries (non-breaking)
+  next.activities = composed.model.activities.map((a) => {
+    const question = a.instruction || a.title || '';
+    return {
+      id: a.id,
+      type: a.type,
+      title: '',
+      instruction: question,
+      layoutIntent: a.layoutIntent,
+      items: a.items,
+      ...(a.leftItems ? { leftItems: a.leftItems } : {}),
+      ...(a.rightItems ? { rightItems: a.rightItems } : {}),
+    };
+  });
+  next.__activityGapPx = composed.plan.interActivityGap;
+
+  const images: Array<Record<string, unknown>> = composed.images.map((img) => {
+    const row: Record<string, unknown> = { imageQuery: img.imageQuery };
+    if (img.role) row.role = img.role;
+    if (img.importance) row.importance = img.importance;
+    if (img.activityId) row.activityId = img.activityId;
+    if (img.assetId) row.assetId = img.assetId;
+    if (img.assetUrl) row.assetUrl = img.assetUrl;
+    return row;
+  });
+
   const labelsArr = Array.isArray(next.labels)
     ? (next.labels as unknown[]).map((v) => readString(v, 80))
     : [];
   next.images = softAlignImageQueries(sanitized, images, labelsArr);
+
   return next;
 }
 
@@ -1448,12 +2166,10 @@ export function buildUniversalSkeletonHtml(
 ): string {
   const normalized = normalizeUniversalStructure(structure, options);
   const instruction = readString(normalized.instruction_text, 220);
-  const viewportH = options?.viewportContentH ?? 1104;
-  const activityPolicy = policyFromNormalizeOptions(options);
   let fragment = expandUniversalImagePlaceholders(
     sanitizeUniversalContentHtml(String(normalized.content_html || '')),
   );
-  fragment = fitUniversalContentLayout(fragment);
+  fragment = scrubNestedCardGrowth(fragment);
 
   if (instruction) {
     const already =
@@ -1468,18 +2184,14 @@ export function buildUniversalSkeletonHtml(
     }
   }
 
-  // Re-fit after instruction injection so top-level sections stay host flex children.
-  fragment = fitUniversalContentLayout(fragment);
-  fragment = enforceUniversalActivitySectionLimit(
-    fragment,
-    activityPolicy.maxSections,
+  // Composed activities already carry --activity-height; do not re-equalize.
+  const gapPx = Math.max(
+    10,
+    Math.min(28, Number(normalized.__activityGapPx) || 14),
   );
-  // Per-section clamp so multi-row match blocks never clip the bottom row.
-  fragment = clampUniversalImageBoxes(fragment, { viewportContentH: viewportH });
-
-  // Full-height flex host so activity sections can stretch and close above footer.
   return (
-    `<div class="ws-dynamic" style="display:flex;flex-direction:column;gap:10px;width:100%;height:100%;min-height:0;max-height:100%;box-sizing:border-box;overflow:hidden;">` +
+    `<style data-universal-img-layout="true">${UNIVERSAL_IMAGE_LAYOUT_CSS}</style>` +
+    `<div class="ws-dynamic" style="--activity-gap:${gapPx}px;display:flex;flex-direction:column;gap:var(--activity-gap,${gapPx}px);width:100%;height:100%;min-height:0;max-height:100%;box-sizing:border-box;overflow:auto;justify-content:flex-start;align-content:flex-start;">` +
     fragment +
     `</div>`
   );
