@@ -127,7 +127,7 @@ export function buildUniversalActivityPolicyPromptLines(
       ? [
           '  • Picture + simple text only: large clear pictures, 1-word labels (teacher may read aloud).',
           '  • ONE activity does NOT mean one tiny picture. Make that single activity RICH:',
-          '    large primary image + 2–3 large visual choices / find-or-point interactions in the SAME activity.',
+          '    3–5 large pictures in a choice grid (prefer 2×2 when there are 4) — never a skinny row of tiny images on a half-blank page.',
           '  • Never leave most of the page blank. Prefer spacious large-picture or choice-grid layoutIntent.',
           '  • COLORING: only if images[] use outline/line-art queries. Otherwise use find/point/circle — never “color” a fully colored cartoon.',
           '  • instruction_text: one short teacher-spoken line for the single activity.',

@@ -465,9 +465,10 @@ describe('universal worksheet composition engine', () => {
       (result.content_html.match(/ws-activity-instruction/g) || []).length,
     ).toBe(1);
     expect(result.content_html.match(/\{\{IMAGE_\d+\}\}/g)?.length).toBe(5);
-    // Single activity should still take a meaningful share (not a tiny strip)
-    expect(result.plan.allocations[0].allocatedHeight).toBeGreaterThan(220);
-    expect(result.plan.allocations[0].imageSize).toBeLessThanOrEqual(260);
+    // Single activity should fill most of the content viewport (age 2–3)
+    expect(result.plan.allocations[0].allocatedHeight).toBeGreaterThan(700);
+    expect(result.plan.allocations[0].imageSize).toBeGreaterThanOrEqual(160);
+    expect(result.plan.allocations[0].gridColumns).toBeLessThanOrEqual(3);
   });
 
   it('grid of 3 vs 6 chooses different image sizes', () => {

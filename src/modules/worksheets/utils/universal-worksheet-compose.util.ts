@@ -710,11 +710,11 @@ export function enrichSingleActivityForToddler(
     }
   }
 
-  // Promote layout to large-picture or choice-grid
+  // Promote layout to large-picture or choice-grid (never a skinny 4-across row)
   const imageCount = countImagesInItems(items);
   let preferredLayout = act.layoutIntent.preferredLayout;
   if (imageCount <= 1) preferredLayout = 'large-picture';
-  else if (imageCount <= 3) preferredLayout = 'choice-grid';
+  else if (imageCount <= 6) preferredLayout = 'choice-grid';
   else preferredLayout = 'image-grid';
 
   const next: UniversalActivityModel = {
@@ -988,19 +988,29 @@ export function planUniversalComposition(
     if (model.activities.length === 1 && act.layoutIntent.density === 'spacious') {
       return {
         ...base,
-        idealHeight: Math.min(base.maxHeight + 60, Math.floor(viewportH * 0.7)),
-        maxHeight: Math.min(base.maxHeight + 100, Math.floor(viewportH * 0.82)),
-        importanceWeight: base.importanceWeight + 0.4,
-        idealImageSize: Math.min(260, base.idealImageSize + 20),
-        maxImageSize: Math.min(260, base.maxImageSize + 20),
+        idealHeight: Math.min(
+          Math.max(base.idealHeight, Math.floor(viewportH * 0.72)),
+          Math.floor(viewportH * 0.88),
+        ),
+        maxHeight: Math.floor(viewportH * 0.94),
+        importanceWeight: base.importanceWeight + 0.6,
+        idealImageSize: Math.min(280, Math.max(base.idealImageSize, 200)),
+        maxImageSize: Math.min(280, Math.max(base.maxImageSize, 260)),
+        // Prefer 2×2 over a single short row for 4+ pictures
+        gridColumns:
+          act.imageCount >= 4 ? 2 : act.imageCount === 3 ? 3 : base.gridColumns,
+        gridRows:
+          act.imageCount >= 4
+            ? Math.ceil(act.imageCount / 2)
+            : base.gridRows,
       };
     }
 
     if (act.imageCount === 1 && !isMatch) {
       return {
         ...base,
-        maxImageSize: Math.min(base.maxImageSize, 240),
-        maxHeight: Math.min(base.maxHeight, 460),
+        maxImageSize: Math.min(base.maxImageSize, 260),
+        maxHeight: Math.min(base.maxHeight, Math.floor(viewportH * 0.85)),
       };
     }
 
@@ -1013,6 +1023,7 @@ export function planUniversalComposition(
     instructionHeight: model.instruction_text ? 72 : 0,
     interActivityGap: model.activities.length <= 2 ? 16 : 12,
     viewportContentW: options?.viewportContentW,
+    singleActivityFill: model.activities.length === 1,
   });
 }
 function labelSpan(label: string, labelIndex: number): string {
@@ -1237,11 +1248,14 @@ export function composeUniversalContentHtml(
             ? 'ws-row ws-image-grid'
             : 'ws-image-grid';
       const useCols =
-        layout === 'image-row'
-          ? Math.max(imgItems.length, 1)
-          : layout === 'large-picture' || layout === 'single-focus'
-            ? 1
-            : cols;
+        layout === 'large-picture' || layout === 'single-focus'
+          ? 1
+          : // Single rich activity: never force a short 4-across row — use planned columns
+            model.activities.length === 1
+            ? cols
+            : layout === 'image-row'
+              ? Math.max(imgItems.length, 1)
+              : cols;
       body = emitGrid(
         imgItems.length ? imgItems : items,
         useCols,
@@ -1254,12 +1268,15 @@ export function composeUniversalContentHtml(
 
     const question = resolveActivityQuestion(act);
     const questionHtml = question
-      ? `<p class="ws-activity-instruction" data-ws-role="question" style="margin:0 0 4px 0;flex:0 0 auto;font-size:18px;font-weight:700;line-height:1.3;color:#2a1b4a;">${escapeText(question)}</p>`
+      ? `<p class="ws-activity-instruction" data-ws-role="question" style="margin:0 0 6px 0;flex:0 0 auto;font-size:${model.activities.length === 1 ? 22 : 18}px;font-weight:700;line-height:1.3;color:#2a1b4a;">${escapeText(question)}</p>`
       : '';
 
     // height:auto + overflow:visible — never clip labels/questions.
     // --activity-height is a min budget for page fill, not a hard clip box.
     const hugH = Math.max(height, alloc?.contentHeight ?? height);
+    const contentH = alloc?.contentHeight ?? hugH;
+    const fillSingle =
+      model.activities.length === 1 && hugH > contentH + 60;
     parts.push(
       `<section class="ws-activity ws-section" data-activity-id="${escapeAttr(act.id)}" ` +
         `data-activity-type="${escapeAttr(act.type)}" data-layout="${escapeAttr(layout)}" ` +
@@ -1267,8 +1284,9 @@ export function composeUniversalContentHtml(
         `style="flex:0 0 auto;width:100%;height:auto;min-height:${hugH}px;max-height:none;` +
         `--activity-height:${hugH}px;--image-size:${imageSize}px;--image-gap:${gap}px;` +
         `--grid-columns:${cols};box-sizing:border-box;overflow:visible;` +
-        `margin:0;padding:12px 14px 16px;border:2px solid ${border};border-radius:14px;` +
-        `background:#ffffff;display:flex;flex-direction:column;gap:10px;justify-content:flex-start;">` +
+        `margin:0;padding:${fillSingle ? '16px 16px 20px' : '12px 14px 16px'};border:2px solid ${border};border-radius:14px;` +
+        `background:#ffffff;display:flex;flex-direction:column;gap:${fillSingle ? Math.max(gap, 16) : 10}px;` +
+        `justify-content:${fillSingle ? 'center' : 'flex-start'};">` +
         `${questionHtml}${body}</section>`,
     );
   });

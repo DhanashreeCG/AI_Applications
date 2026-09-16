@@ -63,11 +63,14 @@ const ACTIVITY_CHROME_PX = ACTIVITY_QUESTION_PX + ACTIVITY_PAD_PX; // ~68
 const LABEL_ROW_PX = 32;
 const DEFAULT_GAP_PX = 10;
 const ABSOLUTE_MIN_IMAGE_PX = 72;
-const ABSOLUTE_MAX_IMAGE_PX = 260;
+/** Soft ceiling — single-activity pages may use up to this when width allows. */
+const ABSOLUTE_MAX_IMAGE_PX = 280;
 const MATCH_CONNECTOR_W = 48;
 const ACTIVITY_INNER_PAD_X = 40; // section pad + card pad — keep grids inside viewport width
-/** Aim to use most of the viewport when content can absorb space (leave margin vs chrome). */
+/** Multi-activity pages: leave a small margin so we never scrollbar. */
 const PAGE_FILL_TARGET = 0.86;
+/** Age 2–3 / single activity: fill almost the whole content viewport. */
+const SINGLE_ACTIVITY_FILL_TARGET = 0.94;
 const CARD_PAD_X = 16; // ws-picture-card horizontal padding budget per cell
 
 function clamp(n: number, min: number, max: number): number {
@@ -454,6 +457,8 @@ export function allocateUniversalPageSpace(input: {
   interActivityGap?: number;
   contentPadding?: number;
   viewportContentW?: number;
+  /** Force high page fill (age 2–3 single rich activity). */
+  singleActivityFill?: boolean;
 }): UniversalDynamicLayoutPlan {
   const viewportContentH =
     input.viewportContentH ?? UNIVERSAL_VIEWPORT_CONTENT_H;
@@ -463,6 +468,8 @@ export function allocateUniversalPageSpace(input: {
   const interActivityGap = input.interActivityGap ?? 12;
   const contentPadding = input.contentPadding ?? 28;
   const n = input.requirements.length;
+  const singleFill = Boolean(input.singleActivityFill) || n === 1;
+  const fillRatio = singleFill ? SINGLE_ACTIVITY_FILL_TARGET : PAGE_FILL_TARGET;
   const gaps = Math.max(0, n - 1) * interActivityGap;
   const availableHeight = Math.max(
     120,
@@ -609,6 +616,12 @@ export function allocateUniversalPageSpace(input: {
         });
       }
     } else {
+      const preferCols =
+        singleFill && r.imageCount >= 4
+          ? 2
+          : singleFill && r.imageCount === 3
+            ? 3
+            : r.gridColumns;
       const grid = chooseBestGridLayout({
         itemCount: Math.max(1, r.imageCount),
         availableWidth: activityInnerW,
@@ -616,8 +629,10 @@ export function allocateUniversalPageSpace(input: {
         labelHeight: labelH,
         gap,
         minImage: Math.min(r.minImageSize, ABSOLUTE_MIN_IMAGE_PX + 8),
-        maxImage: r.maxImageSize,
-        preferColumns: r.gridColumns,
+        maxImage: singleFill
+          ? Math.min(ABSOLUTE_MAX_IMAGE_PX, Math.max(r.maxImageSize, 240))
+          : r.maxImageSize,
+        preferColumns: preferCols,
       });
       columns = grid.columns;
       rows = grid.rows;
@@ -632,7 +647,9 @@ export function allocateUniversalPageSpace(input: {
           labelHeight: labelH,
           gap,
           minImage: r.minImageSize,
-          maxImage: r.maxImageSize,
+          maxImage: singleFill
+            ? Math.min(ABSOLUTE_MAX_IMAGE_PX, Math.max(r.maxImageSize, 240))
+            : r.maxImageSize,
         });
         imageSize = Math.max(imageSize, Math.min(boosted, r.idealImageSize));
       }
@@ -865,7 +882,7 @@ export function allocateUniversalPageSpace(input: {
   }
 
   // Pass 5: absorb leftover viewport into useful image size / gaps (not empty stretch).
-  const targetFill = Math.floor(availableHeight * PAGE_FILL_TARGET);
+  const targetFill = Math.floor(availableHeight * fillRatio);
   const sumAllocated = () =>
     allocations.reduce((s, a) => s + a.allocatedHeight, 0);
   let used = sumAllocated();
@@ -903,6 +920,32 @@ export function allocateUniversalPageSpace(input: {
     a.allocatedHeight = Math.ceil(a.contentHeight);
   };
 
+  // Single-activity: if a wide row width-caps images, switch to fewer columns
+  // so pictures can grow and the page fills vertically (age 2–3).
+  if (singleFill && allocations.length === 1) {
+    const a = allocations[0];
+    if (!a.hasMatch && a.imageCount >= 3 && a.gridColumns > 2) {
+      const labelH =
+        a.hasLabel || a.hasTrace || a.hasChoices ? LABEL_ROW_PX : 18;
+      const chrome = ACTIVITY_CHROME_PX + (a.hasTrace ? 40 : 0);
+      const usableH = Math.max(120, targetFill - chrome);
+      const grid = chooseBestGridLayout({
+        itemCount: a.imageCount,
+        availableWidth: activityInnerW,
+        availableHeight: usableH,
+        labelHeight: labelH,
+        gap: a.imageGap,
+        minImage: a.minImageSize,
+        maxImage: Math.min(ABSOLUTE_MAX_IMAGE_PX, Math.max(a.maxImageSize, 260)),
+        preferColumns: a.imageCount === 3 ? 3 : 2,
+      });
+      a.gridColumns = grid.columns;
+      a.gridRows = grid.rows;
+      a.imageSize = Math.max(a.imageSize, grid.imageSize);
+      recalcContent(a);
+    }
+  }
+
   while (leftover > 28 && growGuard < 250) {
     let progressed = false;
     for (const i of growOrder) {
@@ -910,7 +953,9 @@ export function allocateUniversalPageSpace(input: {
       const a = allocations[i];
       const hardMax = Math.min(
         ABSOLUTE_MAX_IMAGE_PX,
-        a.maxImageSize + (leftover > 100 ? 24 : leftover > 40 ? 12 : 0),
+        a.maxImageSize +
+          (singleFill && !a.hasMatch ? 40 : 0) +
+          (leftover > 100 ? 24 : leftover > 40 ? 12 : 0),
       );
       // Never grow past what fits in the activity width (prevents horizontal scrollbar)
       const cols = Math.max(1, a.hasMatch ? 2 : a.gridColumns);
@@ -943,7 +988,7 @@ export function allocateUniversalPageSpace(input: {
         progressed = true;
         break;
       }
-      if (a.imageGap < 16) {
+      if (a.imageGap < (singleFill ? 28 : 16)) {
         a.imageGap += 1;
         recalcContent(a);
         const over = sumAllocated() - targetFill;
@@ -963,8 +1008,22 @@ export function allocateUniversalPageSpace(input: {
     leftover = targetFill - used;
   }
 
+  // Single activity: expand section height to fill the content viewport so the
+  // page is not half-blank (images already width-maximized).
+  if (singleFill && allocations.length === 1) {
+    const a = allocations[0];
+    const fillH = Math.min(
+      Math.max(a.maxHeight, targetFill),
+      Math.floor(availableHeight * 0.98),
+    );
+    if (a.allocatedHeight < fillH) {
+      a.allocatedHeight = fillH;
+      // Keep contentHeight as true content need; compose centers inside the tall section
+    }
+  }
+
   // Modest activity-gap bump with any remaining leftover (visual breathing, not empty boxes)
-  if (leftover > 40 && allocations.length >= 2) {
+  if (!singleFill && leftover > 40 && allocations.length >= 2) {
     const bump = Math.min(8, Math.floor(leftover / (allocations.length + 1)));
     if (bump > 0) {
       for (const a of allocations) a.activityGap = interActivityGap + bump;
@@ -1006,8 +1065,19 @@ export function allocateUniversalPageSpace(input: {
           chrome,
         });
       }
-      a.allocatedHeight = Math.ceil(a.contentHeight);
+      // Preserve intentional single-activity page fill height
+      a.allocatedHeight = Math.max(a.allocatedHeight, Math.ceil(a.contentHeight));
     }
+  }
+
+  // Re-assert single-activity fill after width clamp
+  if (singleFill && allocations.length === 1) {
+    const a = allocations[0];
+    const fillH = Math.min(
+      Math.max(a.contentHeight, Math.floor(availableHeight * fillRatio)),
+      Math.floor(availableHeight * 0.98),
+    );
+    a.allocatedHeight = Math.max(a.allocatedHeight, fillH);
   }
 
   return {

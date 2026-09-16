@@ -588,7 +588,7 @@ describe('universal strict dynamic HTML', () => {
     );
     expect(widths.length).toBe(6);
     expect(Math.min(...widths)).toBeGreaterThanOrEqual(100);
-    expect(Math.max(...widths)).toBeLessThanOrEqual(180);
+    expect(Math.max(...widths)).toBeLessThanOrEqual(200);
     expect(html).toMatch(/--activity-height:\d+px|height:\d+px/);
     expect(html).toContain('ws-match-row');
   });
