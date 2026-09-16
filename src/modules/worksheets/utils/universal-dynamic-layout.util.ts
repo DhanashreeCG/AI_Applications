@@ -63,11 +63,12 @@ const ACTIVITY_CHROME_PX = ACTIVITY_QUESTION_PX + ACTIVITY_PAD_PX; // ~68
 const LABEL_ROW_PX = 32;
 const DEFAULT_GAP_PX = 10;
 const ABSOLUTE_MIN_IMAGE_PX = 72;
-const ABSOLUTE_MAX_IMAGE_PX = 300;
+const ABSOLUTE_MAX_IMAGE_PX = 260;
 const MATCH_CONNECTOR_W = 48;
-const ACTIVITY_INNER_PAD_X = 24; // horizontal padding inside activity
-/** Aim to use most of the viewport when content can absorb space. */
-const PAGE_FILL_TARGET = 0.92;
+const ACTIVITY_INNER_PAD_X = 40; // section pad + card pad — keep grids inside viewport width
+/** Aim to use most of the viewport when content can absorb space (leave margin vs chrome). */
+const PAGE_FILL_TARGET = 0.86;
+const CARD_PAD_X = 16; // ws-picture-card horizontal padding budget per cell
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -460,7 +461,7 @@ export function allocateUniversalPageSpace(input: {
   const instructionHeight =
     input.instructionHeight ?? INSTRUCTION_ESTIMATE_PX;
   const interActivityGap = input.interActivityGap ?? 12;
-  const contentPadding = input.contentPadding ?? 14;
+  const contentPadding = input.contentPadding ?? 28;
   const n = input.requirements.length;
   const gaps = Math.max(0, n - 1) * interActivityGap;
   const availableHeight = Math.max(
@@ -909,9 +910,18 @@ export function allocateUniversalPageSpace(input: {
       const a = allocations[i];
       const hardMax = Math.min(
         ABSOLUTE_MAX_IMAGE_PX,
-        a.maxImageSize + (leftover > 100 ? 48 : leftover > 40 ? 24 : 0),
+        a.maxImageSize + (leftover > 100 ? 24 : leftover > 40 ? 12 : 0),
       );
-      const room = hardMax - a.imageSize;
+      // Never grow past what fits in the activity width (prevents horizontal scrollbar)
+      const cols = Math.max(1, a.hasMatch ? 2 : a.gridColumns);
+      const maxByW = a.hasMatch
+        ? Math.floor((activityInnerW - MATCH_CONNECTOR_W - a.imageGap * 2) / 2) -
+          CARD_PAD_X
+        : Math.floor(
+            (activityInnerW - a.imageGap * Math.max(0, cols - 1)) / cols,
+          ) - CARD_PAD_X;
+      const widthCap = Math.max(ABSOLUTE_MIN_IMAGE_PX, maxByW);
+      const room = Math.min(hardMax, widthCap) - a.imageSize;
       if (room >= 2 && (a.imageCount > 0 || a.hasMatch)) {
         a.imageSize += 2;
         recalcContent(a);
@@ -955,9 +965,48 @@ export function allocateUniversalPageSpace(input: {
 
   // Modest activity-gap bump with any remaining leftover (visual breathing, not empty boxes)
   if (leftover > 40 && allocations.length >= 2) {
-    const bump = Math.min(10, Math.floor(leftover / (allocations.length + 1)));
+    const bump = Math.min(8, Math.floor(leftover / (allocations.length + 1)));
     if (bump > 0) {
       for (const a of allocations) a.activityGap = interActivityGap + bump;
+    }
+  }
+
+  // Final width safety: clamp every image so rows cannot exceed the content viewport
+  for (const a of allocations) {
+    const cols = Math.max(1, a.hasMatch ? 2 : a.gridColumns);
+    const maxByW = a.hasMatch
+      ? Math.floor((activityInnerW - MATCH_CONNECTOR_W - a.imageGap * 2) / 2) -
+        CARD_PAD_X
+      : Math.floor(
+          (activityInnerW - a.imageGap * Math.max(0, cols - 1)) / cols,
+        ) - CARD_PAD_X;
+    const widthCap = Math.max(ABSOLUTE_MIN_IMAGE_PX, maxByW);
+    if (a.imageSize > widthCap) {
+      a.imageSize = widthCap;
+      const labelH =
+        a.hasLabel || a.hasTrace || a.hasChoices || a.hasMatch
+          ? LABEL_ROW_PX
+          : 18;
+      const chrome =
+        ACTIVITY_CHROME_PX + (a.hasTrace ? 40 : 0) + (a.hasMatch ? 8 : 0);
+      if (a.hasMatch && a.pairCount > 0) {
+        a.contentHeight = contentHeightForMatching({
+          imageSize: a.imageSize,
+          pairCount: Math.max(1, a.pairCount),
+          labelHeight: labelH,
+          gap: a.imageGap,
+          chrome,
+        });
+      } else if (a.imageCount > 0) {
+        a.contentHeight = contentHeightForGrid({
+          imageSize: a.imageSize,
+          rows: Math.max(1, a.gridRows),
+          labelHeight: labelH,
+          gap: a.imageGap,
+          chrome,
+        });
+      }
+      a.allocatedHeight = Math.ceil(a.contentHeight);
     }
   }
 

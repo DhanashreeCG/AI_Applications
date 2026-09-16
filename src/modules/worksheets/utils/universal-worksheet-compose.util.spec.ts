@@ -465,8 +465,9 @@ describe('universal worksheet composition engine', () => {
       (result.content_html.match(/ws-activity-instruction/g) || []).length,
     ).toBe(1);
     expect(result.content_html.match(/\{\{IMAGE_\d+\}\}/g)?.length).toBe(5);
-    // Single activity should absorb meaningful page height (not float tiny)
-    expect(result.plan.allocations[0].allocatedHeight).toBeGreaterThan(350);
+    // Single activity should still take a meaningful share (not a tiny strip)
+    expect(result.plan.allocations[0].allocatedHeight).toBeGreaterThan(220);
+    expect(result.plan.allocations[0].imageSize).toBeLessThanOrEqual(260);
   });
 
   it('grid of 3 vs 6 chooses different image sizes', () => {

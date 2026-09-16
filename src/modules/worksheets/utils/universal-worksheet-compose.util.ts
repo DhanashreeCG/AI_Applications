@@ -991,15 +991,15 @@ export function planUniversalComposition(
         idealHeight: Math.min(base.maxHeight + 60, Math.floor(viewportH * 0.7)),
         maxHeight: Math.min(base.maxHeight + 100, Math.floor(viewportH * 0.82)),
         importanceWeight: base.importanceWeight + 0.4,
-        idealImageSize: Math.min(300, base.idealImageSize + 30),
-        maxImageSize: Math.min(300, base.maxImageSize + 30),
+        idealImageSize: Math.min(260, base.idealImageSize + 20),
+        maxImageSize: Math.min(260, base.maxImageSize + 20),
       };
     }
 
     if (act.imageCount === 1 && !isMatch) {
       return {
         ...base,
-        maxImageSize: Math.min(base.maxImageSize, 280),
+        maxImageSize: Math.min(base.maxImageSize, 240),
         maxHeight: Math.min(base.maxHeight, 460),
       };
     }
@@ -1178,10 +1178,18 @@ export function composeUniversalContentHtml(
     const alloc: UniversalActivityLayoutAllocation | undefined =
       byId.get(act.id) || plan.allocations[index];
     const height = alloc?.allocatedHeight ?? alloc?.contentHeight ?? 240;
-    const imageSize = alloc?.imageSize ?? 140;
-    const gap = alloc?.imageGap ?? 10;
-    const border = accent[index % accent.length];
     const cols = alloc?.gridColumns ?? 2;
+    const gap = alloc?.imageGap ?? 10;
+    // Width-safe cap so a row of N images never exceeds the content viewport
+    const widthCap = Math.max(
+      72,
+      Math.floor(
+        (UNIVERSAL_VIEWPORT_CONTENT_W - 40 - gap * Math.max(0, cols - 1)) /
+          Math.max(1, cols),
+      ) - 16,
+    );
+    const imageSize = Math.min(alloc?.imageSize ?? 140, widthCap);
+    const border = accent[index % accent.length];
 
     let body = '';
     const layout = act.layoutIntent.preferredLayout;
