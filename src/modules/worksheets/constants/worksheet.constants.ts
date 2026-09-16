@@ -13,6 +13,8 @@ export const ENRICHMENT_KEYS = new Set([
   'assetId',
   'userUploadedKey',
   'userUploadedImages',
+  'caption',
+  'searchDescription',
 ]);
 
 export const USER_UPLOADED_IMAGES_KEY = 'userUploadedImages';

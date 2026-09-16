@@ -121,4 +121,31 @@ describe('WorksheetValidationService', () => {
       }),
     ).toEqual(enriched);
   });
+
+  it('allows caption and searchDescription enrichment on image slots', () => {
+    const enriched = {
+      instruction: 'Count the objects.',
+      items: [
+        {
+          count: 3,
+          imageQuery: 'red apples',
+          assetId: 'asset-1',
+          caption: 'Apple',
+          searchDescription: 'red apple fruit cartoon',
+        },
+        {
+          count: 5,
+          imageQuery: 'yellow bananas',
+          assetId: 'asset-2',
+          caption: 'Banana',
+          searchDescription: 'yellow banana fruit cartoon',
+        },
+      ],
+    };
+    expect(
+      service.validateGeneratedStructure(enriched, tmpl, {
+        allowEnrichmentKeys: true,
+      }),
+    ).toEqual(enriched);
+  });
 });

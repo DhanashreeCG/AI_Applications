@@ -2,9 +2,9 @@
   "name": "Universal Template",
   "slug": "universal_template",
   "category": "universal",
-  "description": "Fixed title + subtitle over decorative background. LLM invents a dense, age-appropriate multi-section educational activity as dynamic HTML (1:1 image slots).",
+  "description": "Fixed title + subtitle over decorative background. LLM designs distinct semantic activities; the renderer allocates page space and image sizes dynamically.",
   "status": "ACTIVE",
-  "version": 4,
+  "version": 5,
   "rendererType": "generic",
   "rendererConfig": {
     "width": 1016,
@@ -36,6 +36,6 @@
     "labels": "Short editable on-page labels / trace words. No ! or ? on 1–3 word labels."
   },
   "aiSystemPrompt": "You edit a single worksheet field. Return JSON {\"value\": ...} only. Plain text only — do not generate HTML or CSS.",
-  "samplePrompt": "Create a fun Grade 2 worksheet about animal sounds with learn, match, and circle activities.",
+  "samplePrompt": "Create a fun Grade 2 worksheet about foxes with identify, match, and trace activities.",
   "createdTemplateId": "cmtveqj0x002ltobgwe7d4brc"
 }

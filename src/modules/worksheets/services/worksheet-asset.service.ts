@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
 import { SearchService } from '../../search/search.service';
-import type { SearchAssetsResponse } from '../../search/interfaces/search-result.interface';
+import type {
+  SearchAssetsResponse,
+  SearchResultItem,
+} from '../../search/interfaces/search-result.interface';
 import {
   S3StorageService,
   sanitizeUploadFilename,
@@ -172,7 +175,10 @@ export class WorksheetAssetService {
     );
 
     // 3. One batch embed + vector search for unique queries (flashcard miss semantics)
-    const queryToAssetIdMap = new Map<string, string | undefined>();
+    const queryToHitMap = new Map<
+      string,
+      { assetId: string; caption: string; searchDescription: string } | undefined
+    >();
     const filters = {
       grades: options?.grades?.filter(Boolean),
       ageGroups: options?.ageGroups?.filter(Boolean),
@@ -218,9 +224,13 @@ export class WorksheetAssetService {
         let cacheHits = 0;
         for (const queryString of uniqueQueryStrings) {
           const response = responses.get(queryString);
-          const hit = this.selectHit(response);
+          const hit = this.selectHitRecord(response);
           if (hit) {
-            queryToAssetIdMap.set(queryString, hit);
+            queryToHitMap.set(queryString, {
+              assetId: hit.assetId,
+              caption: hit.caption || '',
+              searchDescription: hit.searchDescription || '',
+            });
           } else {
             this.logger.warn(`No asset found for imageQuery "${queryString}"`);
           }
@@ -237,7 +247,7 @@ export class WorksheetAssetService {
               query: queryString,
               filters: hasFilters ? filters : undefined,
               resultCount: response?.results.length ?? 0,
-              selectedAssetId: hit ?? null,
+              selectedAssetId: hit?.assetId ?? null,
               cacheHit: response?.fromCache === true,
               failed: false,
               // Per-query vector time (or 0 on cache hit) — NOT full batch wall clock.
@@ -288,11 +298,15 @@ export class WorksheetAssetService {
         .filter((r) => r.structureIndex === structureIndex)
         .map((r) => {
           const trimmed = r.query.trim();
-          const assetId = queryToAssetIdMap.get(trimmed);
+          const hit = queryToHitMap.get(trimmed);
           return {
             path: r.path,
             imageQuery: trimmed,
-            assetId,
+            assetId: hit?.assetId ?? null,
+            ...(hit?.caption ? { caption: hit.caption } : {}),
+            ...(hit?.searchDescription
+              ? { searchDescription: hit.searchDescription }
+              : {}),
           } as ResolvedAssetSlot;
         });
 
@@ -318,11 +332,19 @@ export class WorksheetAssetService {
       return this.persistableStructure(structure);
     }
     if (slot.path === '') {
-      return this.persistableStructure({ ...structure, assetId: slot.assetId });
+      return this.persistableStructure({
+        ...structure,
+        assetId: slot.assetId,
+        ...(slot.caption ? { caption: slot.caption } : {}),
+        ...(slot.searchDescription
+          ? { searchDescription: slot.searchDescription }
+          : {}),
+      });
     }
-    return this.persistableStructure(
-      setValueAtPath(structure, `${slot.path}.assetId`, slot.assetId),
-    );
+    const patch: Record<string, unknown> = { assetId: slot.assetId };
+    if (slot.caption) patch.caption = slot.caption;
+    if (slot.searchDescription) patch.searchDescription = slot.searchDescription;
+    return this.persistableStructure(patchImageSlot(structure, slot.path, patch));
   }
 
   public async resolveSlot(
@@ -372,9 +394,15 @@ export class WorksheetAssetService {
         `image search embedding+vector path=${path || '(root)'} query="${query}" hits=${response.results.length} cache=${response.fromCache === true} topAssetId=${response.results[0]?.assetId ?? 'none'}`,
       );
 
-      const hitId = this.selectHit(response);
-      const slot: ResolvedAssetSlot = hitId
-        ? { path, imageQuery: query, assetId: hitId }
+      const hit = this.selectHitRecord(response);
+      const slot: ResolvedAssetSlot = hit
+        ? {
+            path,
+            imageQuery: query,
+            assetId: hit.assetId,
+            caption: hit.caption || undefined,
+            searchDescription: hit.searchDescription || undefined,
+          }
         : this.emptySlot(path, query);
 
       if (!slot.assetId) {
@@ -451,7 +479,9 @@ export class WorksheetAssetService {
     throw lastError;
   }
 
-  private selectHit(response: SearchAssetsResponse | undefined): string | undefined {
+  private selectHitRecord(
+    response: SearchAssetsResponse | undefined,
+  ): SearchResultItem | undefined {
     const hit = response?.results?.[0];
     if (!hit?.assetId) {
       return undefined;
@@ -462,7 +492,11 @@ export class WorksheetAssetService {
       );
       return undefined;
     }
-    return hit.assetId;
+    return hit;
+  }
+
+  private selectHit(response: SearchAssetsResponse | undefined): string | undefined {
+    return this.selectHitRecord(response)?.assetId;
   }
 
   private async searchWithEmbeddingRetry(
@@ -606,14 +640,19 @@ export class WorksheetAssetService {
     }));
   }
 
-  public applyLibraryImage(
+  public async applyLibraryImage(
     structure: Record<string, unknown>,
     path: string,
     assetId: string,
-  ): Record<string, unknown> {
+  ): Promise<Record<string, unknown>> {
+    const meta = await this.getAssetSearchMeta(assetId);
     const withSlot = patchImageSlot(structure, path, {
       assetId,
       userUploadedKey: '',
+      ...(meta.caption ? { caption: meta.caption } : {}),
+      ...(meta.searchDescription
+        ? { searchDescription: meta.searchDescription }
+        : {}),
     });
     const synced = syncRepeatedImageSlots(withSlot, path);
     let next = synced;
@@ -621,6 +660,30 @@ export class WorksheetAssetService {
       next = setUserUploadedImageIndex(next, linked, null);
     }
     return this.persistableStructure(next);
+  }
+
+  /** Text to seed the image picker for an existing asset. */
+  public async getAssetSearchText(assetId: string): Promise<string> {
+    const meta = await this.getAssetSearchMeta(assetId);
+    return (
+      meta.searchDescription?.trim() ||
+      meta.caption?.trim() ||
+      ''
+    );
+  }
+
+  private async getAssetSearchMeta(
+    assetId: string,
+  ): Promise<{ caption?: string; searchDescription?: string }> {
+    const row = await this.prisma.assetMetadata.findUnique({
+      where: { assetId },
+      select: { caption: true, searchDescription: true },
+    });
+    if (!row) return {};
+    return {
+      caption: row.caption || undefined,
+      searchDescription: row.searchDescription || undefined,
+    };
   }
 
   public applyUserUploadedImage(

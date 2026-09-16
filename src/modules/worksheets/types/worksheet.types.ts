@@ -160,6 +160,8 @@ export interface ResolvedAssetSlot {
   path: string;
   imageQuery: string;
   assetId: string | null;
+  caption?: string;
+  searchDescription?: string;
 }
 
 export interface ResolvedAssetUrl {
