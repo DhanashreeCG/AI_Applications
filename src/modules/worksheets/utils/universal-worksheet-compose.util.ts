@@ -534,6 +534,13 @@ function parseImages(raw: unknown): UniversalImageModel[] {
       if (activityId) row.activityId = activityId;
       if (typeof img.assetId === 'string') row.assetId = img.assetId;
       if (typeof img.assetUrl === 'string') row.assetUrl = img.assetUrl;
+      const caption = readString(img.caption, 200);
+      if (caption) row.caption = caption;
+      const searchDescription = readString(
+        img.searchDescription || img.search_description,
+        400,
+      );
+      if (searchDescription) row.searchDescription = searchDescription;
       return row;
     })
     .filter(Boolean) as UniversalImageModel[];

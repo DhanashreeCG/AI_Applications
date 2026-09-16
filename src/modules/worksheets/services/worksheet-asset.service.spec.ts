@@ -17,6 +17,7 @@ describe('WorksheetAssetService', () => {
   };
   const prisma = {
     asset: { findUnique: jest.fn() },
+    assetMetadata: { findUnique: jest.fn() },
   };
   const configService = {
     get: (key: string) => {
@@ -93,6 +94,48 @@ describe('WorksheetAssetService', () => {
     });
     expect(JSON.stringify(structure)).not.toContain('signedUrl');
     expect(JSON.stringify(structure)).not.toContain('imageUrl');
+  });
+
+  it('persists caption and searchDescription from retrieval hits onto image slots', async () => {
+    searchService.searchMany.mockResolvedValue(
+      new Map([
+        [
+          'red apples',
+          {
+            query: 'red apples',
+            total: 1,
+            results: [
+              {
+                assetId: 'asset-123',
+                similarity: 0.95,
+                caption: 'Apple',
+                searchDescription: 'cute cartoon red apple',
+                s3ObjectKey: 'assets/a.png',
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+
+    const { structure, slots } = await service.attachAssets({
+      items: [{ count: 3, imageQuery: 'red apples' }],
+    });
+
+    expect(slots[0]).toMatchObject({
+      assetId: 'asset-123',
+      caption: 'Apple',
+      searchDescription: 'cute cartoon red apple',
+    });
+    expect(structure.items).toEqual([
+      {
+        count: 3,
+        imageQuery: 'red apples',
+        assetId: 'asset-123',
+        caption: 'Apple',
+        searchDescription: 'cute cartoon red apple',
+      },
+    ]);
   });
 
   it('searches assets from structure.image.image_name when imageQuery is absent', async () => {
@@ -236,8 +279,12 @@ describe('WorksheetAssetService', () => {
     });
   });
 
-  it('mirrors library replace across match_the_pairs left/right slots', () => {
-    const next = service.applyLibraryImage(
+  it('mirrors library replace across match_the_pairs left/right slots', async () => {
+    prisma.assetMetadata.findUnique.mockResolvedValue({
+      caption: 'Mars',
+      searchDescription: 'red planet mars cartoon',
+    });
+    const next = await service.applyLibraryImage(
       {
         worksheet_type: 'match_the_pairs',
         pairs: [
@@ -254,10 +301,14 @@ describe('WorksheetAssetService', () => {
     const pair = (next.pairs as Array<Record<string, unknown>>)[0];
     expect((pair.left_image as { assetId: string }).assetId).toBe('mars-new');
     expect((pair.right_image as { assetId: string }).assetId).toBe('mars-new');
+    expect((pair.left_image as { searchDescription: string }).searchDescription).toBe(
+      'red planet mars cartoon',
+    );
   });
 
-  it('mirrors library replace across all before/after mascot items', () => {
-    const next = service.applyLibraryImage(
+  it('mirrors library replace across all before/after mascot items', async () => {
+    prisma.assetMetadata.findUnique.mockResolvedValue(null);
+    const next = await service.applyLibraryImage(
       {
         worksheet_type: 'Numbers_afterandbefore',
         items: [
@@ -331,7 +382,7 @@ describe('WorksheetAssetService', () => {
     );
 
     expect(searchService.searchMany).toHaveBeenCalledTimes(1);
-    expect(slots[0].assetId).toBeUndefined();
+    expect(slots[0].assetId).toBeNull();
     expect(structure).toEqual({
       items: [{ imageQuery: 'red apples' }],
     });
@@ -419,7 +470,7 @@ describe('WorksheetAssetService', () => {
       items: [{ imageQuery: 'red apples' }],
     });
 
-    expect(slots[0].assetId).toBeUndefined();
+    expect(slots[0].assetId).toBeNull();
     expect(structure).toEqual({
       items: [{ imageQuery: 'red apples' }],
     });

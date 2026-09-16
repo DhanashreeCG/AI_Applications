@@ -2149,6 +2149,8 @@ export function normalizeUniversalStructure(
     if (img.activityId) row.activityId = img.activityId;
     if (img.assetId) row.assetId = img.assetId;
     if (img.assetUrl) row.assetUrl = img.assetUrl;
+    if (img.caption) row.caption = img.caption;
+    if (img.searchDescription) row.searchDescription = img.searchDescription;
     return row;
   });
 

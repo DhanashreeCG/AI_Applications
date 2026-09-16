@@ -259,6 +259,15 @@ const IMAGE_QUERY_ALIAS_KEYS = [
   'searchDescription',
 ] as const;
 
+/** Prefer asset text used for retrieval over the original LLM imageQuery. */
+const IMAGE_SEARCH_QUERY_KEYS = [
+  'searchDescription',
+  'caption',
+  'imageQuery',
+  'image_name',
+  'imageName',
+] as const;
+
 const PAIR_IMAGE_KEYS = new Set(['left_image', 'right_image']);
 
 const SKIP_IMAGE_WALK_KEYS = new Set([
@@ -318,6 +327,68 @@ export function visualQueryFromImageRecord(
   return null;
 }
 
+/**
+ * Asset-library text only (searchDescription, then caption).
+ * Does not fall back to LLM imageQuery — use for edit-mode picker seeding.
+ */
+export function preferredAssetSearchText(
+  value: Record<string, unknown>,
+): string | null {
+  for (const key of ['searchDescription', 'caption'] as const) {
+    const raw = value[key];
+    if (typeof raw === 'string' && raw.trim()) {
+      return raw.trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Query used when the editor opens image search for a clicked slot.
+ * Prefer the asset's searchDescription / caption over the LLM imageQuery.
+ */
+export function searchQueryFromImageRecord(
+  value: Record<string, unknown>,
+): string | null {
+  const preferred = preferredAssetSearchText(value);
+  if (preferred) {
+    return preferred;
+  }
+  const phrases: string[] = [];
+  const files: string[] = [];
+  for (const key of IMAGE_SEARCH_QUERY_KEYS) {
+    if (key === 'searchDescription' || key === 'caption') {
+      continue;
+    }
+    const raw = value[key];
+    if (typeof raw !== 'string' || !raw.trim()) {
+      continue;
+    }
+    const query = raw.trim();
+    if (looksLikeImageFileName(query)) {
+      files.push(query);
+    } else {
+      phrases.push(query);
+    }
+  }
+  if (phrases[0]) {
+    return phrases[0];
+  }
+  if (files[0]) {
+    return filenameToSearchQuery(files[0]) || null;
+  }
+  return null;
+}
+
+/** Soft read — returns undefined instead of throwing when the path is missing. */
+export function tryGetValueAtPath(root: unknown, fieldPath: string): unknown {
+  try {
+    return getValueAtPath(root, fieldPath);
+  } catch {
+    return undefined;
+  }
+}
+
 export function isBeforeAfterNumbersWorksheet(
   structure: Record<string, unknown>,
 ): boolean {
@@ -349,6 +420,8 @@ const REPEATED_IMAGE_SYNC_KEYS = [
   'imageQuery',
   'image_name',
   'uploadedImage',
+  'caption',
+  'searchDescription',
 ] as const;
 
 /**

@@ -52,7 +52,7 @@ describe('WorksheetEditService', () => {
     resolveAsset: jest.fn(),
     attachAssets: jest.fn(),
     applyLibraryImage: jest.fn(
-      (structure: Record<string, unknown>, path: string, assetId: string) => {
+      async (structure: Record<string, unknown>, path: string, assetId: string) => {
         const items = [...((structure.items as Array<Record<string, unknown>>) ?? [])];
         if (path.startsWith('items')) {
           items[0] = { ...(items[0] ?? {}), assetId };
@@ -61,6 +61,7 @@ describe('WorksheetEditService', () => {
         return { ...structure, [path]: { ...((structure[path] as object) ?? {}), assetId } };
       },
     ),
+    getAssetSearchText: jest.fn().mockResolvedValue(''),
     applyUserUploadedImage: jest.fn(
       (structure: Record<string, unknown>, path: string, upload: { key: string }) => ({
         ...structure,
@@ -218,6 +219,60 @@ describe('WorksheetEditService', () => {
     await service.searchImages('ws-1', { path: 'items[0]' });
     expect(assetService.searchCandidates).toHaveBeenCalledWith(
       'red apples',
+      undefined,
+      undefined,
+      'counting_objects_v1',
+    );
+  });
+
+  it('searchImages prefers searchDescription / caption over imageQuery', async () => {
+    prisma.worksheet.findUnique.mockResolvedValue({
+      ...worksheet,
+      structure: {
+        images: [
+          {
+            imageQuery: 'generic cartoon animal',
+            caption: 'Giraffe',
+            searchDescription: 'tall cute cartoon giraffe',
+            assetId: 'asset-giraffe',
+          },
+        ],
+      },
+    });
+    assetService.searchCandidates.mockResolvedValue([]);
+    await service.searchImages('ws-1', {
+      path: 'images[0]',
+      query: 'generic cartoon animal',
+    });
+    expect(assetService.searchCandidates).toHaveBeenCalledWith(
+      'tall cute cartoon giraffe',
+      undefined,
+      undefined,
+      'counting_objects_v1',
+    );
+  });
+
+  it('searchImages falls back to asset metadata when slot text is missing', async () => {
+    prisma.worksheet.findUnique.mockResolvedValue({
+      ...worksheet,
+      structure: {
+        images: [
+          {
+            imageQuery: 'generic cartoon animal',
+            assetId: 'asset-giraffe',
+          },
+        ],
+      },
+    });
+    assetService.getAssetSearchText.mockResolvedValue('tall cute cartoon giraffe');
+    assetService.searchCandidates.mockResolvedValue([]);
+    await service.searchImages('ws-1', {
+      path: 'images[0]',
+      query: 'generic cartoon animal',
+    });
+    expect(assetService.getAssetSearchText).toHaveBeenCalledWith('asset-giraffe');
+    expect(assetService.searchCandidates).toHaveBeenCalledWith(
+      'tall cute cartoon giraffe',
       undefined,
       undefined,
       'counting_objects_v1',

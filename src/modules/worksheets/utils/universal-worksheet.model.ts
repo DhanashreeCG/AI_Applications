@@ -87,6 +87,8 @@ export type UniversalImageModel = {
   activityId?: string;
   assetId?: string;
   assetUrl?: string;
+  caption?: string;
+  searchDescription?: string;
 };
 
 export type UniversalWorksheetModel = {
