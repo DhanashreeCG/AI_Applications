@@ -117,14 +117,14 @@ describe('worksheet regen prompt', () => {
     expect(isAgeFourOrUnder({ age: 5 })).toBe(false);
   });
 
-  it('detects age ≤ 3 bands for 2–3 extra rules', () => {
+  it('detects age ≤ 3 bands for 2–3 rules', () => {
     expect(isAgeThreeOrUnder({ ageGroup: '2-3' })).toBe(true);
     expect(isAgeThreeOrUnder({ age: 3 })).toBe(true);
     expect(isAgeThreeOrUnder({ ageGroup: '3-4' })).toBe(false);
     expect(isAgeThreeOrUnder({ ageGroup: '4-5' })).toBe(false);
   });
 
-  it('injects toddler hard rules for universal when age ≤ 4', () => {
+  it('injects age 3–4 hard rules for universal', () => {
     const prompt = buildWorksheetContentPrompt({
       request: { topic: 'animals', ageGroup: '3-4' },
       templateName: 'Universal Template',
@@ -133,15 +133,15 @@ describe('worksheet regen prompt', () => {
       meta: {},
       contentRegion: { width: 936, height: 1104 },
     });
-    expect(prompt).toContain('TODDLER / AGE ≤ 4 HARD RULES');
-    expect(prompt).toContain('choose **1 or 2** activity sections');
-    expect(prompt).toContain('Picture + simple text only');
+    expect(prompt).toContain('AGE BAND 3-4 HARD RULES');
+    expect(prompt).toContain('DIFFICULTY: easy');
+    expect(prompt).toContain('EXACTLY 2 activity sections');
     expect(prompt).toContain('COHERENCE');
+    expect(prompt).not.toContain('TODDLER / AGE ≤ 4 HARD RULES');
     expect(prompt).not.toContain('AGE 2–3 EXTRA HARD RULES');
-    expect(prompt).not.toContain('MAXIMUM 2 activity sections');
   });
 
-  it('injects age 2–3 extra rules for universal', () => {
+  it('injects age 2–3 hard rules for universal', () => {
     const prompt = buildWorksheetContentPrompt({
       request: { topic: 'animals', ageGroup: '2-3' },
       templateName: 'Universal Template',
@@ -150,12 +150,13 @@ describe('worksheet regen prompt', () => {
       meta: {},
       contentRegion: { width: 936, height: 1104 },
     });
-    expect(prompt).toContain('TODDLER / AGE ≤ 4 HARD RULES');
-    expect(prompt).toContain('AGE 2–3 EXTRA HARD RULES');
-    expect(prompt).toContain('same pets only');
+    expect(prompt).toContain('AGE BAND 2-3 HARD RULES');
+    expect(prompt).toContain('EXACTLY 1 activity section');
+    expect(prompt).toContain('DIFFICULTY: easy only');
+    expect(prompt).not.toContain('AGE BAND 3-4 HARD RULES');
   });
 
-  it('does not inject toddler hard rules for universal when age band is above 4', () => {
+  it('injects age 4–5+ hard rules for universal', () => {
     const prompt = buildWorksheetContentPrompt({
       request: { topic: 'animals', ageGroup: '5-6' },
       templateName: 'Universal Template',
@@ -164,6 +165,27 @@ describe('worksheet regen prompt', () => {
       meta: {},
       contentRegion: { width: 936, height: 1104 },
     });
+    expect(prompt).toContain('AGE BAND 4-5+ HARD RULES');
+    expect(prompt).toContain('DIFFICULTY: medium');
+    expect(prompt).toContain('target **3** activity sections');
     expect(prompt).not.toContain('TODDLER / AGE ≤ 4 HARD RULES');
+    expect(prompt).not.toContain('AGE BAND 2-3 HARD RULES');
+  });
+
+  it('asks universal worksheets for semantic primitives and unique activities', () => {
+    const prompt = buildWorksheetContentPrompt({
+      request: { topic: 'foxes', ageGroup: '4-5' },
+      templateName: 'Universal Template',
+      templateSlug: 'universal_template',
+      structureDefinition: { type: 'object' },
+      meta: {},
+      contentRegion: { width: 936, height: 1104 },
+    });
+    expect(prompt).toContain('WORKSHEET COMPOSITION');
+    expect(prompt).toContain('activities[]');
+    expect(prompt).toContain('layoutIntent');
+    expect(prompt).toContain('ACTIVITY UNIQUENESS');
+    expect(prompt).not.toContain('sections use flex:1');
+    expect(prompt).not.toContain('FILL the viewport (sections use flex:1)');
   });
 });

@@ -17,7 +17,7 @@ import {
   resolveImageSlot,
   type ImageZoneBox,
 } from '../utils/template-tokens.util';
-import { unifyBeforeAfterSharedMascot, visualQueryFromImageRecord } from '../utils/structure.util';
+import { unifyBeforeAfterSharedMascot, preferredAssetSearchText, searchQueryFromImageRecord } from '../utils/structure.util';
 import {
   injectUniversalContentHtml,
   isUniversalSlug,
@@ -160,15 +160,26 @@ const EDITOR_BRIDGE = `
     if (pair) {
       return 'pairs[' + (Number(pair[1]) - 1) + '].' + String(pair[2]).toLowerCase() + '_image';
     }
+    var imagesBracket = String(slotId || '').match(/^images\\[(\\d+)\\]$/i);
+    if (imagesBracket) {
+      return 'images[' + imagesBracket[1] + ']';
+    }
+    var imageToken = String(slotId || '').match(/^IMAGE[_-]?(\\d+)$/i);
+    if (imageToken) {
+      return 'images[' + (Number(imageToken[1]) - 1) + ']';
+    }
     var n = String(slotId || '').match(/^(?:item|image|img|slot)_?(\\d+)$/i);
     return n ? ('items[' + (Number(n[1]) - 1) + ']') : '';
   }
   function selectImage(slotId, path, img) {
     document.querySelectorAll('[data-ws-target]').forEach(function (el) { el.removeAttribute('data-ws-target'); });
     if (img) img.setAttribute('data-ws-target', 'active');
+    var resolvedPath = path || (img && img.getAttribute('data-field-path')) || inferItemPath(slotId) || 'image';
+    var query = (img && (img.getAttribute('data-search-query') || img.getAttribute('alt'))) || '';
     emit('worksheet-replace-image', {
       slotId: slotId || (img && img.getAttribute('data-image-slot')) || 'image',
-      path: path || (img && img.getAttribute('data-field-path')) || inferItemPath(slotId) || 'image'
+      path: resolvedPath,
+      query: query
     });
   }
   function selectWorksheetImageBridge(itemId) {
@@ -367,8 +378,9 @@ function slotUrl(
     src: isUsableSrc(rawSrc) ? rawSrc : '',
     replaced: Boolean(replacement),
     alt:
+      preferredAssetSearchText(record) ||
+      searchQueryFromImageRecord(record) ||
       match?.imageQuery ||
-      visualQueryFromImageRecord(record) ||
       slotId,
     path: match?.path || fallbackPath,
     slotId: match?.slotId || fallbackSlot,
@@ -389,7 +401,8 @@ function imageTag(
   const srcAttr = isUsableSrc(resolved.src)
     ? ` src="${escapeHtml(resolved.src)}"`
     : '';
-  return `<img class="worksheet-image" data-image-slot="${escapeHtml(resolved.slotId || slotId)}" data-field-path="${escapeHtml(resolved.path)}"${srcAttr} alt="${escapeHtml(resolved.alt)}" style="${style}" />`;
+  const searchQuery = escapeHtml(resolved.alt || '');
+  return `<img class="worksheet-image" data-image-slot="${escapeHtml(resolved.slotId || slotId)}" data-field-path="${escapeHtml(resolved.path)}" data-search-query="${searchQuery}"${srcAttr} alt="${searchQuery}" style="${style}" />`;
 }
 
 function htmlHasImageSlot(html: string, slotId: string): boolean {
@@ -508,8 +521,13 @@ function applyImageSlots(html: string, structure: Record<string, unknown>): stri
       if (isUsableSrc(src)) {
         next += ` src="${escapeHtml(src)}"`;
       }
-      if (!/\balt=/i.test(next)) {
-        next += ` alt="${escapeHtml(resolved.alt)}"`;
+      const searchQuery = escapeHtml(resolved.alt || '');
+      if (searchQuery) {
+        next = next.replace(/\s*\balt=(["']).*?\1/i, '');
+        next = next.replace(/\s*\bdata-search-query=(["']).*?\1/i, '');
+        next += ` alt="${searchQuery}" data-search-query="${searchQuery}"`;
+      } else if (!/\balt=/i.test(next)) {
+        next += ` alt=""`;
       }
       if (!/\bdata-field-path=/i.test(next)) {
         next += ` data-field-path="${escapeHtml(resolved.path)}"`;

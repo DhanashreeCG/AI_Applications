@@ -2977,21 +2977,55 @@
       return true;
     }
 
+    /** Asset caption / searchDescription may be longer than a short display name. */
+    function isUsableImageSearchText(value, { allowLong = false } = {}) {
+      const text = String(value || '').trim();
+      if (!text) return false;
+      if (allowLong) {
+        const stripped = text.replace(/^["']+|["']+$/g, '');
+        if (/\.(jpe?g|png|gif|webp|heic|heif|bmp|svg|tiff?)$/i.test(stripped)) return false;
+        if (/[/\\]/.test(stripped)) return false;
+        if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(stripped)) return false;
+        const letters = stripped.replace(/[^a-zA-Z]+/g, '');
+        return letters.length >= 2;
+      }
+      return isPlainSearchName(text);
+    }
+
     function structureValueAt(structure, path) {
       if (!structure || !path) return undefined;
       return String(path).replace(/\]/g, '').split(/[.[]/).filter(Boolean).reduce((cur, key) => cur?.[key], structure);
     }
 
-    function imageSearchQueryFor(structure, path) {
-      const slot = structureValueAt(structure, path);
-      const fromSlot = [];
-      if (slot && typeof slot === 'object' && !Array.isArray(slot)) {
-        fromSlot.push(slot.imageQuery, slot.queryUsed, slot.caption, slot.alt, slot.label);
-      } else if (typeof slot === 'string') {
-        fromSlot.push(slot);
+    function imageSearchQueryFor(structure, path, hint) {
+      const hintText = hint == null ? '' : String(hint).trim();
+      if (hintText && isUsableImageSearchText(hintText, { allowLong: true })) {
+        return hintText;
       }
-      const chosen = fromSlot.map((value) => (value == null ? '' : String(value).trim())).find(Boolean);
-      if (chosen && isPlainSearchName(chosen)) return chosen;
+      const slot = structureValueAt(structure, path);
+      const assetFields = [];
+      const fallbackFields = [];
+      if (slot && typeof slot === 'object' && !Array.isArray(slot)) {
+        assetFields.push(slot.searchDescription, slot.caption);
+        fallbackFields.push(slot.imageQuery, slot.queryUsed, slot.alt, slot.label);
+      } else if (typeof slot === 'string') {
+        fallbackFields.push(slot);
+      }
+      for (const value of assetFields) {
+        const text = value == null ? '' : String(value).trim();
+        if (text && isUsableImageSearchText(text, { allowLong: true })) return text;
+      }
+      for (const value of fallbackFields) {
+        const text = value == null ? '' : String(value).trim();
+        if (text && isUsableImageSearchText(text, { allowLong: true })) return text;
+      }
+      const imgIdx = String(path || '').match(/^images\[(\d+)\]$/i);
+      if (imgIdx && Array.isArray(structure?.labels)) {
+        const label = structure.labels[Number(imgIdx[1])];
+        if (typeof label === 'string' && label.trim() && isUsableImageSearchText(label.trim())) {
+          return label.trim();
+        }
+      }
       const preferred = ['topic', 'title', 'instruction', 'heading', 'label', 'word'];
       for (const key of preferred) {
         const text = structure?.[key];
@@ -3001,7 +3035,7 @@
       return String(request.topic || request.query || els.topicInput.value || '').trim();
     }
 
-    function openImagePicker(path, slotId, fromAi) {
+    function openImagePicker(path, slotId, fromAi, searchHint) {
       if (!state.editMode && !fromAi && !state.imagePickFromAi) return;
       state.imagePickFromAi = Boolean(fromAi || state.imagePickFromAi);
       const side = window.selectedImageSide || null;
@@ -3024,7 +3058,11 @@
           window.selectedImageItemId = null;
           state.selectedSearchItem = null;
           setImagePickerTab('search');
-          const query = imageSearchQueryFor(state.preview?.structure, state.selectedImagePath);
+          const query = imageSearchQueryFor(
+            state.preview?.structure,
+            state.selectedImagePath,
+            searchHint,
+          );
           els.imageQuery.value = query;
           els.imageBank.innerHTML = '';
           els.imageResultsCount.textContent = 'Searching…';
@@ -3038,7 +3076,11 @@
       window.selectedImageSide = null;
       state.selectedSearchItem = null;
       setImagePickerTab('search');
-      const query = imageSearchQueryFor(state.preview?.structure, state.selectedImagePath);
+      const query = imageSearchQueryFor(
+        state.preview?.structure,
+        state.selectedImagePath,
+        searchHint,
+      );
       els.imageQuery.value = query;
       els.imageBank.innerHTML = '';
       els.imageResultsCount.textContent = 'Searching…';
@@ -3049,11 +3091,12 @@
     // Keep a reference first: the declaration above *is* window.openImagePicker,
     // so assigning to it without this would make the alias call itself.
     const openImagePickerFn = openImagePicker;
-    window.openImagePicker = function (path, slotId, fromAi) {
+    window.openImagePicker = function (path, slotId, fromAi, searchHint) {
       return openImagePickerFn(
         path,
         slotId,
         fromAi === undefined ? state.imagePickFromAi : fromAi,
+        searchHint,
       );
     };
 
@@ -3927,7 +3970,7 @@
       const data = event.data || {};
       if (data.type === 'worksheet-replace-image') {
         if (!state.editMode && !state.imagePickFromAi) return;
-        openImagePicker(data.path, data.slotId, state.imagePickFromAi);
+        openImagePicker(data.path, data.slotId, state.imagePickFromAi, data.query);
       }
       if (data.type === 'worksheet-select-field') {
         if (!state.editMode) return;
@@ -3978,6 +4021,12 @@
       if (item.caption && isPlainSearchName(item.caption) && !next.caption && !next.label) {
         next.caption = item.caption;
       }
+      if (item.searchDescription && !next.searchDescription) {
+        next.searchDescription = item.searchDescription;
+      }
+      if (item.caption && !next.caption) {
+        next.caption = item.caption;
+      }
       if (!next.imageQuery && item.queryUsed) next.imageQuery = item.queryUsed;
       setStructureValue(structure, path, next);
     }
@@ -3995,6 +4044,7 @@
       const syncKeys = [
         'assetId', 'assetUrl', 'imageUrl', 'signedUrl',
         'userUploadedKey', 'imageQuery', 'image_name', 'uploadedImage',
+        'caption', 'searchDescription',
       ];
       linked.forEach((path) => {
         if (path === sourcePath) return;
@@ -4074,6 +4124,7 @@
       if (state.imageSearchCache.has(key)) {
         const cached = state.imageSearchCache.get(key);
         state.lastImageSearch = cached;
+        if (cached.query) els.imageQuery.value = cached.query;
         renderImageResults(cached.results, cached.query);
         return;
       }
@@ -4106,6 +4157,7 @@
         state.imageSearchCache.set(key, payload);
         if (payload.query) state.imageSearchCache.set(cacheKey(payload.query, ''), payload);
         state.lastImageSearch = payload;
+        if (payload.query) els.imageQuery.value = payload.query;
         renderImageResults(payload.results, payload.query);
         payload.results.forEach((item) => {
           if (item?.imageUrl) cachedImageSrc(item.imageUrl);

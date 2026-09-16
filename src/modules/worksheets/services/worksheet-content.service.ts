@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 import { randomUUID } from 'node:crypto';
 import { AiUsageService } from '../../ai/services/ai-usage.service';
 import { CircuitBreaker } from '../../ai/utils/circuit-breaker.util';
@@ -30,6 +31,12 @@ import {
 import { WorksheetTemplateRecord } from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
 import { normalizeLlmWorksheetPayload, parseJsonObject } from '../utils/structure.util';
+import {
+  resolveUniversalContentRoute,
+  type UniversalContentRoute,
+} from '../utils/universal-content-ai.util';
+
+type ContentRoute = UniversalContentRoute;
 
 function readContentRegion(
   rendererConfig: unknown,
@@ -45,13 +52,20 @@ function readContentRegion(
   };
 }
 
+function providerLabel(provider: ContentRoute['provider']): string {
+  return provider === 'openai' ? 'openai' : 'google-gemini';
+}
+
 @Injectable()
 export class WorksheetContentService {
   private readonly logger = new Logger(WorksheetContentService.name);
   private client: GoogleGenAI | null;
-  private readonly modelName: string;
-  private readonly rateLimiter: RateLimiter;
-  private readonly circuitBreaker: CircuitBreaker;
+  private openaiClient: OpenAI | null;
+  private readonly geminiModelName: string;
+  private readonly geminiRateLimiter: RateLimiter;
+  private readonly openaiRateLimiter: RateLimiter;
+  private readonly geminiCircuitBreaker: CircuitBreaker;
+  private readonly openaiCircuitBreaker: CircuitBreaker;
   private readonly emitter: WorksheetPipelineEmitter;
 
   constructor(
@@ -60,29 +74,56 @@ export class WorksheetContentService {
     private readonly validationService: WorksheetValidationService,
     eventEmitter: EventEmitter2,
   ) {
-    const apiKey = this.configService.get<string>('worksheets.geminiApiKey');
-    this.modelName =
+    const geminiApiKey = this.configService.get<string>('worksheets.geminiApiKey');
+    const openaiApiKey = this.configService.get<string>('worksheets.openaiApiKey');
+    this.geminiModelName =
       this.configService.get<string>('worksheets.geminiModel') ||
       'gemini-2.5-flash';
-    this.rateLimiter = new RateLimiter(
+
+    const failureThreshold =
+      this.configService.get<number>('ai.circuitFailureThreshold') ?? 5;
+    const cooldownMs =
+      this.configService.get<number>('ai.circuitCooldownMs') ?? 60000;
+
+    this.geminiRateLimiter = new RateLimiter(
       this.configService.get<number>('ai.geminiMaxRps') ?? 2,
     );
-    this.circuitBreaker = new CircuitBreaker(
-      'google-gemini-worksheet-content',
-      this.configService.get<number>('ai.circuitFailureThreshold') ?? 5,
-      this.configService.get<number>('ai.circuitCooldownMs') ?? 60000,
+    this.openaiRateLimiter = new RateLimiter(
+      this.configService.get<number>('ai.openaiMaxRps') ?? 10,
     );
-    this.client = apiKey ? new GoogleGenAI({ apiKey }) : null;
+    this.geminiCircuitBreaker = new CircuitBreaker(
+      'google-gemini-worksheet-content',
+      failureThreshold,
+      cooldownMs,
+    );
+    this.openaiCircuitBreaker = new CircuitBreaker(
+      'openai-worksheet-content',
+      failureThreshold,
+      cooldownMs,
+    );
+
+    this.client = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
+    this.openaiClient = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
     this.emitter = new WorksheetPipelineEmitter(eventEmitter);
-    if (!apiKey) {
+
+    if (!geminiApiKey) {
       this.logger.warn(
-        'WORKSHEET_GEMINI_API_KEY (or GEMINI_API_KEY fallback) not provided. WorksheetContentService is unavailable.',
+        'WORKSHEET_GEMINI_API_KEY (or GEMINI_API_KEY fallback) not provided. Gemini worksheet content is unavailable.',
+      );
+    }
+    if (!openaiApiKey) {
+      this.logger.warn(
+        'WORKSHEET_OPENAI_API_KEY (or OPENAI_API_KEY fallback) not provided. OpenAI worksheet content (universal) is unavailable.',
       );
     }
   }
 
   public setClient(client: GoogleGenAI): void {
     this.client = client;
+  }
+
+  public setOpenAiClient(client: OpenAI): void {
+    this.openaiClient = client;
   }
 
   public async generateStructures(
@@ -125,17 +166,20 @@ export class WorksheetContentService {
         },
       );
 
-      const contentModel = this.resolveContentModel(template);
-      if (contentModel !== this.modelName) {
+      const route = this.resolveContentRoute(template);
+      if (
+        route.provider !== 'gemini' ||
+        route.model !== this.geminiModelName
+      ) {
         this.logger.log(
-          `using dedicated content model=${contentModel} slug=${template.slug}`,
+          `using dedicated content route provider=${route.provider} model=${route.model} slug=${template.slug}`,
         );
       }
       const parsed = await this.generateJson(
         prompt,
         extras?.stage || WORKSHEET_CONTENT_STAGE,
         telemetry,
-        contentModel,
+        route,
       );
 
       let rawItems = normalizeLlmWorksheetPayload(parsed, targetCount);
@@ -342,9 +386,22 @@ export class WorksheetContentService {
     prompt: string,
     stage: string,
     telemetry?: PipelineTelemetryContext,
-    modelOverride?: string | null,
+    routeOverride?: ContentRoute | null,
   ): Promise<unknown> {
-    if (!this.client) {
+    const route: ContentRoute = routeOverride ?? {
+      provider: 'gemini',
+      model: this.geminiModelName,
+    };
+    const providerName = providerLabel(route.provider);
+
+    if (route.provider === 'openai' && !this.openaiClient) {
+      throw new WorksheetException(
+        'CONTENT_CLIENT_UNAVAILABLE',
+        'OpenAI content client is not initialized',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    if (route.provider === 'gemini' && !this.client) {
       throw new WorksheetException(
         'CONTENT_CLIENT_UNAVAILABLE',
         'Gemini content client is not initialized',
@@ -352,55 +409,85 @@ export class WorksheetContentService {
       );
     }
 
-    const model =
-      (typeof modelOverride === 'string' && modelOverride.trim()) ||
-      this.modelName;
+    const circuit =
+      route.provider === 'openai'
+        ? this.openaiCircuitBreaker
+        : this.geminiCircuitBreaker;
+    const rateLimiter =
+      route.provider === 'openai'
+        ? this.openaiRateLimiter
+        : this.geminiRateLimiter;
 
     const invocationId = randomUUID();
     if (telemetry) {
       this.emitter.emitStageStarted({
         ...telemetry,
         stageName: PIPELINE_STAGES.LLM_REQUEST,
-        metadata: { purpose: stage, model },
+        metadata: {
+          purpose: stage,
+          model: route.model,
+          provider: providerName,
+        },
       });
       this.emitter.emitAiStarted({
         ...telemetry,
         invocationId,
         stageName: PIPELINE_STAGES.LLM_REQUEST,
-        provider: 'google-gemini',
-        model,
+        provider: providerName,
+        model: route.model,
         purpose: stage,
         promptHash: hashPayload(prompt),
         promptPayload: prompt,
       });
     }
 
-    this.circuitBreaker.beforeRequest();
-    await this.rateLimiter.acquire();
+    circuit.beforeRequest();
+    await rateLimiter.acquire();
     const startedAt = new Date();
 
     try {
-      const response = await this.client.models.generateContent({
-        model,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
-      const text = response.text?.trim();
+      let text = '';
+      let requestId: string | undefined;
+      let inputTokens: number | undefined;
+      let outputTokens: number | undefined;
+      let totalTokens: number | undefined;
+
+      if (route.provider === 'openai') {
+        const response = await this.openaiClient!.chat.completions.create({
+          model: route.model,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+        });
+        text = response.choices[0]?.message?.content?.trim() ?? '';
+        requestId = response.id;
+        inputTokens = response.usage?.prompt_tokens;
+        outputTokens = response.usage?.completion_tokens;
+        totalTokens = response.usage?.total_tokens;
+      } else {
+        const response = await this.client!.models.generateContent({
+          model: route.model,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: {
+            responseMimeType: 'application/json',
+          },
+        });
+        text = response.text?.trim() ?? '';
+        const usage = (
+          response as { usageMetadata?: Record<string, number> }
+        ).usageMetadata;
+        requestId = (response as { responseId?: string }).responseId;
+        inputTokens = usage?.promptTokenCount;
+        outputTokens = usage?.candidatesTokenCount;
+        totalTokens = usage?.totalTokenCount;
+      }
+
       const latencyMs = Date.now() - startedAt.getTime();
-      const usage = (
-        response as { usageMetadata?: Record<string, number> }
-      ).usageMetadata;
-      const inputTokens = usage?.promptTokenCount;
-      const outputTokens = usage?.candidatesTokenCount;
-      const totalTokens = usage?.totalTokenCount;
 
       await this.aiUsageService.record({
         stage,
-        provider: 'google-gemini',
-        model,
-        requestId: (response as { responseId?: string }).responseId,
+        provider: providerName,
+        model: route.model,
+        requestId,
         startedAt,
         completedAt: new Date(),
         latencyMs,
@@ -409,12 +496,12 @@ export class WorksheetContentService {
         totalTokens,
         status: 'success',
       });
-      this.circuitBreaker.recordSuccess();
+      circuit.recordSuccess();
 
       if (!text) {
         throw new WorksheetException(
           'INVALID_LLM_OUTPUT',
-          'Gemini returned an empty worksheet response',
+          `${route.provider === 'openai' ? 'OpenAI' : 'Gemini'} returned an empty worksheet response`,
         );
       }
 
@@ -424,7 +511,7 @@ export class WorksheetContentService {
       } catch {
         throw new WorksheetException(
           'INVALID_LLM_OUTPUT',
-          'Gemini worksheet response was not valid JSON',
+          `${route.provider === 'openai' ? 'OpenAI' : 'Gemini'} worksheet response was not valid JSON`,
         );
       }
 
@@ -446,7 +533,8 @@ export class WorksheetContentService {
           stageName: PIPELINE_STAGES.LLM_REQUEST,
           metadata: {
             purpose: stage,
-            model,
+            model: route.model,
+            provider: providerName,
             inputTokens,
             outputTokens,
             totalTokens,
@@ -473,11 +561,11 @@ export class WorksheetContentService {
         });
       }
       if (!(error instanceof WorksheetException)) {
-        this.circuitBreaker.recordFailure();
+        circuit.recordFailure();
         await this.aiUsageService.record({
           stage,
-          provider: 'google-gemini',
-          model,
+          provider: providerName,
+          model: route.model,
           startedAt,
           completedAt: new Date(),
           latencyMs: Date.now() - startedAt.getTime(),
@@ -496,44 +584,50 @@ export class WorksheetContentService {
     }
   }
 
-  private resolveContentModel(template: WorksheetTemplateRecord): string {
+  /**
+   * Non-universal templates always use worksheet Gemini.
+   * Universal: WORKSHEET_UNIVERSAL_CONTENT_PROVIDER + matching model env.
+   */
+  private resolveContentRoute(template: WorksheetTemplateRecord): ContentRoute {
     const isUniversal =
       template.slug === 'universal_template' || template.slug === 'universal';
     if (!isUniversal) {
-      return this.modelName;
+      return { provider: 'gemini', model: this.geminiModelName };
     }
 
-    // 1) Explicit env always wins (so .env changes take effect after restart)
-    const envDedicated = process.env.WORKSHEET_UNIVERSAL_GEMINI_MODEL?.trim();
-    if (envDedicated) {
-      return envDedicated;
-    }
-
-    // 2) Config default chain: UNIVERSAL env → WORKSHEET_GEMINI_MODEL → flash
-    const configured = this.configService
-      .get<string>('worksheets.universalGeminiModel')
-      ?.trim();
-    if (configured) {
-      return configured;
-    }
-
-    // Never use DB aiConfig.contentModel for universal — it silently overrode
-    // env/config in production. Opt-in only via explicit allow flag.
     const allowDb =
       process.env.WORKSHEET_UNIVERSAL_ALLOW_DB_MODEL?.trim().toLowerCase() ===
       'true';
-    if (allowDb) {
-      const aiConfig = (parseJsonObject(template.aiConfig) ??
-        {}) as WorksheetAiConfig;
-      const fromTemplate =
-        typeof aiConfig.contentModel === 'string'
-          ? aiConfig.contentModel.trim()
-          : '';
-      if (fromTemplate) {
-        return fromTemplate;
-      }
-    }
+    const aiConfig = allowDb
+      ? ((parseJsonObject(template.aiConfig) ?? {}) as WorksheetAiConfig & {
+          contentProvider?: string;
+        })
+      : null;
 
-    return this.modelName;
+    return resolveUniversalContentRoute({
+      envProvider: process.env.WORKSHEET_UNIVERSAL_CONTENT_PROVIDER,
+      configuredProvider: this.configService.get<string>(
+        'worksheets.universalContentProvider',
+      ),
+      envGeminiModel: process.env.WORKSHEET_UNIVERSAL_GEMINI_MODEL,
+      envOpenaiModel: process.env.WORKSHEET_UNIVERSAL_OPENAI_MODEL,
+      configuredGeminiModel: this.configService.get<string>(
+        'worksheets.universalGeminiModel',
+      ),
+      configuredOpenaiModel: this.configService.get<string>(
+        'worksheets.universalOpenaiModel',
+      ),
+      fallbackGeminiModel: this.geminiModelName,
+      fallbackOpenaiModel: 'gpt-4.1-mini',
+      allowDbModel: allowDb,
+      dbContentModel:
+        typeof aiConfig?.contentModel === 'string'
+          ? aiConfig.contentModel
+          : null,
+      dbContentProvider:
+        typeof aiConfig?.contentProvider === 'string'
+          ? aiConfig.contentProvider
+          : null,
+    });
   }
 }

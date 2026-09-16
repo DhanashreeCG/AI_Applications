@@ -1,6 +1,6 @@
 # Worksheet Generation Architecture
 
-Worksheet generation lives in the existing NestJS backend (`src/modules/worksheets`). It follows the flashcard pipeline: template → Gemini content → semantic asset search → trusted renderer → Playwright.
+Worksheet generation lives in the existing NestJS backend (`src/modules/worksheets`). Pipeline: template selection → LLM content → semantic asset search → trusted renderer → Playwright.
 
 ## Architecture
 
@@ -11,15 +11,17 @@ validate request & safety checks (before any LLM call)
         ↓
 template selection (explicit ID bypasses AI, else deterministic filter + AI picker)
         ↓
-1 SINGLE Gemini LLM call for content generation (generates up to requested count with diverse content & exercises)
+1 LLM content call (catalog templates: Gemini; universal_template: Gemini or OpenAI via env)
         ↓
-concurrent structure validation for all generated worksheet items
+[universal only] normalizeUniversalStructure (age-band activity cap, sanitize, image clamp)
         ↓
-batch in-memory query deduplication & concurrent SearchService (pgvector) → assetId per imageQuery slot
+structure validation for generated items
         ↓
-parallel persistence via Prisma transaction (all worksheets saved concurrently)
+batch SearchService (pgvector) → assetId per imageQuery slot
         ↓
-parallel preview HTML assembly & response return
+draft in-memory rows (DB persist happens on explicit save, not on generate)
+        ↓
+preview HTML assembly & response return
 ```
 
 ```text
@@ -27,7 +29,7 @@ POST /worksheets/:id/edit
         ↓
 editable field check (aiConfig.editableFields)
         ↓
-Gemini replacement JSON
+LLM replacement JSON (worksheet Gemini client)
         ↓
 validate + optional imageQuery re-search
         ↓
@@ -45,6 +47,59 @@ Playwright BrowserPoolService (shared with flashcards) for webp/pdf
         ↓
 S3 (WorksheetOutput.storageKey)
 ```
+
+## Universal template (`universal_template`)
+
+Full walkthrough: [UNIVERSAL_TEMPLATE_GENERATION.md](./UNIVERSAL_TEMPLATE_GENERATION.md).
+
+Dedicated freeform HTML path. Meta uses `selectionMode: "explicit_only"` — only selected via explicit `templateId` (id or slug), never auto-picked by catalog AI.
+
+### Content contract
+
+- Fixed chrome in `templateHtml` (title / subtopic / footer).
+- LLM invents activity markup as `content_html` into `#content-region` (no layout catalog).
+- Images: `{{IMAGE_N}}` inside `.ws-img-box` + `images[].imageQuery`.
+
+### LLM provider (env)
+
+| Env | Role |
+| --- | --- |
+| `WORKSHEET_UNIVERSAL_CONTENT_PROVIDER` | `gemini` \| `openai` (default `gemini`) |
+| `WORKSHEET_UNIVERSAL_GEMINI_MODEL` | Model when provider=gemini |
+| `WORKSHEET_UNIVERSAL_OPENAI_MODEL` | Model when provider=openai |
+| `WORKSHEET_GEMINI_API_KEY` / `WORKSHEET_OPENAI_API_KEY` | Keys (fall back to shared `GEMINI_API_KEY` / `OPENAI_API_KEY`) |
+
+Catalog (non-universal) templates always use worksheet Gemini (`WORKSHEET_GEMINI_MODEL`).
+
+Switching provider must **not** change activity count or difficulty: both providers share the same prompt policy and the same post-LLM normalize.
+
+### Age-banded activity hard rules
+
+Single source of truth: `resolveUniversalActivityPolicy` in `universal-activity-policy.util.ts`.
+
+Enforced in code (provider-agnostic) by `enforceUniversalActivitySectionLimit` inside `normalizeUniversalStructure` / `buildUniversalSkeletonHtml`:
+
+| Age band | Hard max (code) | Prompt target | Difficulty |
+| --- | --- | --- | --- |
+| **2–3** (`band.max ≤ 3`) | **1** | exactly 1 | easy only |
+| **3–4** (`band.max === 4`) | **2** | exactly 2 | easy |
+| **4–5+** (`band.max ≥ 5` or unknown) | **4** (page-fit cap) | prefer **3** | medium |
+
+Extras beyond `maxSections` are dropped and `images[]` / `{{IMAGE_N}}` remapped. Code does not invent missing sections when the LLM returns fewer than target.
+
+Difficulty + allowed/forbidden activities are also injected into the universal content prompt via `buildUniversalActivityPolicyPromptLines`.
+
+### Key files
+
+| File | Role |
+| --- | --- |
+| `worksheet-generation.service.ts` | Orchestration; calls `normalizeUniversalStructure` after LLM |
+| `worksheet-content.service.ts` | Provider route + JSON generation |
+| `universal-content-ai.util.ts` | Resolve Gemini/OpenAI model for universal |
+| `universal-activity-policy.util.ts` | Age → max/target/difficulty |
+| `universal-content-html.util.ts` | Sanitize, section limit, image clamp, inject |
+| `worksheet-prompt.constants.ts` | Universal freeform + age-band prompt blocks |
+| `generic-worksheet.renderer.ts` | Detects universal → `injectUniversalContentHtml` |
 
 ## Database models
 
@@ -157,13 +212,13 @@ MVP registers `generic` only (`GenericWorksheetRenderer`). Add a specialized cla
 
 Never store or `eval` `renderer.js` from PostgreSQL.
 
-## Gemini contract
+## LLM content contract
 
-Generation returns JSON matching `structureDefinition`. Image slots use `imageQuery` (visual description), never filenames or S3 URLs.
+Generation returns JSON matching `structureDefinition` (catalog templates) or the universal freeform shape (`content_html`, `labels[]`, `images[]`, chrome fields). Image slots use `imageQuery` (visual description), never filenames or S3 URLs.
 
 Edit returns `{"value": <replacement>}` for one field.
 
-Calls reuse `GEMINI_API_KEY`, `ai.geminiMaxRps`, and `AiUsageService`. No second Google Cloud project/client stack.
+Catalog content + field edits use worksheet Gemini (`WORKSHEET_GEMINI_API_KEY`, `ai.geminiMaxRps`, `AiUsageService`). Universal content may use Gemini or OpenAI per `WORKSHEET_UNIVERSAL_CONTENT_PROVIDER` (see Universal template section).
 
 ## Asset retrieval
 

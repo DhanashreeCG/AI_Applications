@@ -24,6 +24,10 @@ import {
   replaceAssetUrlsWithDataUris,
 } from '../utils/inline-worksheet-assets.util';
 import {
+  measureUniversalLayoutInBrowser,
+  validateUniversalLayout,
+} from '../utils/universal-layout-validate.util';
+import {
   WorksheetTemplateRecord,
   WorksheetTemplateService,
 } from './worksheet-template.service';
@@ -492,6 +496,32 @@ export class WorksheetRenderService {
     });
   }
 
+  /** Browser-authoritative layout diagnostics for universal_template (non-blocking). */
+  private async logUniversalLayoutDiagnostics(page: {
+    evaluate: <T>(fn: () => T) => Promise<T>;
+  }): Promise<void> {
+    try {
+      const metrics = await page.evaluate(measureUniversalLayoutInBrowser);
+      if (!metrics?.contentRegion) return;
+      const result = validateUniversalLayout({
+        contentHtml: '',
+        browserMetrics: metrics,
+      });
+      if (!result.valid) {
+        this.logger.warn(
+          `universal layout issues: ${result.issues
+            .slice(0, 8)
+            .map((i) => `${i.type}${i.activityId ? `(${i.activityId})` : ''}`)
+            .join(', ')}`,
+        );
+      }
+    } catch (error) {
+      this.logger.debug(
+        `universal layout measure skipped: ${getErrorMessage(error)}`,
+      );
+    }
+  }
+
   private async renderWebp(
     html: string,
     width: number,
@@ -504,6 +534,9 @@ export class WorksheetRenderService {
       const markup = await this.prepareHtmlForCapture(html);
       await page.setContent(markup, { waitUntil: 'load', timeout: 30000 });
       await this.waitForPaint(page);
+      if (/id=["']content-region["']/i.test(markup) && /\bws-activity\b|\bws-section\b/i.test(markup)) {
+        await this.logUniversalLayoutDiagnostics(page);
+      }
       const screenshot = await page.screenshot({
         type: 'webp',
         fullPage: false,

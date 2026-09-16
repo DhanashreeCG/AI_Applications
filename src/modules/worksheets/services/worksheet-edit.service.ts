@@ -38,7 +38,10 @@ import {
   isEditableField,
   looksLikeHtml,
   resolveAliasFieldPath,
+  preferredAssetSearchText,
+  searchQueryFromImageRecord,
   setValueAtPath,
+  tryGetValueAtPath,
   visualQueryFromImageRecord,
   withLineartQuery,
 } from '../utils/structure.util';
@@ -285,7 +288,11 @@ export class WorksheetEditService {
       );
     }
 
-    const next = this.assetService.applyLibraryImage(structure, targetPath, assetId);
+    const next = await this.assetService.applyLibraryImage(
+      structure,
+      targetPath,
+      assetId,
+    );
     const updated = await this.prisma.worksheet.update({
       where: { id: worksheet.id },
       data: { structure: next as Prisma.InputJsonValue },
@@ -368,20 +375,17 @@ export class WorksheetEditService {
     }>;
   }> {
     const worksheet = await this.requireWorksheet(worksheetId);
-    let query = options.query?.trim() || '';
-    if (!query && options.path?.trim()) {
-      const structure = asStructureRecord(worksheet.structure);
-      const requested = options.path.trim();
-      const node = getValueAtPath(structure, requested);
-      if (node && typeof node === 'object' && !Array.isArray(node)) {
-        query = visualQueryFromImageRecord(node as Record<string, unknown>) || '';
-      }
-      if (!query) {
-        const match = collectImageSlots(structure).find(
-          (slot) => slot.path === requested || slot.slotId === requested,
-        );
-        query = match?.imageQuery || '';
-      }
+    // Prefer path-derived searchDescription/caption so a stale client query
+    // (often the LLM imageQuery) does not win over the asset's own text.
+    let query = '';
+    if (options.path?.trim()) {
+      query = await this.resolveImageSearchQuery(
+        asStructureRecord(worksheet.structure),
+        options.path.trim(),
+      );
+    }
+    if (!query) {
+      query = options.query?.trim() || '';
     }
     if (!query) {
       return { query: '', results: [] };
@@ -395,6 +399,54 @@ export class WorksheetEditService {
       template.slug,
     );
     return { query: searchQuery, results };
+  }
+
+  /**
+   * Derive the picker search text for a clicked image slot.
+   * Prefer searchDescription / caption on the slot, then asset metadata,
+   * then LLM imageQuery / labels.
+   */
+  private async resolveImageSearchQuery(
+    structure: Record<string, unknown>,
+    requested: string,
+  ): Promise<string> {
+    const node = tryGetValueAtPath(structure, requested);
+    if (node && typeof node === 'object' && !Array.isArray(node)) {
+      const record = node as Record<string, unknown>;
+      const fromAssetFields = preferredAssetSearchText(record);
+      if (fromAssetFields) return fromAssetFields;
+
+      const assetId =
+        typeof record.assetId === 'string' ? record.assetId.trim() : '';
+      if (assetId) {
+        const fromAsset = await this.assetService.getAssetSearchText(assetId);
+        if (fromAsset) return fromAsset;
+      }
+
+      const fromSlot = searchQueryFromImageRecord(record);
+      if (fromSlot) return fromSlot;
+    }
+
+    const match = collectImageSlots(structure).find(
+      (slot) =>
+        slot.path === requested ||
+        slot.slotId === requested ||
+        slot.path.replace(/\[(\d+)\]/g, '.$1') === requested,
+    );
+    if (match?.assetId) {
+      const fromAsset = await this.assetService.getAssetSearchText(match.assetId);
+      if (fromAsset) return fromAsset;
+    }
+    if (match?.imageQuery) return match.imageQuery;
+
+    // Universal: images[i] ↔ labels[i]
+    const imgIdx = requested.match(/^images\[(\d+)\]$/i);
+    if (imgIdx && Array.isArray(structure.labels)) {
+      const label = structure.labels[Number(imgIdx[1])];
+      if (typeof label === 'string' && label.trim()) return label.trim();
+    }
+
+    return '';
   }
 
   public async searchLibrary(options: {
@@ -510,7 +562,11 @@ export class WorksheetEditService {
       }
       if (image.assetId?.trim()) {
         await this.assetService.resolveAsset(image.assetId.trim());
-        next = this.assetService.applyLibraryImage(next, path, image.assetId.trim());
+        next = await this.assetService.applyLibraryImage(
+          next,
+          path,
+          image.assetId.trim(),
+        );
       }
     }
 
