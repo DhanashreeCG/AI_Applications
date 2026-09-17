@@ -138,6 +138,52 @@ describe('WorksheetAssetService', () => {
     ]);
   });
 
+  it('does not overwrite an existing pedagogical caption on image slots', async () => {
+    searchService.searchMany.mockResolvedValue(
+      new Map([
+        [
+          'bowl of yoghurt',
+          {
+            query: 'bowl of yoghurt',
+            total: 1,
+            results: [
+              {
+                assetId: 'asset-yoghurt',
+                similarity: 0.9,
+                caption: 'yoghurt bowl photo',
+                searchDescription: 'bowl of yoghurt with spoon',
+                s3ObjectKey: 'assets/y.png',
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+
+    const { structure } = await service.attachAssets({
+      worksheet_type: 'look_and_say_letters_and_sounds',
+      items: [
+        {
+          letter: 'Y',
+          word: 'Yoghurt',
+          caption: 'Y for Yoghurt',
+          imageQuery: 'bowl of yoghurt',
+        },
+      ],
+    });
+
+    expect(structure.items).toEqual([
+      {
+        letter: 'Y',
+        word: 'Yoghurt',
+        caption: 'Y for Yoghurt',
+        imageQuery: 'bowl of yoghurt',
+        assetId: 'asset-yoghurt',
+        searchDescription: 'bowl of yoghurt with spoon',
+      },
+    ]);
+  });
+
   it('searches assets from structure.image.image_name when imageQuery is absent', async () => {
     searchService.searchMany.mockResolvedValue(
       new Map([
