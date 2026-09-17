@@ -30,26 +30,209 @@ export const GRADE_TO_AGE_BAND: Record<string, { min: number; max: number }> = {
   'class 3': { min: 7, max: 8 },
 };
 
-/** 15-item activity taxonomy used on templates and for Stage 2 classification. */
+/**
+ * Canonical activity identities for Stage 2 classification.
+ * Prefer specialized pedagogical formats over generic verbs (match/circle/trace/identify).
+ */
 export const WORKSHEET_ACTIVITY_TYPES = [
-  'Trace & Write',
-  'Count & Circle',
+  'Alphabet Craft',
+  'Number Before After',
+  'Picture Graph',
   'Match the Pairs',
-  'Sort into Two Boxes',
-  'What Comes Next',
-  'Fill Missing Numbers',
-  'Odd One Out',
-  'Color by Code',
-  'Connect the Dots',
-  'Maze/Path',
-  'Yes/No Judgement',
-  'Tally & Graph',
-  'Word Problem',
-  'Cut/Sort/Paste',
-  'Before/After/Between',
+  'Comparative Line Tracing',
+  'Visual Classification',
+  'Beginning Sound Identification',
+  'Story Maze',
+  'Letter Matching',
+  'Sight Word Identification',
+  'Letter Sound Association',
+  'Story Comprehension and Colouring',
+  'Number Name Matching',
 ] as const;
 
 export type WorksheetActivityType = (typeof WORKSHEET_ACTIVITY_TYPES)[number];
+
+/** Map Stage 2 activityIntent labels → specialized template slugs. */
+export const ACTIVITY_INTENT_TO_SLUG: Record<string, string> = {
+  'alphabet craft': 'letters_craft',
+  'number before after': 'numbers_after_and_before',
+  'picture graph': 'picture_graph',
+  'match the pairs': 'match_the_pairs',
+  'comparative line tracing': 'tracing',
+  'visual classification': 'circle_the_things',
+  'circle the things': 'circle_the_things',
+  'beginning sound identification': 'look_and_say_circle_the_letters',
+  'story maze': 'storytime_maze',
+  'letter matching': 'matching_single_letter',
+  'sight word identification': 'circle_the_words',
+  'letter sound association': 'look_and_say_letters_and_sounds',
+  'story comprehension and colouring': 'answer_and_colour',
+  'story comprehension and coloring': 'answer_and_colour',
+  'number name matching': 'number_names',
+};
+
+/**
+ * Explicit activity-format phrases in the user request.
+ * Generic lone tokens (match/circle/trace/identify) are intentionally insufficient.
+ */
+export const ACTIVITY_FORMAT_PHRASES: Array<{
+  slug: string;
+  phrases: string[];
+}> = [
+  {
+    slug: 'numbers_after_and_before',
+    phrases: [
+      'before and after',
+      'after and before',
+      'number before',
+      'number after',
+      'numbers before',
+      'numbers after',
+      'before/after',
+      'what comes before',
+      'what comes after',
+    ],
+  },
+  {
+    slug: 'letters_craft',
+    phrases: ['alphabet craft', 'letter craft', 'letters craft', 'craft worksheet'],
+  },
+  {
+    slug: 'picture_graph',
+    phrases: [
+      'picture graph',
+      'picture graphs',
+      'bar graph',
+      'count and graph',
+      'most and fewest',
+      'most and least',
+      'how many there are',
+      'read a graph',
+      'graph-based',
+    ],
+  },
+  {
+    slug: 'match_the_pairs',
+    phrases: [
+      'match the pairs',
+      'match pairs',
+      'matching pairs',
+      'things that belong together',
+      'match things that belong',
+      'connect related',
+      'two column match',
+      'two-column match',
+    ],
+  },
+  {
+    slug: 'tracing',
+    phrases: [
+      'comparative line tracing',
+      'line tracing',
+      'trace lines between',
+      'trace between matching',
+      'trace matching',
+      'big and small',
+      'big vs small',
+      'big vs. small',
+    ],
+  },
+  {
+    slug: 'circle_the_things',
+    phrases: [
+      'find and circle',
+      'circle the things',
+      'circle items',
+      'circle the pictures',
+      'visual classification',
+      'circle all the',
+    ],
+  },
+  {
+    slug: 'look_and_say_circle_the_letters',
+    phrases: [
+      'beginning sound',
+      'beginning sounds',
+      'initial sound',
+      'circle the letters',
+      'pictures and letters',
+    ],
+  },
+  {
+    slug: 'storytime_maze',
+    phrases: [
+      'picture maze',
+      'story maze',
+      'storytime maze',
+      'reach their destination',
+      'reach the destination',
+      'help a character',
+      'through a maze',
+    ],
+  },
+  {
+    slug: 'matching_single_letter',
+    phrases: [
+      'capital letters to identical',
+      'identical capital',
+      'match capital letters',
+      'uppercase to lowercase',
+      'letter matching',
+      'matching single letter',
+    ],
+  },
+  {
+    slug: 'circle_the_words',
+    phrases: [
+      'find and circle specific words',
+      'circle specific words',
+      'circle the words',
+      'sight word',
+      'sight words',
+      'circle target words',
+    ],
+  },
+  {
+    slug: 'look_and_say_letters_and_sounds',
+    phrases: [
+      'look at a letter',
+      'say it and practice',
+      'say it and practise',
+      'practice its sound',
+      'practise its sound',
+      'letter sound association',
+      'look and say letters',
+      'letters and sounds',
+    ],
+  },
+  {
+    slug: 'answer_and_colour',
+    phrases: [
+      'followed by a colouring',
+      'followed by a coloring',
+      'followed by colouring',
+      'followed by coloring',
+      'answer and colour',
+      'answer and color',
+      'questions and colour',
+      'questions and color',
+      'comprehension and colouring',
+      'comprehension and coloring',
+    ],
+  },
+  {
+    slug: 'number_names',
+    phrases: [
+      'number to the correct word',
+      'number to number word',
+      'number names',
+      'numeral to word',
+      'connect a number',
+      'number name matching',
+      'written number names',
+    ],
+  },
+];
 
 export const WORKSHEET_DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
 
