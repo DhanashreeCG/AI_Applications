@@ -1,6 +1,8 @@
 import {
   AUTHORITATIVE_TEMPLATE_IDS,
+  buildPictureGraphSelectionProfile,
   buildStorytimeMazeSelectionProfile,
+  buildTracingComparativeSelectionProfile,
   CONFIRMED_JSON_SLUG_LINKS,
   resolveAuthoritativeSlug,
 } from './worksheet-selection-profile-seed.util';
@@ -78,5 +80,31 @@ describe('buildStorytimeMazeSelectionProfile', () => {
     );
     expect(profile.adaptationNote.toLowerCase()).toContain('maze');
     expect(profile.skillsPracticed.length).toBeGreaterThan(0);
+  });
+});
+
+describe('buildPictureGraphSelectionProfile', () => {
+  it('builds the picture_graph selection profile payload', () => {
+    const profile = buildPictureGraphSelectionProfile({ slug: 'picture_graph' });
+    expect(profile.templateSlug).toBe('picture_graph');
+    expect(profile.primaryUse.toLowerCase()).toContain('picture-graph');
+    expect(profile.canBeUsedFor).toEqual(
+      expect.arrayContaining(['Picture graph', 'Most and least in a graph']),
+    );
+    expect(profile.skillsPracticed).toEqual(
+      expect.arrayContaining(['Counting', 'Graph reading']),
+    );
+  });
+});
+
+describe('buildTracingComparativeSelectionProfile', () => {
+  it('describes comparative line-tracing, not freehand zigzags', () => {
+    const profile = buildTracingComparativeSelectionProfile({ slug: 'tracing' });
+    expect(profile.primaryUse.toLowerCase()).toContain('correspondence');
+    expect(profile.primaryUse.toLowerCase()).not.toContain('zigzag');
+    expect(profile.canBeUsedFor).toEqual(
+      expect.arrayContaining(['Big and small', 'Comparative line tracing']),
+    );
+    expect(profile.adaptationNote.toLowerCase()).toContain('left and right');
   });
 });

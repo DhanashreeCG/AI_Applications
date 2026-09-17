@@ -1,6 +1,8 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { WorksheetException } from '../errors/worksheet.exception';
 import {
+  ACTIVITY_FORMAT_PHRASES,
+  ACTIVITY_INTENT_TO_SLUG,
   TEMPLATE_SELECTION_AI_TOP_N,
   TEMPLATE_SELECTION_MIN_SCORE_MARGIN,
   WORKSHEET_ACTIVITY_TYPES,
@@ -23,6 +25,7 @@ import {
   readTemplateAgeRange,
   resolveAgeBand,
 } from '../utils/age-band.util';
+import { isUniversalSlug } from '../utils/universal-content-html.util';
 import {
   WorksheetTemplateRecord,
   WorksheetTemplateService,
@@ -41,6 +44,16 @@ const ACTIVITY_IDENTITY_STOPWORDS = new Set([
   'look',
   'say',
 ]);
+
+/** Score weights — activity format/intent outrank broad topic similarity. */
+const SCORE_ACTIVITY_FORMAT = 14;
+const SCORE_ACTIVITY_INTENT = 10;
+const SCORE_PRIMARY_USE = 8;
+const SCORE_THEME_TOPIC = 8;
+const SCORE_SUBJECT = 8;
+const SCORE_GRADE = 6;
+const SCORE_PROFILE_TOPICS = 6;
+const SCORE_DIFFICULTY = 4;
 
 @Injectable()
 export class WorksheetTemplateSelectionService {
@@ -72,20 +85,11 @@ export class WorksheetTemplateSelectionService {
 
     const ageBand = resolveAgeBand(request);
     const templates = await this.templateService.listActive();
-    const ageFiltered = this.filterByAge(templates, ageBand);
+    const specialized = templates.filter((t) => !this.isUniversalFallbackTemplate(t));
+    const ageFiltered = this.filterByAge(specialized, ageBand);
 
     if (!ageFiltered.length) {
-      throw new WorksheetException(
-        'NO_TEMPLATE_FOUND',
-        'No active worksheet template matches the request age band',
-        HttpStatus.NOT_FOUND,
-        {
-          grade: request.grade ?? null,
-          subject: request.subject ?? null,
-          topic: request.topic ?? null,
-          ageBand: ageBand ? { min: ageBand.min, max: ageBand.max } : null,
-        },
-      );
+      return this.selectUniversalFallback(templates, ageBand);
     }
 
     if (ageFiltered.length === 1) {
@@ -177,9 +181,11 @@ export class WorksheetTemplateSelectionService {
 
     const ageBand = resolveAgeBand(request);
     const templates = await this.templateService.listActive();
-    const ageFiltered = this.filterByAge(templates, ageBand);
+    const specialized = templates.filter((t) => !this.isUniversalFallbackTemplate(t));
+    const ageFiltered = this.filterByAge(specialized, ageBand);
     if (!ageFiltered.length) {
-      return [];
+      const universal = this.findActiveUniversal(templates);
+      return universal ? [universal] : [];
     }
 
     const classification = await this.classifyRequest(request, ageBand, telemetry);
@@ -234,6 +240,9 @@ export class WorksheetTemplateSelectionService {
     if (template.status !== 'ACTIVE') {
       return false;
     }
+    if (this.isUniversalFallbackTemplate(template)) {
+      return false;
+    }
     return this.passesAgeHardFilter(template, resolveAgeBand(request));
   }
 
@@ -248,44 +257,66 @@ export class WorksheetTemplateSelectionService {
   /**
    * Stage 2 rerank score (public for tests).
    * Without classification, only subject/grade/difficulty request fields score.
+   * Universal never receives normal semantic/profile scoring.
    */
   public score(
     template: WorksheetTemplateRecord,
     request: GenerateWorksheetRequest,
     classification?: WorksheetTemplateIntentClassification | null,
   ): number {
+    if (this.isUniversalFallbackTemplate(template)) {
+      return 0;
+    }
+
     const meta = this.templateService.parseMeta(template);
     let score = 0;
 
-    if (this.matchesThemeOrSubTopic(meta, classification, request.topic)) {
-      score += 12;
+    // 1) Explicit activity format / interaction in the user request
+    if (this.matchesActivityFormat(template, request)) {
+      score += SCORE_ACTIVITY_FORMAT;
     }
+
+    // 2) Canonical Stage 2 activity intent (or query/slug identity fallback)
     if (
       classification?.activityIntent &&
-      this.matchesActivity(meta.activityType, classification.activityIntent)
+      (this.matchesActivityIntentSlug(template, classification.activityIntent) ||
+        this.matchesActivity(meta.activityType, classification.activityIntent))
     ) {
-      score += 10;
+      score += SCORE_ACTIVITY_INTENT;
     } else if (
       this.matchesActivityIdentity(template, request, classification)
     ) {
       // Many DB templates omit meta.activityType — still honor query/intent vs name/slug.
-      score += 10;
+      score += SCORE_ACTIVITY_INTENT;
     }
+
+    // 3) primaryUse overlap
+    if (this.matchesPrimaryUse(template, request, classification)) {
+      score += SCORE_PRIMARY_USE;
+    }
+
+    // 4) canBeUsedFor / exampleTopics
+    if (this.matchesSelectionProfileTopics(template, request)) {
+      score += SCORE_PROFILE_TOPICS;
+    }
+
+    // 5) Topic / theme / subTopic
+    if (this.matchesThemeOrSubTopic(meta, classification, request.topic)) {
+      score += SCORE_THEME_TOPIC;
+    }
+
+    // 6) Subject / grade / difficulty
     if (request.subject && this.includesInsensitive(meta.subjects, request.subject)) {
-      score += 8;
+      score += SCORE_SUBJECT;
     }
     if (request.grade && this.includesInsensitive(meta.grades, request.grade)) {
-      score += 6;
+      score += SCORE_GRADE;
     }
 
     const difficulty =
       classification?.difficulty ?? request.difficulty ?? null;
     if (difficulty && this.includesInsensitive(meta.difficulty, difficulty)) {
-      score += 4;
-    }
-
-    if (this.matchesSelectionProfileTopics(template, request)) {
-      score += 6;
+      score += SCORE_DIFFICULTY;
     }
 
     return score;
@@ -298,6 +329,9 @@ export class WorksheetTemplateSelectionService {
     template: WorksheetTemplateRecord,
     request: GenerateWorksheetRequest,
   ): boolean {
+    if (this.isUniversalFallbackTemplate(template)) {
+      return false;
+    }
     const profile = template.selectionProfile;
     if (!profile) {
       return false;
@@ -331,15 +365,28 @@ export class WorksheetTemplateSelectionService {
   /**
    * When meta.activityType is missing, match activity from classification intent
    * and/or query phrasing against template name / slug (e.g. "match the pairs of planets").
+   * Generic lone tokens like "match" / "circle" / "trace" are insufficient.
    */
   public matchesActivityIdentity(
     template: WorksheetTemplateRecord,
     request: GenerateWorksheetRequest,
     classification?: WorksheetTemplateIntentClassification | null,
   ): boolean {
+    if (this.isUniversalFallbackTemplate(template)) {
+      return false;
+    }
+
+    if (this.matchesActivityFormat(template, request)) {
+      return true;
+    }
+
+    const intent = classification?.activityIntent?.trim().toLowerCase() ?? '';
+    if (intent && this.matchesActivityIntentSlug(template, intent)) {
+      return true;
+    }
+
     const name = (template.name ?? '').trim().toLowerCase();
     const slugPhrase = template.slug.replace(/_/g, ' ').trim().toLowerCase();
-    const intent = classification?.activityIntent?.trim().toLowerCase() ?? '';
 
     if (intent) {
       if (name === intent || slugPhrase === intent) {
@@ -357,10 +404,7 @@ export class WorksheetTemplateSelectionService {
       }
     }
 
-    const requestText = [request.query, request.topic]
-      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
-      .join(' ')
-      .toLowerCase();
+    const requestText = this.requestTextForMatching(request);
     if (!requestText) {
       return false;
     }
@@ -380,6 +424,132 @@ export class WorksheetTemplateSelectionService {
     // Require 2+ slug tokens in the query (e.g. "match" + "pairs") to avoid
     // boosting match_the_pairs on any query that merely says "match".
     return hits.length >= 2;
+  }
+
+  /** Explicit multi-word activity format phrases mapped to specialized slugs. */
+  public matchesActivityFormat(
+    template: WorksheetTemplateRecord,
+    request: GenerateWorksheetRequest,
+  ): boolean {
+    if (this.isUniversalFallbackTemplate(template)) {
+      return false;
+    }
+    const bestSlug = this.bestActivityFormatSlug(request);
+    return bestSlug != null && bestSlug === template.slug;
+  }
+
+  /**
+   * Longest matching phrase wins so "find and circle specific words" maps to
+   * circle_the_words rather than the shorter "find and circle" → circle_the_things.
+   */
+  private bestActivityFormatSlug(
+    request: GenerateWorksheetRequest,
+  ): string | null {
+    const requestText = this.requestTextForMatching(request);
+    if (!requestText) {
+      return null;
+    }
+    let best: { slug: string; length: number } | null = null;
+    for (const entry of ACTIVITY_FORMAT_PHRASES) {
+      for (const phrase of entry.phrases) {
+        if (!requestText.includes(phrase)) {
+          continue;
+        }
+        if (!best || phrase.length > best.length) {
+          best = { slug: entry.slug, length: phrase.length };
+        }
+      }
+    }
+    return best?.slug ?? null;
+  }
+
+  public matchesPrimaryUse(
+    template: WorksheetTemplateRecord,
+    request: GenerateWorksheetRequest,
+    classification?: WorksheetTemplateIntentClassification | null,
+  ): boolean {
+    if (this.isUniversalFallbackTemplate(template)) {
+      return false;
+    }
+    const primaryUse = template.selectionProfile?.primaryUse?.trim().toLowerCase();
+    if (!primaryUse) {
+      return false;
+    }
+
+    const intent = classification?.activityIntent?.trim().toLowerCase() ?? '';
+    if (intent && this.keywordOverlap(intent, primaryUse)) {
+      return true;
+    }
+
+    const requestText = this.requestTextForMatching(request);
+    if (!requestText) {
+      return false;
+    }
+    return this.keywordOverlap(requestText, primaryUse);
+  }
+
+  private requestTextForMatching(request: GenerateWorksheetRequest): string {
+    return [request.query, request.topic]
+      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+      .join(' ')
+      .toLowerCase()
+      .replace(/[-_/]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private matchesActivityIntentSlug(
+    template: WorksheetTemplateRecord,
+    intent: string,
+  ): boolean {
+    const mapped = ACTIVITY_INTENT_TO_SLUG[intent.trim().toLowerCase()];
+    return mapped != null && mapped === template.slug;
+  }
+
+  private isUniversalFallbackTemplate(template: WorksheetTemplateRecord): boolean {
+    return isUniversalSlug(template.slug);
+  }
+
+  private findActiveUniversal(
+    templates: WorksheetTemplateRecord[],
+  ): WorksheetTemplateRecord | null {
+    return (
+      templates.find(
+        (t) => this.isUniversalFallbackTemplate(t) && t.status === 'ACTIVE',
+      ) ?? null
+    );
+  }
+
+  private selectUniversalFallback(
+    templates: WorksheetTemplateRecord[],
+    ageBand: AgeBand | null,
+  ): WorksheetTemplateRecord {
+    const universal = this.findActiveUniversal(templates);
+    if (!universal) {
+      throw new WorksheetException(
+        'NO_TEMPLATE_FOUND',
+        'No active worksheet template matches the request age band',
+        HttpStatus.NOT_FOUND,
+        {
+          ageBand: ageBand ? { min: ageBand.min, max: ageBand.max } : null,
+        },
+      );
+    }
+
+    (universal as any)._aiOutcome = {
+      usedFallback: true,
+      fallbackReason: 'no_candidates',
+    };
+    this.attachTelemetry(universal, {
+      ageBand,
+      ageFilteredCount: 0,
+      stage2Classification: null,
+      rerankTopScores: [{ id: universal.id, slug: universal.slug, score: 0 }],
+      scoreMargin: null,
+      selectionMode: 'deterministic',
+      selectionReason: 'universal_fallback_no_specialized_candidate',
+    });
+    return universal;
   }
 
   private keywordOverlap(a: string, b: string): boolean {
@@ -426,6 +596,9 @@ export class WorksheetTemplateSelectionService {
     ageBand: AgeBand | null,
   ): WorksheetTemplateRecord[] {
     return templates.filter((template) => {
+      if (this.isUniversalFallbackTemplate(template)) {
+        return false;
+      }
       if (this.isExplicitOnlyTemplate(template)) {
         return false;
       }

@@ -32,6 +32,7 @@ import {
   WorksheetTemplateSelectionAiSelectInput,
 } from '../interfaces/worksheet-template-selection-ai.interfaces';
 import { WorksheetPipelineEmitter, hashPayload } from '../telemetry/worksheet-pipeline.events';
+import { isUniversalSlug } from '../utils/universal-content-html.util';
 import { WorksheetTemplateRecord, WorksheetTemplateService } from './worksheet-template.service';
 
 interface ProviderUsage {
@@ -295,8 +296,16 @@ export class WorksheetTemplateSelectionAiService {
     }
 
     const templates = await this.templateService.listActive();
-    const candidates = templates.filter((t) => allowed.includes(t.id));
-    const catalogBlock = this.buildCatalogBlock(candidates.length ? candidates : templates);
+    const candidates = templates.filter(
+      (t) => allowed.includes(t.id) && !isUniversalSlug(t.slug),
+    );
+    if (!candidates.length) {
+      return this.fallback('no_candidates');
+    }
+    if (candidates.length === 1) {
+      return this.fallback('single_candidate');
+    }
+    const catalogBlock = this.buildCatalogBlock(candidates);
     const catalogHash = createHash('sha256').update(catalogBlock).digest('hex');
 
     const userPayload = {
@@ -479,7 +488,9 @@ export class WorksheetTemplateSelectionAiService {
   }
 
   private buildCatalogBlock(templates: WorksheetTemplateRecord[]): string {
-    const list = templates.map((t) => {
+    const list = templates
+      .filter((t) => !isUniversalSlug(t.slug))
+      .map((t) => {
       const meta = this.templateService.parseMeta(t);
       const entry: Record<string, unknown> = {
         id: t.id,

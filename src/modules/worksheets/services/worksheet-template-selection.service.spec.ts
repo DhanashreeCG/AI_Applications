@@ -327,8 +327,8 @@ describe('WorksheetTemplateSelectionService (three-stage)', () => {
         { grade: 'LKG', subject: 'EVS' },
         classification,
       );
-      // theme +12, activity +10, subject +8, grade +6, difficulty +4
-      expect(score).toBe(12 + 10 + 8 + 6 + 4);
+      // theme +8, activity +10, subject +8, grade +6, difficulty +4
+      expect(score).toBe(8 + 10 + 8 + 6 + 4);
     });
 
     it('adds +6 when request paraphrases selectionProfile exampleTopics (not literal match)', () => {
@@ -457,6 +457,475 @@ describe('WorksheetTemplateSelectionService (three-stage)', () => {
       });
       expect(selected.id).toBe('no-profile');
       expect(service.score(only, { query: 'count apples' })).toBe(0);
+    });
+  });
+
+  describe('Universal fallback-only behavior', () => {
+    const makeSpecialized = (slug: string, id: string) =>
+      template({
+        id,
+        slug,
+        name: slug,
+        meta: { ageMin: 3, ageMax: 6 },
+        selectionProfile: {
+          id: `p-${slug}`,
+          templateId: id,
+          templateSlug: slug,
+          templateType: slug,
+          description: slug,
+          primaryUse: `Primary use for ${slug}`,
+          canBeUsedFor: [],
+          exampleTopics: [],
+          adaptationNote: '',
+          skillsPracticed: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+
+    const universal = template({
+      id: 'univ-1',
+      slug: 'universal_template',
+      name: 'Universal Template',
+      meta: {
+        ageMin: 5,
+        ageMax: 10,
+        selectionMode: 'explicit_only',
+        activityType: ['universal'],
+      },
+      selectionProfile: null,
+    });
+
+    it('excludes Universal from Stage 3 allowedTemplateIds', async () => {
+      const a = makeSpecialized('match_the_pairs', 'a');
+      const b = makeSpecialized('circle_the_things', 'b');
+      templateService.listActive.mockResolvedValue([universal, a, b]);
+      aiService.classify.mockResolvedValue({
+        theme: null,
+        subTopic: null,
+        activityIntent: null,
+        difficulty: null,
+        confidence: 0,
+      });
+      aiService.select.mockResolvedValue({
+        usedFallback: false,
+        result: {
+          selectedTemplateId: 'a',
+          confidenceScore: 0.7,
+          reasoning: 'ok',
+          alternativeTemplateId: 'b',
+          catalogHash: 'h',
+          latencyMs: 5,
+        },
+      });
+
+      await service.select({ ageGroup: '4-5', query: 'something vague for kids' });
+      expect(aiService.select).toHaveBeenCalled();
+      const call = aiService.select.mock.calls[0][0];
+      expect(call.allowedTemplateIds).not.toContain('univ-1');
+      expect(call.allowedTemplateIds).toEqual(expect.arrayContaining(['a', 'b']));
+    });
+
+    it('does not give Universal normal rerank scoring', () => {
+      expect(
+        service.score(universal, {
+          query: 'match animals that belong together',
+          ageGroup: '4-5',
+        }),
+      ).toBe(0);
+      expect(
+        service.matchesActivityIdentity(universal, {
+          query: 'match the pairs of planets',
+        }),
+      ).toBe(false);
+      expect(service.isEligible(universal, { age: 6 })).toBe(false);
+    });
+
+    it('returns Universal only when no specialized candidate is age-eligible', async () => {
+      const outOfBand = makeSpecialized('match_the_pairs', 'spec-old');
+      outOfBand.meta = { ageMin: 8, ageMax: 10 };
+      templateService.listActive.mockResolvedValue([universal, outOfBand]);
+
+      const selected = await service.select({
+        age: 4,
+        query: 'anything',
+      });
+      expect(selected.slug).toBe('universal_template');
+      expect((selected as any)._selectionTelemetry.selectionReason).toBe(
+        'universal_fallback_no_specialized_candidate',
+      );
+      expect(aiService.classify).not.toHaveBeenCalled();
+      expect(aiService.select).not.toHaveBeenCalled();
+    });
+
+    it('falls back to specialized deterministic top when Stage 3 AI fails (not Universal)', async () => {
+      const a = makeSpecialized('numbers_after_and_before', 'top');
+      a.updatedAt = new Date('2024-07-01');
+      const b = makeSpecialized('number_names', 'second');
+      b.updatedAt = new Date('2024-01-01');
+      templateService.listActive.mockResolvedValue([universal, a, b]);
+      aiService.classify.mockResolvedValue({
+        theme: null,
+        subTopic: null,
+        activityIntent: null,
+        difficulty: null,
+        confidence: 0,
+      });
+      aiService.select.mockResolvedValue({
+        usedFallback: true,
+        fallbackReason: 'provider_error',
+        result: null,
+      });
+
+      const selected = await service.select({
+        ageGroup: '4-5',
+        query: 'tie case vague',
+      });
+      expect(selected.slug).toBe('numbers_after_and_before');
+      expect(selected.slug).not.toBe('universal_template');
+      expect((selected as any)._selectionTelemetry.selectionReason).toBe(
+        'ai_fallback_provider_error',
+      );
+    });
+
+    it('explicit templateId=Universal still returns Universal', async () => {
+      templateService.getActiveByIdOrSlug.mockResolvedValue(universal);
+      const selected = await service.select({ templateId: 'universal_template' });
+      expect(selected.slug).toBe('universal_template');
+      expect((selected as any)._selectionTelemetry.selectionMode).toBe('explicit');
+      expect(templateService.listActive).not.toHaveBeenCalled();
+    });
+
+    it('preserves existing explicit templateId behavior for specialized templates', async () => {
+      const explicit = makeSpecialized('letters_craft', 'craft-1');
+      templateService.getActiveByIdOrSlug.mockResolvedValue(explicit);
+      const selected = await service.select({ templateId: 'letters_craft' });
+      expect(selected.slug).toBe('letters_craft');
+      expect((selected as any)._selectionTelemetry.selectionMode).toBe('explicit');
+      expect(aiService.classify).not.toHaveBeenCalled();
+    });
+
+    it('listMatching does not surface Universal as a normal semantic match', async () => {
+      const a = makeSpecialized('match_the_pairs', 'a');
+      const b = makeSpecialized('circle_the_things', 'b');
+      templateService.listActive.mockResolvedValue([universal, a, b]);
+      aiService.classify.mockResolvedValue({
+        theme: null,
+        subTopic: null,
+        activityIntent: 'Match the Pairs',
+        difficulty: null,
+        confidence: 0.9,
+      });
+      aiService.select.mockResolvedValue({
+        usedFallback: true,
+        fallbackReason: 'disabled',
+        result: null,
+      });
+
+      const list = await service.listMatching(
+        { ageGroup: '4-5', query: 'match things that belong together' },
+        5,
+      );
+      expect(list.map((t) => t.slug)).not.toContain('universal_template');
+    });
+  });
+
+  describe('Specialized activity identity regression (13 cases)', () => {
+    function profiled(
+      slug: string,
+      primaryUse: string,
+      extras: Partial<WorksheetTemplateRecord> = {},
+    ): WorksheetTemplateRecord {
+      return template({
+        id: `id-${slug}`,
+        slug,
+        name: slug
+          .split('_')
+          .map((w) => w[0].toUpperCase() + w.slice(1))
+          .join(' '),
+        meta: { ageMin: 2, ageMax: 8, ...(extras.meta as object) },
+        selectionProfile: {
+          id: `p-${slug}`,
+          templateId: `id-${slug}`,
+          templateSlug: slug,
+          templateType: slug,
+          description: primaryUse,
+          primaryUse,
+          canBeUsedFor: [],
+          exampleTopics: [],
+          adaptationNote: '',
+          skillsPracticed: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        ...extras,
+      });
+    }
+
+    const catalog = [
+      profiled(
+        'numbers_after_and_before',
+        'A number-sequence activity where children identify the number immediately before or after given numbers.',
+      ),
+      profiled(
+        'letters_craft',
+        'A guided letter-themed craft activity where children create or decorate an illustration for a target letter.',
+      ),
+      profiled(
+        'picture_graph',
+        'A picture-graph activity where children read quantities and compare counts on a graph.',
+      ),
+      profiled(
+        'match_the_pairs',
+        'A two-column matching activity where children connect related items that belong together.',
+      ),
+      profiled(
+        'tracing',
+        'Pre-math visual correspondence and fine-motor tracing between paired images (big/small, animal/home).',
+        {
+          selectionProfile: {
+            id: 'p-tracing',
+            templateId: 'id-tracing',
+            templateSlug: 'tracing',
+            templateType: 'visual_tracing',
+            description: 'comparative line tracing',
+            primaryUse:
+              'Pre-math, visual correspondence and fine-motor tracing activities between paired images.',
+            canBeUsedFor: ['Big and small', 'Animal matching', 'Comparative line tracing'],
+            exampleTopics: ['Small animal to small house', 'Big fruit to big basket'],
+            adaptationNote: 'Keep dotted-line tracing between left and right images.',
+            skillsPracticed: ['Fine motor skills', 'Comparison'],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        },
+      ),
+      profiled(
+        'circle_the_things',
+        'Visual classification and identify-the-correct-items activities.',
+      ),
+      profiled(
+        'look_and_say_circle_the_letters',
+        'A picture-based phonics activity for beginning sound identification with letters.',
+      ),
+      profiled(
+        'storytime_maze',
+        'A story-based maze where children follow a path to help a character reach a destination.',
+      ),
+      profiled(
+        'matching_single_letter',
+        'An alphabet matching activity for identical capital letters or upper/lowercase forms.',
+      ),
+      profiled(
+        'circle_the_words',
+        'Early reading and sight-word identification where children find and circle words.',
+      ),
+      profiled(
+        'look_and_say_letters_and_sounds',
+        'Letter sound association where children look at a letter, say it, and practise its sound.',
+      ),
+      profiled(
+        'answer_and_colour',
+        'Story comprehension where every question is followed by a colouring activity.',
+      ),
+      profiled(
+        'number_names',
+        'A numeracy activity connecting numerals to written number names or words.',
+      ),
+      template({
+        id: 'univ',
+        slug: 'universal_template',
+        meta: { ageMin: 2, ageMax: 10, selectionMode: 'explicit_only' },
+      }),
+    ];
+
+    const cases: Array<{
+      query: string;
+      expected: string;
+      activityIntent: string;
+    }> = [
+      {
+        query: 'Create a simple before and after numbers worksheet for kindergarten',
+        expected: 'numbers_after_and_before',
+        activityIntent: 'Number Before After',
+      },
+      {
+        query: 'I want a fun alphabet craft worksheet for 4 year olds',
+        expected: 'letters_craft',
+        activityIntent: 'Alphabet Craft',
+      },
+      {
+        query:
+          'Create a worksheet where kids look at pictures and answer questions about how many there are',
+        expected: 'picture_graph',
+        activityIntent: 'Picture Graph',
+      },
+      {
+        query: 'Create a worksheet where children match things that belong together',
+        expected: 'match_the_pairs',
+        activityIntent: 'Match the Pairs',
+      },
+      {
+        // Verified live tracing contract: comparative line-tracing, not freehand zigzags.
+        query:
+          'Generate a comparative line-tracing worksheet focusing on big vs. small animals and objects',
+        expected: 'tracing',
+        activityIntent: 'Comparative Line Tracing',
+      },
+      {
+        query: 'Make a simple find-and-circle worksheet for preschoolers',
+        expected: 'circle_the_things',
+        activityIntent: 'Visual Classification',
+      },
+      {
+        query:
+          'Create a worksheet for identifying beginning sounds using pictures and letters',
+        expected: 'look_and_say_circle_the_letters',
+        activityIntent: 'Beginning Sound Identification',
+      },
+      {
+        query: 'Make a picture maze where a character has to reach their destination',
+        expected: 'storytime_maze',
+        activityIntent: 'Story Maze',
+      },
+      {
+        query:
+          'Create a worksheet where children match capital letters to identical capital letters',
+        expected: 'matching_single_letter',
+        activityIntent: 'Letter Matching',
+      },
+      {
+        query: 'Create a worksheet where children find and circle specific words',
+        expected: 'circle_the_words',
+        activityIntent: 'Sight Word Identification',
+      },
+      {
+        query:
+          'Make a worksheet where children look at a letter, say it and practice its sound',
+        expected: 'look_and_say_letters_and_sounds',
+        activityIntent: 'Letter Sound Association',
+      },
+      {
+        query:
+          'Make a worksheet where every question is followed by a colouring activity',
+        expected: 'answer_and_colour',
+        activityIntent: 'Story Comprehension and Colouring',
+      },
+      {
+        query: 'Create a worksheet where students connect a number to the correct word',
+        expected: 'number_names',
+        activityIntent: 'Number Name Matching',
+      },
+    ];
+
+    it.each(cases)(
+      'selects $expected for: $query',
+      async ({ query, expected, activityIntent }) => {
+        templateService.listActive.mockResolvedValue(catalog);
+        aiService.classify.mockResolvedValue({
+          theme: null,
+          subTopic: null,
+          activityIntent,
+          difficulty: 'easy',
+          confidence: 0.95,
+        });
+
+        const selected = await service.select({
+          ageGroup: '4-5',
+          grade: 'kindergarten',
+          query,
+        });
+
+        expect(selected.slug).toBe(expected);
+        const telemetry = (selected as any)._selectionTelemetry;
+        expect(telemetry).toBeTruthy();
+        expect(telemetry.selectionMode).toMatch(/deterministic|ai/);
+        expect(telemetry.ageFilteredCount).toBeGreaterThan(0);
+        expect(telemetry.rerankTopScores?.length).toBeGreaterThan(0);
+        // Universal must never win these specialized cases
+        expect(selected.slug).not.toBe('universal_template');
+      },
+    );
+
+    it('prefers numbers_after_and_before over number_names for before/after requests', () => {
+      const before = catalog.find((t) => t.slug === 'numbers_after_and_before')!;
+      const names = catalog.find((t) => t.slug === 'number_names')!;
+      const request = {
+        query: 'Create a simple before and after numbers worksheet for kindergarten',
+      };
+      const classification: WorksheetTemplateIntentClassification = {
+        theme: null,
+        subTopic: null,
+        activityIntent: 'Number Before After',
+        difficulty: 'easy',
+        confidence: 1,
+      };
+      expect(service.score(before, request, classification)).toBeGreaterThan(
+        service.score(names, request, classification),
+      );
+    });
+
+    it('prefers letters_craft over look_and_say_letters_and_sounds for alphabet craft', () => {
+      const craft = catalog.find((t) => t.slug === 'letters_craft')!;
+      const lookSay = catalog.find((t) => t.slug === 'look_and_say_letters_and_sounds')!;
+      const request = { query: 'I want a fun alphabet craft worksheet for 4 year olds' };
+      const classification: WorksheetTemplateIntentClassification = {
+        theme: null,
+        subTopic: null,
+        activityIntent: 'Alphabet Craft',
+        difficulty: 'easy',
+        confidence: 1,
+      };
+      expect(service.score(craft, request, classification)).toBeGreaterThan(
+        service.score(lookSay, request, classification),
+      );
+    });
+
+    it('prefers answer_and_colour over circle_the_things for question+colouring', () => {
+      const answer = catalog.find((t) => t.slug === 'answer_and_colour')!;
+      const circle = catalog.find((t) => t.slug === 'circle_the_things')!;
+      const request = {
+        query: 'Make a worksheet where every question is followed by a colouring activity',
+      };
+      const classification: WorksheetTemplateIntentClassification = {
+        theme: null,
+        subTopic: null,
+        activityIntent: 'Story Comprehension and Colouring',
+        difficulty: 'easy',
+        confidence: 1,
+      };
+      expect(service.score(answer, request, classification)).toBeGreaterThan(
+        service.score(circle, request, classification),
+      );
+    });
+
+    it('keeps age hard filtering unchanged for specialized templates', async () => {
+      const young = template({
+        id: 'young',
+        slug: 'letters_craft',
+        meta: { ageMin: 2, ageMax: 3 },
+      });
+      const older = template({
+        id: 'older',
+        slug: 'match_the_pairs',
+        meta: { ageMin: 5, ageMax: 6 },
+      });
+      templateService.listActive.mockResolvedValue([
+        young,
+        older,
+        template({
+          id: 'univ',
+          slug: 'universal_template',
+          meta: { ageMin: 2, ageMax: 10, selectionMode: 'explicit_only' },
+        }),
+      ]);
+
+      const selected = await service.select({
+        age: 2,
+        query: 'alphabet craft worksheet',
+      });
+      expect(selected.id).toBe('young');
+      expect(aiService.classify).not.toHaveBeenCalled();
     });
   });
 });
