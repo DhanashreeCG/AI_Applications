@@ -1591,6 +1591,45 @@ export function highlightCaptionLetter(text: string, letter: string): string {
   return escaped.replace(re, (match) => `<span class="hl-letter">${match}</span>`);
 }
 
+/**
+ * Quadrant label for look_and_say_letters_and_sounds.
+ * Prefer pedagogical caption ("Y for Yoghurt"); never fall back to imageQuery /
+ * asset searchDescription (those were previously clobbering captions on attach).
+ */
+export function resolveLookAndSayItemCaption(
+  item: Record<string, unknown>,
+  targetLetter = '',
+): string {
+  const letter =
+    (typeof item.letter === 'string' && item.letter.trim()) ||
+    targetLetter.trim();
+  const word = typeof item.word === 'string' ? item.word.trim() : '';
+  const imageQuery =
+    typeof item.imageQuery === 'string' ? item.imageQuery.trim() : '';
+  const searchDescription =
+    typeof item.searchDescription === 'string'
+      ? item.searchDescription.trim()
+      : '';
+  let caption = typeof item.caption === 'string' ? item.caption.trim() : '';
+
+  // Asset attach used to overwrite caption with library metadata — treat those
+  // as missing so we can rebuild from letter + word.
+  if (
+    caption &&
+    (caption === imageQuery || caption === searchDescription)
+  ) {
+    caption = '';
+  }
+
+  if (caption && /\bfor\b/i.test(caption)) {
+    return caption;
+  }
+  if (letter && word) {
+    return `${letter} for ${word}`;
+  }
+  return caption;
+}
+
 function upsertHtmlAttr(attrs: string, name: string, value: string): string {
   if (new RegExp(`\\b${name}\\s*=`, 'i').test(attrs)) {
     return attrs;
@@ -1682,9 +1721,9 @@ export function injectLookAndSayCaptions(
         const item = index >= 0 && isRecord(items[index]) ? items[index] : null;
         const letter =
           (item && typeof item.letter === 'string' && item.letter) || target;
-        const caption =
-          (item && typeof item.caption === 'string' && item.caption) ||
-          inner.replace(/<[^>]+>/g, '').trim();
+        const caption = item
+          ? resolveLookAndSayItemCaption(item, target)
+          : inner.replace(/<[^>]+>/g, '').trim();
         if (!caption || !letter) {
           return full;
         }
