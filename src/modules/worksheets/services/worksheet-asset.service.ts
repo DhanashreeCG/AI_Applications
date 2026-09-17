@@ -29,6 +29,7 @@ import {
 } from '../types/worksheet.types';
 import {
   collectImageQueries,
+  getValueAtPath,
   isAnswerAndColourSlug,
   linkedRepeatedImagePaths,
   normalizeImageQueryFields,
@@ -332,17 +333,27 @@ export class WorksheetAssetService {
       return this.persistableStructure(structure);
     }
     if (slot.path === '') {
+      const hasCaption =
+        typeof structure.caption === 'string' && structure.caption.trim() !== '';
       return this.persistableStructure({
         ...structure,
         assetId: slot.assetId,
-        ...(slot.caption ? { caption: slot.caption } : {}),
+        // Keep pedagogical captions (e.g. look_and_say "Y for Yoghurt").
+        ...(!hasCaption && slot.caption ? { caption: slot.caption } : {}),
         ...(slot.searchDescription
           ? { searchDescription: slot.searchDescription }
           : {}),
       });
     }
+    const existing = getValueAtPath(structure, slot.path);
+    const hasCaption =
+      existing != null &&
+      typeof existing === 'object' &&
+      !Array.isArray(existing) &&
+      typeof (existing as Record<string, unknown>).caption === 'string' &&
+      String((existing as Record<string, unknown>).caption).trim() !== '';
     const patch: Record<string, unknown> = { assetId: slot.assetId };
-    if (slot.caption) patch.caption = slot.caption;
+    if (slot.caption && !hasCaption) patch.caption = slot.caption;
     if (slot.searchDescription) patch.searchDescription = slot.searchDescription;
     return this.persistableStructure(patchImageSlot(structure, slot.path, patch));
   }
@@ -646,10 +657,17 @@ export class WorksheetAssetService {
     assetId: string,
   ): Promise<Record<string, unknown>> {
     const meta = await this.getAssetSearchMeta(assetId);
+    const existing = getValueAtPath(structure, path);
+    const hasCaption =
+      existing != null &&
+      typeof existing === 'object' &&
+      !Array.isArray(existing) &&
+      typeof (existing as Record<string, unknown>).caption === 'string' &&
+      String((existing as Record<string, unknown>).caption).trim() !== '';
     const withSlot = patchImageSlot(structure, path, {
       assetId,
       userUploadedKey: '',
-      ...(meta.caption ? { caption: meta.caption } : {}),
+      ...(!hasCaption && meta.caption ? { caption: meta.caption } : {}),
       ...(meta.searchDescription
         ? { searchDescription: meta.searchDescription }
         : {}),

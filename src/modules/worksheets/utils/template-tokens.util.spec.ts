@@ -4,6 +4,7 @@ import {
   imageZoneForSlot,
   parseImageZoneBoxes,
   resolveImageSlot,
+  resolveLookAndSayItemCaption,
 } from './template-tokens.util';
 
 describe('resolveImageSlot', () => {
@@ -141,5 +142,41 @@ describe('look-and-say template helpers', () => {
     expect(html).toContain('data-field-path="items[0]"');
     expect(html).toContain('data-field-path="items[0].caption"');
     expect(html).toContain('data-pencil-for="items[0].caption"');
+  });
+});
+
+describe('resolveLookAndSayItemCaption', () => {
+  it('keeps pedagogical captions with "for"', () => {
+    expect(
+      resolveLookAndSayItemCaption({
+        letter: 'Y',
+        word: 'Yoghurt',
+        caption: 'Y for Yoghurt',
+        imageQuery: 'bowl of yoghurt',
+      }),
+    ).toBe('Y for Yoghurt');
+  });
+
+  it('rebuilds from letter+word when caption matches imageQuery', () => {
+    expect(
+      resolveLookAndSayItemCaption({
+        letter: 'y',
+        word: 'yak',
+        caption: 'fluffy brown yak',
+        imageQuery: 'fluffy brown yak',
+      }),
+    ).toBe('y for yak');
+  });
+
+  it('rebuilds from letter+word when caption is asset metadata without "for"', () => {
+    expect(
+      resolveLookAndSayItemCaption({
+        letter: 'Y',
+        word: 'Yoghurt',
+        caption: 'yoghurt bowl photo',
+        imageQuery: 'bowl of yoghurt',
+        searchDescription: 'bowl of yoghurt with spoon',
+      }),
+    ).toBe('Y for Yoghurt');
   });
 });

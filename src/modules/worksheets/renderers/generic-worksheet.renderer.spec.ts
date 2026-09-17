@@ -896,6 +896,42 @@ NULL
     expect(html).not.toContain('{{IMAGE_1}}');
     expect(html).not.toContain('{{IMAGE_2}}');
     expect(html).not.toContain('left:70px;top:300px');
+    expect(html).not.toContain('orange carrot vegetable');
+    expect(html).not.toContain('yellow corn cob');
+  });
+
+  it('rebuilds look-and-say captions from letter+word when caption was clobbered by asset metadata', () => {
+    const html = renderer.render({
+      templateHtml: `
+<div class="caption caption-q1" data-editable="item_1">{{CAPTION_1}}</div>
+<div class="caption caption-q2" data-editable="item_2">{{CAPTION_2}}</div>
+`,
+      structure: {
+        worksheet_type: 'look_and_say_letters_and_sounds',
+        target_letter: 'Y',
+        items: [
+          {
+            letter: 'Y',
+            word: 'Yoghurt',
+            // Asset library caption / search phrase mistakenly stored as caption
+            caption: 'bowl of yoghurt with spoon',
+            imageQuery: 'bowl of yoghurt with spoon',
+            searchDescription: 'bowl of yoghurt with spoon',
+          },
+          {
+            letter: 'y',
+            word: 'yak',
+            caption: 'fluffy brown yak animal',
+            imageQuery: 'fluffy brown yak animal',
+          },
+        ],
+      },
+    });
+
+    expect(html).toContain('<span class="hl-letter">Y</span> for <span class="hl-letter">Y</span>oghurt');
+    expect(html).toContain('<span class="hl-letter">y</span> for <span class="hl-letter">y</span>ak');
+    expect(html).not.toContain('bowl of yoghurt with spoon');
+    expect(html).not.toContain('fluffy brown yak animal');
   });
 
   it('renders picture_graph bars, column icons, count images, and bottom choices', () => {
