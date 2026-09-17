@@ -14,6 +14,7 @@ import { resolve } from 'node:path';
 import { createScriptPrismaClient } from './shared/create-script-prisma-client';
 import {
   AUTHORITATIVE_TEMPLATE_IDS,
+  buildPictureGraphSelectionProfile,
   buildStorytimeMazeSelectionProfile,
   CONFIRMED_JSON_SLUG_LINKS,
   profilePayloadFromSeedEntry,
@@ -134,6 +135,37 @@ async function main(): Promise<void> {
         seeded.push(row.slug);
         if (prior) updated += 1;
         else created += 1;
+        continue;
+      }
+
+      if (row.slug === 'picture_graph' || byAuthoritativeId.get(row.id) === 'picture_graph') {
+        const data = buildPictureGraphSelectionProfile(row);
+        const prior = await prisma.worksheetTemplateSelectionProfile.findUnique({
+          where: { templateId: row.id },
+          select: { id: true },
+        });
+        // Create-only semantics for picture_graph: never overwrite an existing profile.
+        if (prior) {
+          skippedAlreadyPresent += 1;
+          skipped.push({
+            slug: row.slug,
+            reason: 'picture_graph profile already exists (not overwritten)',
+          });
+          continue;
+        }
+        await prisma.worksheetTemplateSelectionProfile.create({
+          data: { templateId: row.id, ...data },
+        });
+        seeded.push(row.slug);
+        created += 1;
+        continue;
+      }
+
+      if (row.slug === 'universal_template' || row.slug === 'universal') {
+        skipped.push({
+          slug: row.slug,
+          reason: 'Universal is fallback-only — no normal selection profile',
+        });
         continue;
       }
 

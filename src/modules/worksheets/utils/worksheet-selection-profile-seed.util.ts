@@ -10,6 +10,9 @@ export const AUTHORITATIVE_TEMPLATE_IDS: Record<string, string> = {
   tracing: 'cmtqs9cbc002nnobgwtdins9u',
   match_the_pairs: 'cmthcnikx003yrobgnng3y2ka',
   storytime_maze: 'cmts6roz3002n4obgkgehn7e1',
+  picture_graph: 'cmtsndfnn002n6cbg6o6ny7t3',
+  letters_craft: 'cmtv2l36g002n0kbgdd6r6t7z',
+  numbers_after_and_before: 'cmtsdzoj50032ngbgewvpccu6',
   universal_template: 'cmtveqj0x002ltobgwe7d4brc',
 };
 
@@ -169,6 +172,118 @@ export function buildStorytimeMazeSelectionProfile(template: {
       'Hand-eye coordination',
       'Visual tracking',
       'Problem solving',
+    ],
+  };
+}
+
+/**
+ * Picture Graph selection profile (missing from seed-data.json).
+ * Do NOT create a Universal profile — Universal is fallback-only.
+ */
+export function buildPictureGraphSelectionProfile(template: {
+  slug: string;
+}): SelectionProfileSeedPayload {
+  return {
+    templateSlug: template.slug,
+    templateType: 'picture_graph',
+    description:
+      'A picture-graph activity where children read quantities represented by pictures or bars, compare counts, and answer a simple question about the graph.',
+    primaryUse:
+      'A picture-graph activity where children read quantities represented by pictures or bars, compare counts, and answer a simple question about the graph.',
+    canBeUsedFor: [
+      'Picture graph',
+      'Picture graphs',
+      'Picture-based graph',
+      'Picture chart',
+      'Count and graph',
+      'Read a picture graph',
+      'Interpret a picture graph',
+      'Compare quantities in a graph',
+      'Count pictures in a graph',
+      'Most and least in a graph',
+      'Which has more',
+      'Which has fewer',
+      'Graph-based counting',
+      'Graph-based comparison',
+      'Tally and graph for young learners',
+    ],
+    exampleTopics: [
+      'Count fruits in a picture graph',
+      'Count animals in a picture graph',
+      'Compare vehicles in a picture graph',
+      'Which fruit has the most',
+      'Which animal has the fewest',
+      'Read a graph about insects',
+      'Count and compare objects in a picture graph',
+      'Find the most common item in a graph',
+      'Find the least common item in a graph',
+      'Answer questions from a picture graph',
+    ],
+    adaptationNote:
+      'Keep the picture/bar graph interaction and comparison question. Change theme objects and counts to match the topic; do not turn it into a non-graph counting sheet.',
+    skillsPracticed: [
+      'Counting',
+      'Data interpretation',
+      'Quantity comparison',
+      'Visual reasoning',
+      'Graph reading',
+      'One-to-one correspondence',
+      'More and less',
+    ],
+  };
+}
+
+/**
+ * Tracing profile aligned to the live template contract:
+ * comparative line-tracing between left/right paired images (big/small, animal/home),
+ * NOT freehand pre-writing curves/zigzags.
+ */
+export function buildTracingComparativeSelectionProfile(template: {
+  slug: string;
+}): SelectionProfileSeedPayload {
+  return {
+    templateSlug: template.slug,
+    templateType: 'visual_tracing',
+    description:
+      'A tracing activity where learners follow a line between corresponding objects, especially useful for comparing size, quantity, position or other visual relationships.',
+    primaryUse:
+      'Pre-math, visual correspondence and fine-motor tracing activities between paired images.',
+    canBeUsedFor: [
+      'Big and small',
+      'Tall and short',
+      'Long and short',
+      'Heavy and light',
+      'More and less',
+      'Same and different',
+      'Near and far',
+      'One and many',
+      'Up and down',
+      'Animal matching',
+      'Object matching',
+      'Picture-to-picture correspondence',
+      'Size comparison',
+      'Quantity comparison',
+      'Comparative line tracing',
+    ],
+    exampleTopics: [
+      'Small animal to small house',
+      'Big fruit to big basket',
+      'Tall plant to tall pot',
+      'Large vehicle to large parking space',
+      'Same animal pairs',
+      'Animal and its home',
+      'Big and small objects',
+      'More and fewer objects',
+    ],
+    adaptationNote:
+      'Keep the dotted-line tracing interaction between left and right images. Change illustrated objects and the compare/match relationship per topic. Preserve exactly 4 pairs across two sections.',
+    skillsPracticed: [
+      'Fine motor skills',
+      'Visual discrimination',
+      'Matching',
+      'Comparison',
+      'Hand-eye coordination',
+      'Pre-writing skills',
     ],
   };
 }
