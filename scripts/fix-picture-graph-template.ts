@@ -8,6 +8,22 @@ const COUNT_ANSWER_CSS = `
 .graph-bars-container{position:absolute;inset:0;}
 `;
 
+function setCssProp(
+  html: string,
+  selector: string,
+  prop: string,
+  value: string,
+): string {
+  const block = new RegExp(`(${selector}\\s*\\{)([^}]*)(\\})`, 'i');
+  return html.replace(block, (_full, open: string, body: string, close: string) => {
+    const propRe = new RegExp(`(\\s*)${prop}\\s*:\\s*[^;}]*;?`, 'i');
+    if (propRe.test(body)) {
+      return `${open}${body.replace(propRe, `$1${prop}: ${value};`)}${close}`;
+    }
+    return `${open}${body}\n  ${prop}: ${value};${close}`;
+  });
+}
+
 function ensureStyleBlock(html: string, css: string, marker: string): string {
   if (html.includes(marker)) {
     return html;
@@ -71,6 +87,12 @@ export function cleanPictureGraphHtml(html: string): string {
       return `${open}${updated}${close}`;
     },
   );
+
+  // Only nudge the instruction slightly below the header; leave graph chrome as-is.
+  next = setCssProp(next, '\\.instruction-container', 'top', '220px');
+  // Restore prior mistaken shifts if present.
+  next = setCssProp(next, '\\.graph-column-icons', 'top', '720px');
+  next = setCssProp(next, '\\.bottom-section', 'top', '1040px');
 
   if (!/\{\{\s*GRAPH_MESH_HTML\s*\}\}/i.test(next)) {
     if (/graph-bars-container/i.test(next)) {

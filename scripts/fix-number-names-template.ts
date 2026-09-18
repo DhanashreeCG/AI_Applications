@@ -9,6 +9,22 @@ const CONNECTOR_DOT_CSS = `
 .number-item.nn-circle,.name-item.nn-pill{position:absolute;}
 `;
 
+function setCssProp(
+  html: string,
+  selector: string,
+  prop: string,
+  value: string,
+): string {
+  const block = new RegExp(`(${selector}\\s*\\{)([^}]*)(\\})`, 'i');
+  return html.replace(block, (_full, open: string, body: string, close: string) => {
+    const propRe = new RegExp(`(\\s*)${prop}\\s*:\\s*[^;}]*;?`, 'i');
+    if (propRe.test(body)) {
+      return `${open}${body.replace(propRe, `$1${prop}: ${value};`)}${close}`;
+    }
+    return `${open}${body}\n  ${prop}: ${value};${close}`;
+  });
+}
+
 function ensureConnectorDotCss(html: string): string {
   if (/\.nn-connect-dot\s*\{/i.test(html)) {
     return html;
@@ -31,6 +47,10 @@ export function cleanNumberNamesHtml(html: string): string {
       '$1font-size:28px;$2',
     );
   }
+  // Larger title in the purple header banner; instruction + pairs sit lower.
+  next = setCssProp(next, '\\.topic', 'font-size', '34px');
+  next = setCssProp(next, '\\.topic', 'top', '70px');
+  next = setCssProp(next, '\\.instruction', 'top', '218px');
   next = ensureConnectorDotCss(next);
   return next;
 }

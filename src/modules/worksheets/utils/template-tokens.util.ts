@@ -215,8 +215,8 @@ const NUMBER_NAMES_CIRCLE_SIZE = 70;
 const NUMBER_NAMES_PILL_WIDTH = 230;
 const NUMBER_NAMES_PILL_HEIGHT = 70;
 /** Content band on 1016×1316 canvas (below instruction, above footer). */
-const NUMBER_NAMES_BAND_TOP = 290;
-const NUMBER_NAMES_BAND_HEIGHT = 780;
+const NUMBER_NAMES_BAND_TOP = 325;
+const NUMBER_NAMES_BAND_HEIGHT = 740;
 
 function numberNamesPairColor(
   item: unknown,
