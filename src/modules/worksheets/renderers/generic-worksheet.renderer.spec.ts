@@ -1031,16 +1031,17 @@ NULL
     expect(html).toContain('pg-y-label');
     expect(html).toMatch(/>10</);
 
-    // count 9 → height 288, top 708-288=420; count 3 → height 96, top 704-96=608
-    expect(html).toMatch(/left:228px;width:82px;top:420px;height:288px;background:#85cbf4/);
-    expect(html).toMatch(/left:388px;width:82px;top:480px;height:224px;background:#f03a3e/);
-    expect(html).toMatch(/left:548px;width:82px;top:608px;height:96px;background:#fecd59/);
-    expect(html).toMatch(/left:708px;width:82px;top:548px;height:160px;background:#67bd47/);
+    // Bars fill mesh columns (slots 1/3/5/7); all share baseY=708 with the mesh.
+    // count 9 → h 288 top 420; count 7 → h 224 top 484; count 3 → h 96 top 612; count 5 → h 160 top 548
+    expect(html).toMatch(/left:278px;width:77px;top:420px;height:288px;background:#85cbf4/);
+    expect(html).toMatch(/left:433px;width:77px;top:484px;height:224px;background:#f03a3e/);
+    expect(html).toMatch(/left:588px;width:77px;top:612px;height:96px;background:#fecd59/);
+    expect(html).toMatch(/left:743px;width:77px;top:548px;height:160px;background:#67bd47/);
 
-    expect(html).toContain('class="graph-icon-item" style="left:227px;"');
-    expect(html).toContain('class="graph-icon-item" style="left:387px;"');
-    expect(html).toContain('class="graph-icon-item" style="left:547px;"');
-    expect(html).toContain('class="graph-icon-item" style="left:707px;"');
+    expect(html).toContain('class="graph-icon-item" style="left:274px;"');
+    expect(html).toContain('class="graph-icon-item" style="left:429px;"');
+    expect(html).toContain('class="graph-icon-item" style="left:584px;"');
+    expect(html).toContain('class="graph-icon-item" style="left:739px;"');
 
     expect(html).toContain('left:135px;top:818px');
     expect(html).toContain('left:580px;top:818px');

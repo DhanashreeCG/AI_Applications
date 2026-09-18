@@ -738,7 +738,7 @@ export function injectWorksheetItemsMarkup(
   return next;
 }
 
-/** Calibrated to the picture_graph bar grid (y ticks 1–10, unit = 32px). */
+/** Calibrated picture_graph plot: mesh + bars share one grid. */
 const PICTURE_GRAPH_UNIT_H = 32;
 const PICTURE_GRAPH_DEFAULT_COUNTS = [9, 7, 3, 5];
 const PICTURE_GRAPH_DEFAULT_NAMES = ['Ant', 'Bee', 'Ladybug', 'Spider'];
@@ -747,13 +747,58 @@ const PICTURE_GRAPH_DEFAULT_COLORS = [
   '#f03a3e',
   '#fecd59',
   '#67bd47',
-];
-const PICTURE_GRAPH_COLUMNS = [
-  { barLeft: 228, barWidth: 82, iconLeft: 227, color: '#85cbf4', baseY: 708 },
-  { barLeft: 388, barWidth: 82, iconLeft: 387, color: '#f03a3e', baseY: 704 },
-  { barLeft: 548, barWidth: 82, iconLeft: 547, color: '#fecd59', baseY: 704 },
-  { barLeft: 708, barWidth: 82, iconLeft: 707, color: '#67bd47', baseY: 708 },
 ] as const;
+
+/** Graph plot area — bars and mesh are derived from these bounds. */
+const PICTURE_GRAPH_MESH = {
+  left: 200,
+  right: 820,
+  bottom: 708,
+  yMax: 10,
+  /** Equal columns across the plot; bars sit in every other column. */
+  colCount: 8,
+  /** 0-based column indices for the 4 bars (empty gutter between each). */
+  barSlots: [1, 3, 5, 7] as const,
+  meshColor: '#9bcfe8',
+  frameColor: '#6eb4d8',
+  pinColor: '#8b5a2b',
+  /** Right-aligned label box; keep clear of the frame/mesh left edge. */
+  yLabelLeft: 144,
+  iconWidth: 85,
+} as const;
+
+type PictureGraphColumn = {
+  barLeft: number;
+  barWidth: number;
+  iconLeft: number;
+  color: string;
+  baseY: number;
+};
+
+/** Column pixel bounds so adjacent cells tile with no gap/overlap. */
+function pictureGraphColBounds(slot: number): { left: number; width: number } {
+  const { left, right, colCount } = PICTURE_GRAPH_MESH;
+  const plotW = right - left;
+  const start = left + Math.round((plotW * slot) / colCount);
+  const end = left + Math.round((plotW * (slot + 1)) / colCount);
+  return { left: start, width: end - start };
+}
+
+/** Bars/icons snapped to the same grid as the mesh (shared baseY + column slots). */
+function pictureGraphColumns(): PictureGraphColumn[] {
+  const { bottom, barSlots, iconWidth } = PICTURE_GRAPH_MESH;
+  return barSlots.map((slot, index) => {
+    const { left: barLeft, width: barWidth } = pictureGraphColBounds(slot);
+    const iconLeft = Math.round(barLeft + (barWidth - iconWidth) / 2);
+    return {
+      barLeft,
+      barWidth,
+      iconLeft,
+      color: PICTURE_GRAPH_DEFAULT_COLORS[index],
+      baseY: bottom,
+    };
+  });
+}
 
 /** Count-write layout: row1 item0+item3, row2 item1+item2 (matches dashed boxes). */
 const PICTURE_GRAPH_COUNT_LAYOUT = [
@@ -762,18 +807,6 @@ const PICTURE_GRAPH_COUNT_LAYOUT = [
   { itemIdx: 1, imgLeft: 140, imgTop: 934, boxLeft: 288, boxTop: 932 },
   { itemIdx: 2, imgLeft: 580, imgTop: 940, boxLeft: 718, boxTop: 932 },
 ] as const;
-
-/** Graph plot area aligned to bar baseY / unit height (mesh replaces bg grid). */
-const PICTURE_GRAPH_MESH = {
-  left: 200,
-  right: 820,
-  bottom: 708,
-  yMax: 10,
-  meshColor: '#8ec8e8',
-  frameColor: '#6eb4d8',
-  pinColor: '#8b5a2b',
-  yLabelLeft: 158,
-} as const;
 
 const PICTURE_GRAPH_CAMERA_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
@@ -799,30 +832,39 @@ function resolvePictureGraphYMax(structure: Record<string, unknown>): number {
 /**
  * Dashed mesh, frame, corner pins, and y-axis labels for picture_graph.
  * Uses SVG strokes (zero-size CSS borders often do not paint in Chromium/PDF).
- * Bars/icons overlay this; coordinates match PICTURE_GRAPH_COLUMNS.
+ * Vertical lines match PICTURE_GRAPH_MESH.colCount so bars snap to cells.
  */
 export function buildPictureGraphMeshMarkup(
   structure: Record<string, unknown>,
 ): string {
   const yMax = resolvePictureGraphYMax(structure);
-  const { left, right, bottom, meshColor, frameColor, pinColor, yLabelLeft } =
-    PICTURE_GRAPH_MESH;
+  const {
+    left,
+    right,
+    bottom,
+    meshColor,
+    frameColor,
+    pinColor,
+    yLabelLeft,
+    colCount,
+  } = PICTURE_GRAPH_MESH;
   const top = bottom - yMax * PICTURE_GRAPH_UNIT_H;
   const width = right - left;
   const height = bottom - top;
 
   const svgLines: string[] = [];
-  for (let i = 0; i <= yMax; i += 1) {
+  // Interior horizontal ticks — skip outer perimeter (solid frame draws the edge).
+  for (let i = 1; i < yMax; i += 1) {
     const y = i * PICTURE_GRAPH_UNIT_H;
     svgLines.push(
-      `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="${meshColor}" stroke-width="1.75" stroke-dasharray="6 5" />`,
+      `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="${meshColor}" stroke-width="1.25" stroke-dasharray="5 6" stroke-linecap="round" />`,
     );
   }
-  const vCount = 9;
-  for (let i = 0; i <= vCount; i += 1) {
-    const x = Math.round((width * i) / vCount);
+  // Interior vertical lines at every column boundary (same slots bars use).
+  for (let i = 1; i < colCount; i += 1) {
+    const x = Math.round((width * i) / colCount);
     svgLines.push(
-      `<line x1="${x}" y1="0" x2="${x}" y2="${height}" stroke="${meshColor}" stroke-width="1.75" stroke-dasharray="6 5" />`,
+      `<line x1="${x}" y1="0" x2="${x}" y2="${height}" stroke="${meshColor}" stroke-width="1.25" stroke-dasharray="5 6" stroke-linecap="round" />`,
     );
   }
 
@@ -832,7 +874,7 @@ export function buildPictureGraphMeshMarkup(
   for (let i = 1; i <= yMax; i += 1) {
     const y = bottom - i * PICTURE_GRAPH_UNIT_H - 10;
     yLabels.push(
-      `<div class="pg-y-label" style="position:absolute;left:${yLabelLeft}px;top:${y}px;width:36px;text-align:right;font-size:20px;font-weight:800;color:#222;line-height:20px;z-index:3;">${i}</div>`,
+      `<div class="pg-y-label" style="position:absolute;left:${yLabelLeft}px;top:${y}px;width:40px;text-align:right;font-size:20px;font-weight:800;color:#222;line-height:20px;z-index:4;pointer-events:none;">${i}</div>`,
     );
   }
 
@@ -910,9 +952,10 @@ export function buildPictureGraphBarsMarkup(
   structure: Record<string, unknown>,
 ): string {
   const items = resolvePictureGraphItems(structure);
+  const columns = pictureGraphColumns();
   return items
     .map((item, index) => {
-      const cfg = PICTURE_GRAPH_COLUMNS[index];
+      const cfg = columns[index];
       const count = Math.max(0, Math.min(10, Math.round(item.count) || 0));
       if (count === 0) {
         return '';
@@ -925,7 +968,8 @@ export function buildPictureGraphBarsMarkup(
         const tickY = totalH - t * PICTURE_GRAPH_UNIT_H;
         innerTicks += `<div style="position:absolute;left:0;right:0;top:${tickY}px;border-top:1.5px dashed rgba(255,255,255,0.7);pointer-events:none;"></div>`;
       }
-      return `<div style="position:absolute;left:${cfg.barLeft}px;width:${cfg.barWidth}px;top:${topY}px;height:${totalH}px;background:${escapeAttr(color)};box-sizing:border-box;border-left:1.5px dashed #4fa3d1;border-right:1.5px dashed #4fa3d1;border-top:2px solid ${escapeAttr(color)};z-index:5;">${innerTicks}</div>`;
+      // Fill the mesh column exactly; top aligns to the horizontal grid line for `count`.
+      return `<div style="position:absolute;left:${cfg.barLeft}px;width:${cfg.barWidth}px;top:${topY}px;height:${totalH}px;background:${escapeAttr(color)};box-sizing:border-box;z-index:5;">${innerTicks}</div>`;
     })
     .join('\n');
 }
@@ -934,9 +978,10 @@ export function buildPictureGraphIconsMarkup(
   structure: Record<string, unknown>,
 ): string {
   const items = resolvePictureGraphItems(structure);
+  const columns = pictureGraphColumns();
   return items
     .map((item, index) => {
-      const cfg = PICTURE_GRAPH_COLUMNS[index];
+      const cfg = columns[index];
       return `<div class="graph-icon-item" style="left:${cfg.iconLeft}px;" data-item-id="${escapeAttr(item.id)}" data-field-path="${escapeAttr(item.path)}">${pictureGraphImgTag(item)}${pictureGraphCameraControls(item.id)}</div>`;
     })
     .join('\n');
