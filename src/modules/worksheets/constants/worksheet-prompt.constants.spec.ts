@@ -53,6 +53,10 @@ describe('worksheet regen prompt', () => {
     expect(prompt).toContain('topic: whole numbers');
     expect(prompt).toContain('matchType: roman_numerals');
     expect(prompt).toContain('Roman numerals');
+    expect(prompt).toContain('between 3 and 6 pairs');
+    expect(prompt).toContain('EXACTLY that many pairs');
+    expect(prompt).toContain('Never repeat a number');
+    expect(prompt).not.toContain('exactly 6 pairs');
     expect(prompt).not.toContain('badge_label');
     expect(prompt).not.toContain('"name": "one"');
   });

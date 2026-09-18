@@ -31,6 +31,7 @@ import {
 import { WorksheetTemplateRecord } from './worksheet-template.service';
 import { WorksheetValidationService } from './worksheet-validation.service';
 import { normalizeLlmWorksheetPayload, parseJsonObject } from '../utils/structure.util';
+import { normalizeNumberNamesPairs } from '../utils/number-match.util';
 import {
   resolveUniversalContentRoute,
   type UniversalContentRoute,
@@ -205,7 +206,16 @@ export class WorksheetContentService {
                 template,
                 { allowEnrichmentKeys: true },
               );
-              validatedItems.push(validated);
+              const normalized =
+                template.slug === 'number_names'
+                  ? normalizeNumberNamesPairs(validated, {
+                      range: request.fields?.range,
+                      specificNumbers: request.fields?.specificNumbers,
+                      query: request.query,
+                      matchType: request.fields?.matchType,
+                    })
+                  : validated;
+              validatedItems.push(normalized);
             } catch (err) {
               this.logger.warn(
                 `validation skipped invalid worksheet item in batch: ${getErrorMessage(err)}`,
