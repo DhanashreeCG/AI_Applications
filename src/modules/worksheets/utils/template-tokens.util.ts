@@ -201,6 +201,35 @@ function isNumberNamesTemplate(structure: Record<string, unknown>): boolean {
   return String(structure.worksheet_type ?? '').toLowerCase() === 'number_names';
 }
 
+/** Pastel fills for number_names HTML circles/pills (sample palette). */
+const NUMBER_NAMES_PALETTE = [
+  { fill: '#F8D7DA', border: '#E89AA6' },
+  { fill: '#D1E9F6', border: '#7EB8D4' },
+  { fill: '#E2EFD9', border: '#9BC48A' },
+  { fill: '#E2D9F3', border: '#A994D4' },
+  { fill: '#FFF2CC', border: '#E0C86A' },
+  { fill: '#FAD7C4', border: '#E0A078' },
+] as const;
+
+const NUMBER_NAMES_CIRCLE_SIZE = 70;
+const NUMBER_NAMES_PILL_WIDTH = 230;
+const NUMBER_NAMES_PILL_HEIGHT = 70;
+/** Content band on 1016×1316 canvas (below instruction, above footer). */
+const NUMBER_NAMES_BAND_TOP = 290;
+const NUMBER_NAMES_BAND_HEIGHT = 780;
+
+function numberNamesPairColor(
+  item: unknown,
+  index: number,
+): { fill: string; border: string } {
+  const fallback = NUMBER_NAMES_PALETTE[index % NUMBER_NAMES_PALETTE.length];
+  const raw = pairField(item, 'color').trim();
+  if (!raw) {
+    return fallback;
+  }
+  return { fill: raw, border: raw };
+}
+
 export function matchingPairLayout(
   structure: Record<string, unknown>,
   pairCount: number,
@@ -214,24 +243,31 @@ export function matchingPairLayout(
   const layout = isRecord(structure.layout) ? structure.layout : {};
   const count = Math.max(pairCount, 1);
   const isNumberNames = structure.worksheet_type === 'number_names';
-  // number_names constants below are calibrated against the actual background
-  // artwork's circle/pill centers (measured in px on the 1016x1316 canvas),
-  // not guessed. startTop/nameLeft assume a 70px-tall / 230px-wide item box
-  // that is vertically+horizontally centered via CSS flex (see .number-item /
-  // .name-item in the template). If the background artwork changes, re-measure
-  // pill/circle centers and update these four numbers together.
-  // numberTop is 8px below startTop so digits sit in the circle centers
-  // (font metrics sit high without this nudge; name pills keep startTop).
-  const startTop = Number(layout.start_top) || (isNumberNames ? 335 : 280);
-  const numberTop =
-    Number(layout.number_top) ||
-    (isNumberNames ? startTop + 8 : startTop);
+  // number_names: HTML draws circles/pills; pack 3–6 rows evenly in the
+  // content band. Other matching templates keep bg-calibrated text overlays.
+  let startTop = Number(layout.start_top) || (isNumberNames ? NUMBER_NAMES_BAND_TOP : 280);
+  let rowHeight =
+    Number(layout.row_height) ||
+    (isNumberNames
+      ? Math.floor(NUMBER_NAMES_BAND_HEIGHT / count)
+      : Math.min(88, Math.max(64, 900 / count)));
+  if (isNumberNames && !Number(layout.row_height)) {
+    rowHeight = Math.max(100, Math.min(200, rowHeight));
+    const used = rowHeight * count;
+    if (used < NUMBER_NAMES_BAND_HEIGHT && !Number(layout.start_top)) {
+      startTop =
+        NUMBER_NAMES_BAND_TOP +
+        Math.floor((NUMBER_NAMES_BAND_HEIGHT - used) / 2);
+    }
+  }
+  // Digits/names are flex-centered inside HTML shapes, so numberTop === startTop.
+  const numberTop = Number(layout.number_top) || startTop;
   return {
     startTop,
     numberTop,
     numberLeft: Number(layout.number_left) || (isNumberNames ? 208 : 95),
     nameLeft: Number(layout.name_left) || (isNumberNames ? 607 : 620),
-    rowHeight: Number(layout.row_height) || (isNumberNames ? 143 : Math.min(88, Math.max(64, 900 / count))),
+    rowHeight,
   };
 }
 
@@ -307,6 +343,7 @@ export function positionMatchingPairItems(
  * Number-names matching templates expect either {{NUMBERS}}/{{NAMES}}
  * or {{#each pairs}} rows. Prototype CSS uses absolute .number-item / .name-item
  * without top/left, so positions are computed here.
+ * For number_names, circles/pills (+ connector dots) are drawn in HTML.
  */
 export function buildMatchingPairMarkup(
   structure: Record<string, unknown>,
@@ -316,7 +353,8 @@ export function buildMatchingPairMarkup(
   if (pairs.length === 0) {
     return { numbers: '', names: '' };
   }
-  const nameFontSize = isNumberNamesTemplate(structure) ? 28 : 32;
+  const isNumberNames = isNumberNamesTemplate(structure);
+  const nameFontSize = isNumberNames ? 28 : 32;
   const { startTop, numberTop, numberLeft, nameLeft, rowHeight } = matchingPairLayout(
     structure,
     pairs.length,
@@ -335,7 +373,30 @@ export function buildMatchingPairMarkup(
       const top = numberTop + index * rowHeight;
       const path = `pairs[${index}].number`;
       const value = escapeHtml(pairField(item, 'number'));
-      return `<div class="number-item" style="top:${top}px;left:${numberLeft}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, numberLeft + 76)}`;
+      if (!isNumberNames) {
+        return `<div class="number-item" style="top:${top}px;left:${numberLeft}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, numberLeft + 76)}`;
+      }
+      const { border } = numberNamesPairColor(item, index);
+      const size = NUMBER_NAMES_CIRCLE_SIZE;
+      const style = [
+        `top:${top}px`,
+        `left:${numberLeft}px`,
+        `width:${size}px`,
+        `height:${size}px`,
+        'border-radius:50%',
+        `border:2.5px solid ${escapeAttr(border)}`,
+        'background:#ffffff',
+        'box-sizing:border-box',
+        'display:flex',
+        'align-items:center',
+        'justify-content:center',
+        'font-weight:700',
+        'font-size:28px',
+        'color:#222',
+        'z-index:4',
+        'position:absolute',
+      ].join(';');
+      return `<div class="number-item nn-circle" style="${style}" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}<span class="nn-connect-dot nn-connect-dot-right" aria-hidden="true"></span></div>${pencil(path, top, numberLeft + size + 6)}`;
     })
     .join('');
 
@@ -347,7 +408,29 @@ export function buildMatchingPairMarkup(
       const top = startTop + renderIndex * rowHeight;
       const path = `pairs[${originalIndex}].name`;
       const value = escapeHtml(pairField(item, 'name'));
-      return `<div class="name-item" style="top:${top}px;left:${nameLeft}px;font-size:${nameFontSize}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
+      if (!isNumberNames) {
+        return `<div class="name-item" style="top:${top}px;left:${nameLeft}px;font-size:${nameFontSize}px" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}">${value}</div>${pencil(path, top, nameLeft + 238)}`;
+      }
+      const { fill, border } = numberNamesPairColor(item, originalIndex);
+      const style = [
+        `top:${top}px`,
+        `left:${nameLeft}px`,
+        `width:${NUMBER_NAMES_PILL_WIDTH}px`,
+        `height:${NUMBER_NAMES_PILL_HEIGHT}px`,
+        'border-radius:36px',
+        `border:2px solid ${escapeAttr(border)}`,
+        `background:${escapeAttr(fill)}`,
+        'box-sizing:border-box',
+        'display:flex',
+        'align-items:center',
+        'justify-content:center',
+        'font-weight:700',
+        `font-size:${nameFontSize}px`,
+        'color:#222',
+        'z-index:4',
+        'position:absolute',
+      ].join(';');
+      return `<div class="name-item nn-pill" style="${style}" data-editable="${escapeAttr(path)}" data-field-path="${escapeAttr(path)}"><span class="nn-connect-dot nn-connect-dot-left" aria-hidden="true"></span>${value}</div>${pencil(path, top, nameLeft + NUMBER_NAMES_PILL_WIDTH + 8)}`;
     })
     .join('');
 
@@ -655,7 +738,7 @@ export function injectWorksheetItemsMarkup(
   return next;
 }
 
-/** Calibrated to the picture_graph background grid (y ticks 1–10, unit = 32px). */
+/** Calibrated to the picture_graph bar grid (y ticks 1–10, unit = 32px). */
 const PICTURE_GRAPH_UNIT_H = 32;
 const PICTURE_GRAPH_DEFAULT_COUNTS = [9, 7, 3, 5];
 const PICTURE_GRAPH_DEFAULT_NAMES = ['Ant', 'Bee', 'Ladybug', 'Spider'];
@@ -680,6 +763,18 @@ const PICTURE_GRAPH_COUNT_LAYOUT = [
   { itemIdx: 2, imgLeft: 580, imgTop: 940, boxLeft: 718, boxTop: 932 },
 ] as const;
 
+/** Graph plot area aligned to bar baseY / unit height (mesh replaces bg grid). */
+const PICTURE_GRAPH_MESH = {
+  left: 200,
+  right: 820,
+  bottom: 708,
+  yMax: 10,
+  meshColor: '#8ec8e8',
+  frameColor: '#6eb4d8',
+  pinColor: '#8b5a2b',
+  yLabelLeft: 158,
+} as const;
+
 const PICTURE_GRAPH_CAMERA_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
 
@@ -692,6 +787,72 @@ type PictureGraphItem = {
   src: string;
   alt: string;
 };
+
+function resolvePictureGraphYMax(structure: Record<string, unknown>): number {
+  const raw = Number(structure.y_axis_max);
+  if (Number.isFinite(raw) && raw >= 1 && raw <= 20) {
+    return Math.round(raw);
+  }
+  return PICTURE_GRAPH_MESH.yMax;
+}
+
+/**
+ * Dashed mesh, frame, corner pins, and y-axis labels for picture_graph.
+ * Uses SVG strokes (zero-size CSS borders often do not paint in Chromium/PDF).
+ * Bars/icons overlay this; coordinates match PICTURE_GRAPH_COLUMNS.
+ */
+export function buildPictureGraphMeshMarkup(
+  structure: Record<string, unknown>,
+): string {
+  const yMax = resolvePictureGraphYMax(structure);
+  const { left, right, bottom, meshColor, frameColor, pinColor, yLabelLeft } =
+    PICTURE_GRAPH_MESH;
+  const top = bottom - yMax * PICTURE_GRAPH_UNIT_H;
+  const width = right - left;
+  const height = bottom - top;
+
+  const svgLines: string[] = [];
+  for (let i = 0; i <= yMax; i += 1) {
+    const y = i * PICTURE_GRAPH_UNIT_H;
+    svgLines.push(
+      `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="${meshColor}" stroke-width="1.75" stroke-dasharray="6 5" />`,
+    );
+  }
+  const vCount = 9;
+  for (let i = 0; i <= vCount; i += 1) {
+    const x = Math.round((width * i) / vCount);
+    svgLines.push(
+      `<line x1="${x}" y1="0" x2="${x}" y2="${height}" stroke="${meshColor}" stroke-width="1.75" stroke-dasharray="6 5" />`,
+    );
+  }
+
+  const meshSvg = `<svg class="pg-mesh-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="position:absolute;left:${left}px;top:${top}px;width:${width}px;height:${height}px;z-index:2;pointer-events:none;overflow:visible;" aria-hidden="true">${svgLines.join('')}</svg>`;
+
+  const yLabels: string[] = [];
+  for (let i = 1; i <= yMax; i += 1) {
+    const y = bottom - i * PICTURE_GRAPH_UNIT_H - 10;
+    yLabels.push(
+      `<div class="pg-y-label" style="position:absolute;left:${yLabelLeft}px;top:${y}px;width:36px;text-align:right;font-size:20px;font-weight:800;color:#222;line-height:20px;z-index:3;">${i}</div>`,
+    );
+  }
+
+  const frame = `<div class="pg-graph-frame" style="position:absolute;left:${left - 8}px;top:${top - 8}px;width:${width + 16}px;height:${height + 16}px;border:3px solid ${frameColor};border-radius:18px;box-sizing:border-box;pointer-events:none;z-index:1;background:transparent;"></div>`;
+
+  const pinPositions = [
+    { left: left - 14, top: top - 14 },
+    { left: right - 2, top: top - 14 },
+    { left: left - 14, top: bottom - 2 },
+    { left: right - 2, top: bottom - 2 },
+  ];
+  const pins = pinPositions
+    .map(
+      (p) =>
+        `<div class="pg-corner-pin" style="position:absolute;left:${p.left}px;top:${p.top}px;width:16px;height:16px;border-radius:50%;background:${pinColor};z-index:3;pointer-events:none;"></div>`,
+    )
+    .join('');
+
+  return `<div class="pg-mesh-root" style="position:absolute;left:0;top:0;width:1016px;height:1316px;pointer-events:none;z-index:2;">${frame}${meshSvg}${yLabels.join('')}${pins}</div>`;
+}
 
 function resolvePictureGraphItems(
   structure: Record<string, unknown>,
@@ -804,14 +965,15 @@ export function buildPictureGraphBottomChoicesMarkup(
 }
 
 /**
- * Port of legacy picture_graph rendererJs: bars on the empty grid, category
- * icons under columns, count-write images, and bottom circle-choice row.
+ * Port of legacy picture_graph rendererJs: mesh/frame, bars on the grid,
+ * category icons under columns, count-write images, and bottom circle-choice row.
  */
 export function injectPictureGraphMarkup(
   html: string,
   structure: Record<string, unknown>,
 ): string {
   const needsGraph =
+    /\{\{\s*GRAPH_MESH_HTML\s*\}\}/i.test(html) ||
     /\{\{\s*GRAPH_BARS_HTML\s*\}\}/i.test(html) ||
     /\{\{\s*GRAPH_ICONS_HTML\s*\}\}/i.test(html) ||
     /\{\{\s*COUNT_ITEMS_HTML\s*\}\}/i.test(html) ||
@@ -821,7 +983,11 @@ export function injectPictureGraphMarkup(
     return html;
   }
 
-  return html
+  let next = html
+    .replace(
+      /\{\{\s*GRAPH_MESH_HTML\s*\}\}/gi,
+      buildPictureGraphMeshMarkup(structure),
+    )
     .replace(
       /\{\{\s*GRAPH_BARS_HTML\s*\}\}/gi,
       buildPictureGraphBarsMarkup(structure),
@@ -838,6 +1004,21 @@ export function injectPictureGraphMarkup(
       /\{\{\s*BOTTOM_CHOICES_HTML\s*\}\}/gi,
       buildPictureGraphBottomChoicesMarkup(structure),
     );
+
+  // If the DB template still has no mesh token, inject mesh before bars.
+  if (
+    isPictureGraphWorksheet(structure) &&
+    !/pg-mesh-root/i.test(next) &&
+    /graph-bars-container/i.test(next)
+  ) {
+    const mesh = buildPictureGraphMeshMarkup(structure);
+    next = next.replace(
+      /(<(?:div|section)[^>]*class=["'][^"']*\bgraph-bars-container\b[^"']*["'][^>]*>)/i,
+      `$1${mesh}`,
+    );
+  }
+
+  return next;
 }
 
 function craftSlotImg(

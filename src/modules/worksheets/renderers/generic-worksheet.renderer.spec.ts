@@ -374,16 +374,50 @@ NULL
       },
     });
 
-    expect(html).toContain('>20<');
-    expect(html).toContain('>twenty<');
+    expect(html).toContain('20');
+    expect(html).toContain('twenty');
     expect(html).toContain('font-size:28px');
+    expect(html).toContain('nn-circle');
+    expect(html).toContain('nn-pill');
+    expect(html).toContain('nn-connect-dot');
+    expect(html).toContain('border-radius:50%');
+    expect(html).toContain('background:#f8c8d0');
     expect(html).not.toContain('color:#f8c8d0');
     expect(html).not.toContain('"pairs"');
     expect(html).toContain('</body></html>');
     expect(html).not.toMatch(/<\/body>\s*<\/html>\s*<\/body>/);
-    // Digits sit 8px below name-pill tops so they center in the circles.
-    expect(html).toMatch(/class="number-item"[^>]*top:343px/);
-    expect(html).toMatch(/class="name-item"[^>]*top:335px/);
+    // HTML shapes flex-center digits/names; number and name share the same top.
+    expect(html).toMatch(/class="number-item[^"]*"[^>]*top:\d+px/);
+    expect(html).toMatch(/class="name-item[^"]*"[^>]*top:\d+px/);
+    const numberTop = html.match(/class="number-item[^"]*"[^>]*top:(\d+)px/)?.[1];
+    const nameTop = html.match(/class="name-item[^"]*"[^>]*top:(\d+)px/)?.[1];
+    expect(numberTop).toBeDefined();
+    expect(nameTop).toBe(numberTop);
+  });
+
+  it('packs number_names pairs evenly for 3–6 rows with HTML shapes', () => {
+    const html = renderer.render({
+      templateHtml: '<body>{{NUMBERS}}{{NAMES}}</body>',
+      structure: {
+        worksheet_type: 'number_names',
+        pairs: [
+          { number: '1', name: 'one' },
+          { number: '2', name: 'two' },
+          { number: '3', name: 'three' },
+          { number: '4', name: 'four' },
+        ],
+      },
+    });
+
+    expect(html.match(/nn-circle/g)?.length).toBe(4);
+    expect(html.match(/nn-pill/g)?.length).toBe(4);
+    const tops = [...html.matchAll(/class="number-item[^"]*"[^>]*top:(\d+)px/g)].map(
+      (m) => Number(m[1]),
+    );
+    expect(tops).toHaveLength(4);
+    const gaps = tops.slice(1).map((top, i) => top - tops[i]);
+    expect(new Set(gaps).size).toBe(1);
+    expect(gaps[0]).toBeGreaterThanOrEqual(100);
   });
 
   it('fills matching_single_letter column letters and places the scene image in its zone', () => {
@@ -937,7 +971,7 @@ NULL
   it('renders picture_graph bars, column icons, count images, and bottom choices', () => {
     const html = renderer.render({
       templateHtml: `<body>
-<div class="graph-bars-container">{{GRAPH_BARS_HTML}}</div>
+<div class="graph-bars-container">{{GRAPH_MESH_HTML}}{{GRAPH_BARS_HTML}}</div>
 <div class="graph-column-icons">{{GRAPH_ICONS_HTML}}</div>
 <div class="counts-container">{{COUNT_ITEMS_HTML}}</div>
 <div class="bottom-choices-row">{{BOTTOM_CHOICES_HTML}}</div>
@@ -983,10 +1017,19 @@ NULL
       mode: 'export',
     });
 
+    expect(html).not.toContain('{{GRAPH_MESH_HTML}}');
     expect(html).not.toContain('{{GRAPH_BARS_HTML}}');
     expect(html).not.toContain('{{GRAPH_ICONS_HTML}}');
     expect(html).not.toContain('{{COUNT_ITEMS_HTML}}');
     expect(html).not.toContain('{{BOTTOM_CHOICES_HTML}}');
+
+    expect(html).toContain('pg-mesh-root');
+    expect(html).toContain('pg-graph-frame');
+    expect(html).toContain('pg-corner-pin');
+    expect(html).toContain('pg-mesh-svg');
+    expect(html).toContain('stroke-dasharray');
+    expect(html).toContain('pg-y-label');
+    expect(html).toMatch(/>10</);
 
     // count 9 → height 288, top 708-288=420; count 3 → height 96, top 704-96=608
     expect(html).toMatch(/left:228px;width:82px;top:420px;height:288px;background:#85cbf4/);

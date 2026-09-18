@@ -13,6 +13,7 @@ describe('WorksheetTemplateService.create', () => {
     },
     worksheetTemplate: {
       create: jest.fn(),
+      findMany: jest.fn(),
     },
   };
   const s3 = {

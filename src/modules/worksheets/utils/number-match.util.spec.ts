@@ -2,6 +2,7 @@ import {
   applyNumberMatchOverrides,
   looksLikeNumberNamePairs,
   matchRightValue,
+  normalizeNumberNamesPairs,
   toRomanNumeral,
 } from './number-match.util';
 
@@ -11,6 +12,46 @@ describe('number-match.util', () => {
     expect(toRomanNumeral(4)).toBe('IV');
     expect(toRomanNumeral(12)).toBe('XII');
     expect(toRomanNumeral(20)).toBe('XX');
+  });
+
+  it('maps zero to the word name', () => {
+    expect(matchRightValue('number_names', 0)).toBe('zero');
+  });
+
+  it('normalizes range 1-4 to exactly four unique pairs without padding', () => {
+    const next = normalizeNumberNamesPairs(
+      {
+        worksheet_type: 'number_names',
+        pairs: [
+          { number: '1', name: 'one' },
+          { number: '2', name: 'two' },
+          { number: '3', name: 'three' },
+          { number: '4', name: 'four' },
+          { number: '1', name: 'one' },
+          { number: '2', name: 'two' },
+        ],
+      },
+      { range: '1-4', matchType: 'number_names' },
+    );
+    const pairs = next.pairs as Array<{ number: string; name: string }>;
+    expect(pairs.map((p) => p.number)).toEqual(['1', '2', '3', '4']);
+    expect(pairs.map((p) => p.name)).toEqual(['one', 'two', 'three', 'four']);
+    expect((next.layout as { row_count: number }).row_count).toBe(4);
+  });
+
+  it('dedupes pairs when no range is given', () => {
+    const next = normalizeNumberNamesPairs({
+      worksheet_type: 'number_names',
+      pairs: [
+        { number: '5', name: 'five' },
+        { number: '5', name: 'five' },
+        { number: '6', name: 'six' },
+      ],
+    });
+    expect((next.pairs as Array<{ number: string }>).map((p) => p.number)).toEqual([
+      '5',
+      '6',
+    ]);
   });
 
   it('does not treat picture-match pairs as number-name pairs', () => {
