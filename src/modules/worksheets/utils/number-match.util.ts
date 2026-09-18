@@ -1,4 +1,5 @@
 const WORD_NAMES: Record<number, string> = {
+  0: 'zero',
   1: 'one',
   2: 'two',
   3: 'three',
@@ -152,12 +153,183 @@ export function instructionForMatchType(matchType: string): string | undefined {
   return MATCH_INSTRUCTIONS[matchType];
 }
 
+/** Parse "1-4", "1 to 4", "from 1–4", etc. */
+export function parseNumberRangeHint(
+  text: string | undefined | null,
+): { min: number; max: number } | null {
+  if (!text?.trim()) return null;
+  const match = text.match(
+    /(?:from\s*)?(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})/i,
+  );
+  if (!match) return null;
+  const a = Number(match[1]);
+  const b = Number(match[2]);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return { min: Math.min(a, b), max: Math.max(a, b) };
+}
+
+/** Parse comma/space separated specifics like "1, 2, 3, 4". */
+export function parseSpecificNumbersHint(
+  text: string | undefined | null,
+): number[] {
+  if (!text?.trim()) return [];
+  const nums = text
+    .split(/[,;\s]+/)
+    .map((part) => Number(part.trim()))
+    .filter((n) => Number.isFinite(n) && n >= 0 && n <= 100);
+  const seen = new Set<number>();
+  const unique: number[] = [];
+  for (const n of nums) {
+    if (seen.has(n)) continue;
+    seen.add(n);
+    unique.push(n);
+  }
+  return unique;
+}
+
+const NUMBER_NAMES_PALETTE_COLORS = [
+  '#F8D7DA',
+  '#D1E9F6',
+  '#E2EFD9',
+  '#E2D9F3',
+  '#FFF2CC',
+  '#FAD7C4',
+];
+
+function buildNumberNamePair(
+  value: number,
+  index: number,
+  matchType: string,
+  existing?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...(existing ?? {}),
+    id: (typeof existing?.id === 'string' && existing.id) || `pair_${index + 1}`,
+    number: String(value),
+    name: matchRightValue(matchType || 'number_names', value),
+    color:
+      (typeof existing?.color === 'string' && existing.color) ||
+      NUMBER_NAMES_PALETTE_COLORS[index % NUMBER_NAMES_PALETTE_COLORS.length],
+    editable: existing?.editable ?? true,
+  };
+}
+
+/**
+ * Enforce unique left-column numbers and honor an explicit range / list.
+ * e.g. range 1–4 → exactly 4 pairs (1,2,3,4) — never pad to 6 with repeats.
+ */
+export function normalizeNumberNamesPairs(
+  structure: Record<string, unknown>,
+  hints?: {
+    range?: string;
+    specificNumbers?: string;
+    query?: string;
+    matchType?: string;
+  },
+): Record<string, unknown> {
+  if (!looksLikeNumberNamePairs(structure)) {
+    return structure;
+  }
+
+  const matchType =
+    hints?.matchType?.trim() ||
+    (typeof structure.worksheet_type === 'string'
+      ? structure.worksheet_type
+      : 'number_names');
+
+  const specific = parseSpecificNumbersHint(hints?.specificNumbers);
+  const range =
+    parseNumberRangeHint(hints?.range) ||
+    parseNumberRangeHint(hints?.query) ||
+    parseNumberRangeHint(
+      typeof structure.instruction_text === 'string'
+        ? structure.instruction_text
+        : '',
+    );
+
+  const rawPairs = Array.isArray(structure.pairs)
+    ? (structure.pairs as Array<Record<string, unknown>>)
+    : [];
+
+  let values: number[] = [];
+
+  if (specific.length > 0) {
+    values = specific.slice(0, 6);
+  } else if (range) {
+    const span = range.max - range.min + 1;
+    if (span >= 1 && span <= 6) {
+      values = Array.from({ length: span }, (_, i) => range.min + i);
+    } else if (span > 6) {
+      // Prefer existing unique values inside the range, then fill.
+      const inside = rawPairs
+        .map((p) => parsePairNumber(p.number))
+        .filter((n): n is number => n != null && n >= range.min && n <= range.max);
+      const seen = new Set<number>();
+      for (const n of inside) {
+        if (seen.has(n)) continue;
+        seen.add(n);
+        values.push(n);
+        if (values.length >= 6) break;
+      }
+      for (let n = range.min; n <= range.max && values.length < 6; n += 1) {
+        if (seen.has(n)) continue;
+        seen.add(n);
+        values.push(n);
+      }
+    }
+  }
+
+  if (values.length === 0) {
+    // No explicit range/list: dedupe existing pairs, cap at 6, no repeat-padding.
+    const seen = new Set<string>();
+    const deduped: Array<Record<string, unknown>> = [];
+    for (const pair of rawPairs) {
+      const key = String(pair.number ?? '').trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(pair);
+      if (deduped.length >= 6) break;
+    }
+    const next: Record<string, unknown> = { ...structure, pairs: deduped };
+    if (isRecord(next.layout)) {
+      next.layout = { ...next.layout, row_count: deduped.length };
+    }
+    return next;
+  }
+
+  // Clamp to template bounds when we have an explicit set.
+  if (values.length > 6) values = values.slice(0, 6);
+
+  const byNumber = new Map<number, Record<string, unknown>>();
+  for (const pair of rawPairs) {
+    const n = parsePairNumber(pair.number);
+    if (n == null || byNumber.has(n)) continue;
+    byNumber.set(n, pair);
+  }
+
+  const pairs = values.map((value, index) =>
+    buildNumberNamePair(value, index, matchType, byNumber.get(value)),
+  );
+
+  const next: Record<string, unknown> = {
+    ...structure,
+    pairs,
+    worksheet_type: structure.worksheet_type ?? 'number_names',
+  };
+  if (isRecord(next.layout)) {
+    next.layout = { ...next.layout, row_count: pairs.length };
+  } else {
+    next.layout = { row_count: pairs.length };
+  }
+  return next;
+}
+
 /** Rewrite number/name pairs so the right column matches the AI Edit match type. */
 export function applyNumberMatchOverrides(
   structure: Record<string, unknown>,
   fields: Record<string, string>,
 ): Record<string, unknown> {
-  const next = { ...structure };
+  let next = { ...structure };
   if (fields.topic) {
     next.topic = fields.topic;
   }
@@ -172,5 +344,11 @@ export function applyNumberMatchOverrides(
       return { ...pair, name: matchRightValue(matchType, left) };
     });
   }
+  next = normalizeNumberNamesPairs(next, {
+    range: fields.range,
+    specificNumbers: fields.specificNumbers,
+    query: fields.query,
+    matchType: matchType || fields.matchType,
+  });
   return next;
 }
